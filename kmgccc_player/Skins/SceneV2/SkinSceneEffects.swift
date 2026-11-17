@@ -98,10 +98,11 @@ struct SkinSceneFilters: ViewModifier {
         }
     }
 
-    /// Grows the effect's canvas by `reach` without changing the node's layout.
+    /// Grows the effect's canvas by `reach` without changing the node's layout. The view's
+    /// structure is the same at any reach, so a reach passing through zero keeps the subtree's
+    /// identity and state (particles, timelines).
     static func padded(_ view: AnyView, reach: Double, effect: (AnyView) -> some View) -> AnyView {
         let reach = ceil(max(0, reach))
-        guard reach > 0 else { return AnyView(effect(view)) }
         return AnyView(effect(AnyView(view.padding(reach))).padding(-reach))
     }
 }
@@ -156,6 +157,8 @@ struct SkinSceneFog: View {
     let speed: Double
     let warp: Double
     let gain: Double
+    /// Points the field has slid by; it is endless, so any distance shows new fog.
+    var scroll = CGPoint.zero
     private let reduction = 3.0
 
     var body: some View {
@@ -163,7 +166,8 @@ struct SkinSceneFog: View {
             let size = CGSize(width: max(1, proxy.size.width / reduction), height: max(1, proxy.size.height / reduction))
             Rectangle().fill(.white)
                 .frame(width: size.width, height: size.height)
-                .colorEffect(ShaderLibrary.default.skinFxFog(.float(time), .float(max(1, feature) / reduction), .float(speed), .float(warp), .float(gain), .color(low), .color(high)))
+                .colorEffect(ShaderLibrary.default.skinFxFog(.float(time), .float(max(1, feature) / reduction), .float(speed), .float(warp), .float(gain), .color(low), .color(high),
+                                                             .float2(scroll.x / reduction, scroll.y / reduction)))
                 .scaleEffect(reduction, anchor: .topLeading)
                 .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
         }

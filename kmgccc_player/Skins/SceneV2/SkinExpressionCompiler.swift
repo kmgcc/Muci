@@ -63,6 +63,11 @@ struct SkinCompileEnvironment {
     /// Node-scoped namespaces available here (`item` only inside `repeat`, `gesture` only in actions).
     var locals: Set<String> = ["self", "parent"]
     var hostCapabilities: Set<String> = []
+    /// The package's named expressions. `let.name` expands to its expression where it is used,
+    /// so it reads that place's `props` and `item`, and each `follow()` in it springs on its own.
+    var lets: [String: SkinExpr] = [:]
+    /// Functions of the package's `scripts/*.js`; nil when it has none.
+    var scriptFunctions: Set<String>?
 }
 
 enum SkinExpressionCompiler {
@@ -114,6 +119,8 @@ private struct CompiledNode {
 
 private struct Compiler {
     let environment: SkinCompileEnvironment
+    /// Lets being expanded, outermost first, so one that refers back to itself is caught.
+    var expanding: [String] = []
 
     func compile(_ expression: SkinExpr) throws -> CompiledNode {
         switch expression {
@@ -123,6 +130,14 @@ private struct Compiler {
             let nodes = try items.map { try compile($0) }
             let evaluators = nodes.map(\.evaluate)
             return merge(nodes, type: .list) { context in .list(evaluators.map { $0(context) }) }
+        case .record(let names, let values):
+            let nodes = try values.map { try compile($0) }
+            let evaluators = nodes.map(\.evaluate)
+            return merge(nodes, type: .record) { context in
+                var fields: [String: SkinValue] = [:]
+                for (name, evaluate) in zip(names, evaluators) { fields[name] = evaluate(context) }
+                return .record(fields)
+            }
         case .path(let components):
             return try path(components)
         case .member(let base, let name):
@@ -187,6 +202,17 @@ private struct Compiler {
         }
 
         switch head {
+        case "let":
+            guard let name = remainder.first else { throw typeError("let 后需要名称") }
+            guard let expression = environment.lets[name] else {
+                throw typeError("皮肤没有定义 let.\(name)" + skinSuggestion(name, in: environment.lets.keys))
+            }
+            guard !expanding.contains(name) else { throw typeError("let.\(name) 引用了自己：" + (expanding + [name]).joined(separator: " → ")) }
+            do {
+                return applying(try Compiler(environment: environment, expanding: expanding + [name]).compile(expression), Array(remainder.dropFirst()))
+            } catch let error as SkinExpressionError where expanding.isEmpty {
+                throw typeError("let.\(name)：\(error.message)")
+            }
         case "props":
             guard let name = remainder.first else { throw typeError("props 后需要参数名") }
             guard let prop = environment.props[name] else { throw typeError("组件没有声明参数“\(name)”") }
@@ -327,6 +353,13 @@ private struct Compiler {
             let expected = function.argumentType(position)
             guard argument.type.conforms(to: expected) else {
                 throw typeError("\(name)() 的第 \(position + 1) 个参数需要\(expected.displayName)")
+            }
+        }
+        if name == "script", let first = arguments.first, first.tier == .constant, first.domains.isEmpty {
+            let scriptName = first.evaluate(SkinEvaluationContext(data: .placeholder)).textValue
+            guard let available = environment.scriptFunctions else { throw typeError("皮肤包没有 scripts 目录里的脚本") }
+            guard available.contains(scriptName) else {
+                throw typeError("脚本里没有函数“\(scriptName)”" + skinSuggestion(scriptName, in: available))
             }
         }
         let evaluators = arguments.map(\.evaluate)

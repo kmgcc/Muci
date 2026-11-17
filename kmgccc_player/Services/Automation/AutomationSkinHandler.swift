@@ -28,8 +28,13 @@ struct AutomationSkinHandler {
                 return .success(for: request, result: .object([
                     "valid": .boolean(true), "skinID": .string(package.id),
                     "programs": .object(package.programs.mapValues { .object([
-                        "nodeCount": .number(Double($0.nodeCount)), "domains": strings(Set($0.domains.map(\.rawValue)))
-                    ]) })
+                        "nodeCount": .number(Double($0.nodeCount)), "domains": strings(Set($0.domains.map(\.rawValue))),
+                        "frameNodes": .array($0.root.frameReport().prefix(40).map { entry in
+                            .object(["node": .string(entry.node), "properties": .array(entry.properties.map(AutomationJSONValue.string)),
+                                     "rebuilds": .number(Double(entry.rebuilds))])
+                        })
+                    ]) }),
+                    "scripts": strings((package.programs.values.first?.scripts?.functions) ?? [])
                 ]))
             case AutomationMethod.skinReload:
                 let id = try parameters.string("skinID", required: true)!

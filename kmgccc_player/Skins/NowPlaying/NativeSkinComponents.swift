@@ -151,15 +151,19 @@ private struct SkinSpectrumComponent: View {
     var body: some View {
         // `count` capsules; `artworkColors` false keeps them in `color`; `paused` "dots" shrinks them while paused.
         GeometryReader { proxy in
+            let count = max(1, min(64, Int(configuration.number("count", fallback: Double(TunedSpectrumEngine.baselineBandCount)))))
+            // A capsule is 6 points wide with 4 between, times `scale`; a row wider than the
+            // frame shrinks to fit, so the outer capsules are never cut at the edges.
+            let fits = Double(proxy.size.width) / Double(count * 6 + max(0, count - 1) * 4)
             MiniPlayerSpectrumView(
                 isPlaying: snapshot.playback.isPlaying,
                 isActive: isActive,
                 accentColor: configuration.color(fallback: snapshot.theme.accentColor),
                 artworkColors: configuration.boolean("artworkColors", fallback: true) ? snapshot.theme.spectrumArtworkColors : [],
                 usesDarkForeground: configuration.boolean("darkForeground", fallback: snapshot.theme.spectrumUsesDarkForeground),
-                scale: configuration.number("scale", fallback: 1), isHovered: false,
+                scale: CGFloat(max(0.1, min(configuration.number("scale", fallback: 1), fits))), isHovered: false,
                 pausedBehavior: configuration.text("paused") == "dots" ? .minimalDots : .default,
-                capsuleCount: max(1, min(64, Int(configuration.number("count", fallback: Double(TunedSpectrumEngine.baselineBandCount))))),
+                capsuleCount: count,
                 preferredWidth: proxy.size.width, preferredHeight: proxy.size.height
             )
         }

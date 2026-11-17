@@ -117,6 +117,11 @@ enum SkinFunctions {
             guard context.moves else { return .number(1) }
             let duration = min(10, max(0.05, arguments[1].number())), bounce = min(0.9, max(-0.9, arguments[2].number()))
             let spec = context.motionTokens.phaseSpec(for: .emphasis, duration: duration, bounce: bounce, blendDuration: 0)
+            // Long settled: the slowest mode, exp(-rate·2π·t/duration), is under 1e-4 here, so a
+            // resting glyph skips evaluating a spring every frame.
+            let damping = spec.bounce >= 0 ? 1 - spec.bounce : 1 / (1 + spec.bounce)
+            let rate = spec.bounce >= 0 ? max(0.1, damping) : damping - (damping * damping - 1).squareRoot()
+            if spec.duration > 0, rate > 0, t > spec.duration * 1.5 / rate { return .number(1) }
             return .number(SkinFunctions.sanitized(MotionSpringEvaluator(spec: spec).normalizedValue(at: t)))
         }
 
@@ -320,9 +325,9 @@ enum SkinFunctions {
                 return .number(SkinTextMeasure.width(text, size: arguments[1].number(), weight: weight, font: font))
             })
         }
-        // A lyric line composed as poster typography; see `SkinKineticLayout`.
-        table["kineticLayout"] = SkinFunction(arity: 1...10, argumentTypes: [.any], result: { _ in .record }, tier: .change) { arguments, _ in
-            SkinKineticLayout.layout(arguments[0].listValue, options: Array(arguments.dropFirst()))
+        // `script(name, …)`: a top-level function of the package's `scripts/*.js`; see `SkinScripts`.
+        table["script"] = SkinFunction(arity: 1...16, argumentTypes: [.text, .any], result: { _ in .any }, tier: .change) { arguments, context in
+            context.data.scripts?.call(arguments[0].textValue, Array(arguments.dropFirst())) ?? .null
         }
 
         // Logic

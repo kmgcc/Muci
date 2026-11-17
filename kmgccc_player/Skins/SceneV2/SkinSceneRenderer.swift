@@ -41,6 +41,7 @@ struct SkinSceneV2View: View {
             }
             .onAppear {
                 guard !didPrepare else { return }
+                data.scripts = program.scripts
                 didPrepare = true
                 readsBackdrop = program.root.readsBackdrop
                 SkinSceneRuntimeMetrics.shared.mount(metricsID, nodes: program.nodeCount)
@@ -48,6 +49,8 @@ struct SkinSceneV2View: View {
                 do { try fonts.load(paths: fontPaths, root: resources) }
                 catch { resourceError = error.localizedDescription }
             }
+            // A reloaded package brings a fresh script context.
+            .onChange(of: program.scripts.map(ObjectIdentifier.init)) { data.scripts = program.scripts }
             .onDisappear { fonts.release(); didPrepare = false; SkinSceneRuntimeMetrics.shared.unmount(metricsID) }
             .environment(\.skinSceneMetricsID, metricsID)
             .environment(\.skinSceneData, data)
@@ -89,6 +92,8 @@ struct SkinSceneNodeV2View: View {
     @State private var valueCache = SkinNodeValueCache()
     @State private var cameraSource = SkinCameraSource()
     @State private var followers = SkinFollowers()
+    /// Set once a hidden node's transition has had its time; see `render(at:)`.
+    @State private var collapsed = false
     @Environment(\.skinBackdropReading) private var inheritedReading
     @Namespace private var glassNamespace
 
@@ -100,6 +105,9 @@ struct SkinSceneNodeV2View: View {
     /// Clock, lyric and audio inputs stand still while paused; scene time once the playback flow
     /// settles; follow springs once they land.
     private var framesPaused: Bool {
+        // Read so a seek while paused draws the node once at the new position; its watches
+        // then see the new line.
+        _ = data.seekRevision
         let playing = components.snapshot.playback.isPlaying
         return !active || node.frameInputs.isStill(playing: playing, timeMoves: data.timeMoves(playing: playing), following: followers.isMoving)
     }
@@ -155,7 +163,13 @@ struct SkinSceneNodeV2View: View {
         let width = dimension(frame[member: "width"], horizontal: true) ?? dimension(frame[member: "size"], horizontal: true)
         let height = dimension(frame[member: "height"], horizontal: false) ?? dimension(frame[member: "size"], horizontal: false)
         let childSize = CGSize(width: width ?? size.width, height: height ?? size.height)
-        var result = content(values, size: childSize, now: now)
+        // A node hidden behind a transition stays mounted so it can fade out. Once the fade has
+        // had its time it keeps only this shell: a hidden subtree would otherwise still draw and
+        // animate every frame at zero opacity. Showing it again brings the content straight back,
+        // so the fade-in plays as before. Only a positioned node does this: in a stack its empty
+        // shell would give up the space its siblings are laid out around.
+        let collapses = positioned && hidden && transition != nil && node.children.allSatisfy(\.mountQuiet)
+        var result = collapses && collapsed ? AnyView(EmptyView()) : content(values, size: childSize, now: now)
         result = AnyView(result.frame(width: width, height: height, alignment: alignment(frame[member: "align"].textValue)))
         result = AnyView(result.frame(minWidth: dimension(frame[member: "minWidth"], horizontal: true), maxWidth: dimension(frame[member: "maxWidth"], horizontal: true), minHeight: dimension(frame[member: "minHeight"], horizontal: false), maxHeight: dimension(frame[member: "maxHeight"], horizontal: false)))
         if let aspect = frame[member: "aspectRatio"].numberValue, aspect > 0 { result = AnyView(result.aspectRatio(aspect, contentMode: .fit)) }
@@ -212,7 +226,12 @@ struct SkinSceneNodeV2View: View {
                 perform("appear", now: now)
             }
             .onDisappear { data.audioReaders.remove(readerID); perform("disappear", now: now) }
-            .onChange(of: values["keyframes"]?[member: "trigger"]) { _, _ in animationStart = Date.timeIntervalSinceReferenceDate })
+            .onChange(of: values["keyframes"]?[member: "trigger"]) { _, _ in animationStart = Date.timeIntervalSinceReferenceDate }
+            .task(id: collapses) {
+                guard collapses else { if collapsed { collapsed = false }; return }
+                try? await Task.sleep(for: .seconds(2.5))
+                if !Task.isCancelled { collapsed = true }
+            })
         if let help = values["help"]?.textValue { result = AnyView(result.help(help)) }
         if let cursor = values["cursor"]?.textValue { result = AnyView(result.background(SkinSceneCursorRegion(name: cursor))) }
         if let controls = values["controls"] { result = AnyView(result.skinProvidesControls(Set(controls.listValue.compactMap { SkinSceneControl(rawValue: $0.textValue) }))) }
@@ -348,9 +367,10 @@ struct SkinSceneNodeV2View: View {
                 ?? Font.system(size: fontSize, weight: skinFontWeight(weight), design: skinFontDesign(values["design"]?.textValue ?? ""))
             if values["italic"]?.isTruthy == true { typeface = typeface.italic() }
             let tracking = values["tracking"]?.number() ?? 0
+            let aligned = textAlignment(values["alignment"]?.textValue ?? "")
             func layout(_ text: Text) -> some View {
                 text.font(typeface).tracking(tracking)
-                    .multilineTextAlignment(textAlignment(values["alignment"]?.textValue ?? ""))
+                    .multilineTextAlignment(aligned)
                     .lineSpacing(values["lineSpacing"]?.number() ?? 0)
                     .lineLimit(values["lineLimit"].map { max(1, $0.integer(1)) })
                     .minimumScaleFactor((values["minScale"]?.number(1) ?? 1).clamped01)
@@ -373,17 +393,17 @@ struct SkinSceneNodeV2View: View {
                     let line = words.reduce(Text("")) { text, word in
                         Text("\(text)\(Text(word.text).foregroundStyle(base.mixed(with: highlight, amount: word.progress).swiftUIColor))")
                     }
-                    return AnyView(SkinGlyphLayer(style: glyphs, content: layout(line)))
+                    return AnyView(SkinGlyphLayer(style: glyphs, alignment: aligned, content: layout(line)))
                 }
                 // A sweep: the sung part takes `highlightColor`, left to right.
                 let fraction = data.lyricsTimeline.sungFraction(index: lineIndex, time: lyricTime)
-                return AnyView(SkinGlyphLayer(style: glyphs, content: layout(Text(value)).foregroundStyle(foreground).overlay {
+                return AnyView(SkinGlyphLayer(style: glyphs, alignment: aligned, content: layout(Text(value)).foregroundStyle(foreground).overlay {
                     layout(Text(value)).foregroundStyle(highlight.swiftUIColor).mask(alignment: .leading) {
                         GeometryReader { proxy in Rectangle().frame(width: proxy.size.width * fraction) }
                     }
                 }))
             }
-            return AnyView(SkinGlyphLayer(style: glyphs, content: layout(Text(value)).foregroundStyle(foreground)))
+            return AnyView(SkinGlyphLayer(style: glyphs, alignment: aligned, content: layout(Text(value)).foregroundStyle(foreground)))
         case "symbol": return AnyView(Image(systemName: values["name"]?.textValue ?? "circle").resizable().scaledToFit().foregroundStyle(foreground))
         case "artwork":
             if let id = values["track"]?.textValue, let trackID = UUID(uuidString: id) {
@@ -409,7 +429,8 @@ struct SkinSceneNodeV2View: View {
             return AnyView(SkinSceneFog(low: colors.count > 1 ? colors[0] : .clear, high: colors.last ?? foreground,
                                         time: moves ? data.time(at: now).truncatingRemainder(dividingBy: 3600) : 0,
                                         feature: values["size"]?.number(260) ?? 260, speed: values["speed"]?.number(0.3) ?? 0.3,
-                                        warp: values["warp"]?.number(1.5) ?? 1.5, gain: values["gain"]?.number(1.2) ?? 1.2))
+                                        warp: values["warp"]?.number(1.5) ?? 1.5, gain: values["gain"]?.number(1.2) ?? 1.2,
+                                        scroll: CGPoint(x: values["scrollX"]?.number() ?? 0, y: values["scrollY"]?.number() ?? 0)))
         case "gradient":
             let gradient = skinGradient(values)
             switch values["mode"]?.textValue ?? "" {
@@ -440,7 +461,11 @@ struct SkinSceneNodeV2View: View {
         let fallback = values["color"]?.colorValue ?? data.theme["theme.appForeground.primary"]?.colorValue
         let outline = SkinGlyphOutline(values["outline"], fallback: fallback)
         let extrude = SkinGlyphExtrude(values["extrude"], fallback: nil)
-        var style = SkinGlyphStyle(outline: outline, extrude: extrude, padding: (outline?.width ?? 0) + (extrude?.depth ?? 0) + 1)
+        let glow = SkinGlyphGlow(values["glow"], fallback: fallback)
+        // The glow's reach counts from the first frame, so a glyph lighting up later never
+        // widens the renderer's padding (a padding change moves glyphs sideways).
+        var style = SkinGlyphStyle(outline: outline, extrude: extrude, glow: glow,
+                                   padding: (outline?.width ?? 0) + (extrude?.depth ?? 0) + (glow?.reach ?? 0) + 1)
         guard let motion = node.properties["glyphMotion"] else { return outline == nil && extrude == nil ? nil : style }
         let characters = Array(text.filter { !$0.isNewline })
         guard configuredMotionPolicy.resolving(accessibilityReduceMotion: reduceMotion) == .full,
@@ -470,8 +495,11 @@ struct SkinSceneNodeV2View: View {
                 "lineAge": .number(clock - lineStart), "fontSize": .number(fontSize),
             ])
             let transform = SkinGlyphTransform(motion.evaluate(scope))
-            reach = max(reach, abs(transform.x) + abs(transform.split) + abs(transform.smearX) / 2,
-                        abs(transform.y) + abs(transform.smearY) / 2, transform.blur * 3)
+            // An entering glyph is both offset and blurred, so its blur reaches past the offset.
+            // Ink that runs past the padding meets the edge of the text's layer and smears into
+            // thin lines along the entry direction.
+            reach = max(reach, abs(transform.x) + abs(transform.split) + abs(transform.smearX) / 2 + transform.blur * 3,
+                        abs(transform.y) + abs(transform.smearY) / 2 + transform.blur * 3)
             growth = max(growth, transform.scale - 1, abs(transform.rotation) > 0.5 ? 0.5 : 0)
             style.transforms.append(transform)
         }

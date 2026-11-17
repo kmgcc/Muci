@@ -101,11 +101,15 @@ ZIP 根目录包含 `manifest.json`。场景可直接写在 manifest 的 `scene`
 
 这些属性都可以绑定 `params`，配合 `isUserVisible` 的参数就能出现在快速面板里。
 
-完全自绘时不放 `lyrics.native`，改用 `lyrics` 数据域：`lyrics.lines` 是全文与逐词时间，`lyrics.current`、`lyrics.lineProgress`、`lyrics.wordIndex` 与 `lyrics.wordProgress` 逐帧更新。当前行与原生歌词一样提前进入，换行不落后于演唱。`lyricLine` 节点显示相对当前行第 `index` 行的文字，`mode` 为 `translation` 或 `romanization` 时显示译文或罗马音；写上 `highlightColor` 后，已唱部分自左向右染色，按逐词时间推进，适合单行显示；`highlightStyle` 为 `word` 时改为逐词由 `color` 过渡到 `highlightColor`，换行也准确。
+完全自绘时不放 `lyrics.native`，改用 `lyrics` 数据域：`lyrics.lines` 是全文与逐词时间，`lyrics.current`、`lyrics.lineProgress`、`lyrics.wordIndex` 与 `lyrics.wordProgress` 逐帧更新。当前行与原生歌词一样提前进入，换行不落后于演唱；首个词晚于行起点的行（例如与上一行共用起点的行）在首个词开唱时才成为当前行。`lyricLine` 节点显示相对当前行第 `index` 行的文字，`mode` 为 `translation` 或 `romanization` 时显示译文或罗马音；写上 `highlightColor` 后，已唱部分自左向右染色，按逐词时间推进，适合单行显示；`highlightStyle` 为 `word` 时改为逐词由 `color` 过渡到 `highlightColor`，换行也准确。
 
 ## 数据与表达式
 
-以 `=` 开头的字符串是表达式，其他值是常量。支持算术、比较、布尔、条件表达式、成员与下标访问，以及固定函数表；没有任意函数调用、循环或网络。
+以 `=` 开头的字符串是表达式，其他值是常量。支持算术、比较、布尔、条件表达式、成员与下标访问、记录 `{x: 1, y: a + b}`，以及固定函数表。需要循环或成段算法时，写成包内脚本。
+
+manifest 顶层的 `let` 为反复出现的表达式命名，例如 `"let": {"heroX": "=viewport.width / 2 + state.line.x"}`，任何表达式里写 `let.heroX` 即可使用。命名表达式在使用处展开，因此能读到当地的 `props`、`item`、`index` 与 `glyph`；它们可以互相引用，引用成环时检查报错。每处展开的 `follow()` 各有一份弹簧。
+
+包内 `scripts/*.js` 按文件名顺序载入同一个 JavaScriptCore 环境，每个文件最多 1 MiB。全局函数在表达式里以 `script("函数名", 参数…)` 调用；参数与结果是数、文字、布尔、列表与记录，颜色以十六进制文字传入。脚本里的 `host` 提供 `host.measureText(文字, 字号, 字重, 字体)`、`host.lineHeight(字体, 字重, 字号)` 与 `host.wordStarts(文字)`（系统分词给出的各词起点，以 UTF-16 计）；脚本没有网络、文件与定时器。`script()` 只在参数变化时运行，适合写在 `watch` 里，换行时算一次并存入 state。脚本出错时返回 null 并记一次日志，写成 `script(…) ?? state.line` 便保留旧值。`skin.check` 列出脚本中的函数，并核对 `script()` 引用的名称。
 
 自定义排版可读取 `track.description`（完整介绍）、`track.descriptionSource`（`track`、`album`、`artist` 或空字符串）和 `track.descriptionAttribution`（继承时的来源说明）。它们与 `text.trackDescription` 使用相同的继承规则；没有可用介绍时均为空字符串。可将文字节点放入 `scroll` 以阅读较长内容。
 
@@ -217,7 +221,7 @@ token 可以是名称，也可以是与 `animation` 相同的记录。`spring` �
 }}
 ```
 
-`easeIn`、`easeOut`、`easeInOut` 与 `backOut` 把 0 到 1 的进度映射为缓动曲线，`backOut` 带回弹。表达式里的时长宜写成 MotionKit token 的倍数：声明 `motion@1` 后，`motion.emphasis`、`motion.contentReplacement` 等给出各 token 按用户动画速度换算后的秒数，`motion.speed` 为相对标准速度的倍率；上例的 0.5 可写作 `motion.emphasis`。颜色同理取自 `theme.*`，皮肤便随歌曲换色。逐字运动与 `glyphs` 过渡可以叠加；`outline` 为每个字描边，写成宽度，或 `{width, color, hollow}`，`hollow` 只留外圈，适合做空心衬底大字；宽度为 0 时不描边。`extrude` 为每个字加上实心的厚度，写成深度，或 `{depth, angle, color, endColor}`，颜色由近及远渐变。glyphMotion 另有 `split`（红蓝错开的点数，逐字色散）与 `smearX`/`smearY`（沿位移方向的拖影）。减弱动态效果时逐字运动停止，描边与厚度保留。
+`easeIn`、`easeOut`、`easeInOut` 与 `backOut` 把 0 到 1 的进度映射为缓动曲线，`backOut` 带回弹。表达式里的时长宜写成 MotionKit token 的倍数：声明 `motion@1` 后，`motion.emphasis`、`motion.contentReplacement` 等给出各 token 按用户动画速度换算后的秒数，`motion.speed` 为相对标准速度的倍率；上例的 0.5 可写作 `motion.emphasis`。颜色同理取自 `theme.*`，皮肤便随歌曲换色。逐字运动与 `glyphs` 过渡可以叠加；`outline` 为每个字描边，写成宽度，或 `{width, color, hollow}`，`hollow` 只留外圈，适合做空心衬底大字；宽度为 0 时不描边。`extrude` 为每个字加上实心的厚度，写成深度，或 `{depth, angle, color, endColor}`，颜色由近及远渐变。glyphMotion 另有 `split`（红蓝错开的点数，逐字色散）与 `smearX`/`smearY`（沿位移方向的拖影）。`glow` 写成 `{radius, color, core}`，给每个字加上贴合字形的辉光：一层模糊副本取半径的七分之一（模糊最多 16 点），贴着字形形成亮边；更远的光是一团以字为中心、随距离近似平方衰减的圆形光晕，伸到字外约 1.5 倍半径，不用模糊，所以大半径也不拖慢渲染；这些都以加亮叠在字上，`core`（0 到 1）同时把字本身提亮到接近白色；亮度由 glyphMotion 的 `glow` 逐字决定（0 不亮，1 全亮，大于 1 是更亮的一闪），光随字一起运动；半径为 0 时不发光。减弱动态效果时逐字运动停止，描边与厚度保留。
 
 文字默认按像素栅格绘制，缓慢缩放或平移时会一格一格地跳。`text` 写上 `"subpixel": true` 后，每个字按字形轮廓填充，位置与字号连续变化，适合镜头缓推和逐字慢移的大字；表情符号等没有轮廓的字仍按原方式绘制。
 
@@ -233,9 +237,8 @@ token 可以是名称，也可以是与 `animation` 相同的记录。`spring` �
 | `pluck(列表, 字段)` | 取出每条记录的一个字段 |
 | `argmax(列表)`、`argmin(列表)` | 最大、最小值的序号 |
 | `addEach(列表, 数或列表)`、`mulEach(列表, 数或列表)` | 逐项相加、相乘 |
-| `kineticLayout(词, 种子, 避开, 宽, 高, 竖排字距, 字体, 字重, 强度, 丰富度)` | 把一行歌词排成海报式构图，返回每个词的位置与大小 |
 
-`kineticLayout` 以 100 为普通字的 1em。它按字数与时长选出主词和次重点，再由种子生成构图：先按段数、行宽、文字种类与节奏挑一种骨架（成行、主词独占一行、竖排主词靠边、竖排主词居中、环绕、竖列、阶梯、弧线、单词拆字、波浪、齐块、散布、螺旋、斜排、阶梯竖列，以及唱得慢的行偶尔使用、并倾向连续出现的安静整齐行），再随机组合对齐、纵向错落、阶梯与折线、断行位置、大小搭配与整体倾斜，同一种骨架也很少重复。大小搭配与大致从左到右的阅读顺序始终保留，词与词互不重叠。西文词按中文字号的 0.8 倍排，较长的西文主词放大得更少。`字体` 可以是一个名称，也可以是 [西文字体, 中文字体]。`丰富度` 从 0 到 1，省略时为 1：0 时大致从左到右成行，偶尔出现竖排；1 时所有骨架都可能出现。它可以写成参数，也可以按每首歌或每行歌词改变。`避开` 是构图序号列表，常放前两行用过的；同一骨架两行内不再出现。整幅构图超出宽高时等比缩小并居中。结果含 `family`（骨架 × 1000 + 变体）、`archetype`（骨架序号）、`hero`、`size`（[宽, 高]）、`ghost`（[x, y, 倍率]，倍率为 0 表示无）、`ghostText` 与 `items`；每项有 `x`、`y`（中心）、`s`（倍率）、`w`、`h`、`v`（竖排为 1）、`r`（角度）、`ex`/`ey`（入场来向的单位向量，按构图选择：顺读向、上升、下落、随对齐方向、按行交替、自中心放射，环绕、螺旋、弧线与波浪沿自身形状；部分词随机改从中心、最近的边或反方向进入，所有来向带少许随机偏转）、`m`（入场方式：0 滑入、1 由大缩入、2 旋入、3 拉链、4 远处落入）、`role`（0 衬字、1 次重点、2 主词）、`k`（中日韩文字为 1）、`t`（显示文本）、`start`、`end`。只有一个词的整行会先按字或词拆开，因此 `items` 可能比输入的词多。函数在换行时求值一次，结果宜存入 state。
+海报式的整行构图写成包内脚本：用 `host.measureText` 量出每个词，按自己的规则安排位置，换行时把结果存入 state。
 
 例如每个词的起点：`"=offsets(measureEach(lyrics.current.words, 64, \"heavy\"), 12)[index]"`；唱得最久的词：`"=argmax(addEach(pluck(lyrics.current.words, \"end\"), mulEach(pluck(lyrics.current.words, \"start\"), -1)))"`。
 
@@ -259,7 +262,7 @@ token 可以是名称，也可以是与 `animation` 相同的记录。`spring` �
 | `scanlines` | spacing、intensity、speed | 扫描线 |
 | `wave` | amplitude、wavelength、speed | 缓慢的液态扭曲 |
 | `grain` | amount | 逐帧胶片颗粒 |
-| `fov` | distortion、chromatic、blur、start | 镜头边缘：广角畸变、边缘色散与半径渐增的边缘模糊；start 以内不受影响 |
+| `fov` | distortion、chromatic、blur、start | 镜头边缘：广角畸变、边缘色散与半径渐增的边缘模糊；start 以内不受影响。各项为 0 时画面原样，可随表达式在 0 与其他值间平滑变化；子树先按节点画框裁切 |
 
 `custom` 调用包内预编译的着色器库，写法为 `{type: "custom", library: "fx.metallib", function, kind, args, reach, animated}`。`kind` 为 layer（可采样子树）、color 或 distortion；函数在 SwiftUI 规定的参数之后依次收到 `float2 size`（含外扩的画布尺寸）、`float time`，再按顺序收到 `args`：数为 float，2 至 4 个数的列表为 float2 至 float4，颜色为 half4。`reach` 为最大采样偏移，`animated` 为 true 时逐帧更新。用 `xcrun -sdk macosx metal -o fx.metallib fx.metal` 编译，源码以 `#include <SwiftUI/SwiftUI_Metal.h>` 开头，函数标注 `[[stitchable]]`。
 
@@ -309,7 +312,7 @@ player-automation automation call skin.reload --params-json '{"skinID":"example.
 player-automation automation call skin.runtime
 ```
 
-skin.runtime 返回活动节点、帧求值次数与音频读取者计数；CPU、内存和帧时间仍需性能工具测量。
+skin.check 的 `frameNodes` 按重建子节点数从多到少列出进入时间线的节点及其逐帧属性，据此把逐帧的值移到叶子节点上。skin.runtime 返回活动节点、帧求值次数与音频读取者计数；CPU、内存和帧时间仍需性能工具测量。
 
 ## 样例
 

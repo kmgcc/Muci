@@ -95,6 +95,12 @@
       "items": {
         "type": "string"
       }
+    },
+    "let": {
+      "type": "object",
+      "description": "Named expressions, read as let.name from any expression.",
+      "propertyNames": { "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+      "additionalProperties": { "type": "string" }
     }
   },
   "$defs": {
@@ -348,6 +354,18 @@
         },
         "warp": {
           "description": "fog: how strongly the noise folds into itself"
+        },
+        "scrollX": {
+          "description": "fog, particles: how far the field has slid sideways, in points"
+        },
+        "glow": {
+          "description": "text: glyph-hugging glow, {radius, color, core}; glyphMotion.glow sets each glyph's brightness"
+        },
+        "width": {
+          "description": "comet: line width of the head and trail, in points"
+        },
+        "scrollY": {
+          "description": "fog, particles: how far the field has slid down, in points"
         },
         "type": {
           "enum": [

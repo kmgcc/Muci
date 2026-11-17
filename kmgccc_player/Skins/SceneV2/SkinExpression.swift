@@ -14,6 +14,8 @@ indirect enum SkinExpr: Equatable {
     case binary(SkinBinaryOperator, SkinExpr, SkinExpr)
     case conditional(SkinExpr, SkinExpr, SkinExpr)
     case list([SkinExpr])
+    /// `{name: value, …}`: field names in written order, then their values.
+    case record([String], [SkinExpr])
 }
 
 enum SkinUnaryOperator: String { case negate = "-", not = "!" }
@@ -143,7 +145,7 @@ private struct Lexer {
             position += symbol.count
             return Token(kind: .symbol, text: symbol, offset: start)
         }
-        guard "+-*/%!<>?:.,()[]".contains(character) else {
+        guard "+-*/%!<>?:.,()[]{}".contains(character) else {
             throw SkinExpressionError(message: "无法识别“\(character)”", offset: start)
         }
         position += 1
@@ -306,6 +308,23 @@ private struct Parser {
             }
             try expect("]")
             return .list(items)
+        case .symbol where token.text == "{":
+            _ = advance()
+            var names: [String] = [], values: [SkinExpr] = []
+            while !isSymbol("}") {
+                guard current.kind == .identifier || current.kind == .string else {
+                    throw SkinExpressionError(message: "记录需要字段名", offset: current.offset)
+                }
+                let name = advance().text
+                guard !names.contains(name) else { throw SkinExpressionError(message: "字段“\(name)”重复", offset: current.offset) }
+                try expect(":")
+                names.append(name)
+                values.append(try expression(depth: depth + 1))
+                guard isSymbol(",") else { break }
+                _ = advance()
+            }
+            try expect("}")
+            return .record(names, values)
         case .end:
             throw SkinExpressionError(message: "表达式不完整", offset: token.offset)
         default:

@@ -1,7 +1,7 @@
 import Foundation
 
 extension SkinPackageManifest {
-    private enum CodingKeys: String, CodingKey { case formatVersion, hostAPIVersion, version, descriptor, nativePreset, scene, scenes, parameters, requires, uses, fonts }
+    private enum CodingKeys: String, CodingKey { case formatVersion, hostAPIVersion, version, descriptor, nativePreset, scene, scenes, parameters, requires, uses, fonts, lets = "let" }
 
     init(from decoder: any Decoder) throws {
         let keys = try decoder.container(keyedBy: CodingKeys.self)
@@ -19,6 +19,7 @@ extension SkinPackageManifest {
         requires = try keys.decodeIfPresent([String].self, forKey: .requires) ?? []
         uses = try keys.decodeIfPresent([String].self, forKey: .uses) ?? []
         fonts = try keys.decodeIfPresent([String].self, forKey: .fonts) ?? []
+        lets = try keys.decodeIfPresent([String: String].self, forKey: .lets) ?? [:]
     }
 
     func encode(to encoder: any Encoder) throws {
@@ -35,6 +36,7 @@ extension SkinPackageManifest {
         if !requires.isEmpty { try keys.encode(requires, forKey: .requires) }
         if !uses.isEmpty { try keys.encode(uses, forKey: .uses) }
         if !fonts.isEmpty { try keys.encode(fonts, forKey: .fonts) }
+        if !lets.isEmpty { try keys.encode(lets, forKey: .lets) }
     }
 }
 

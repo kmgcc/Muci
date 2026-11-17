@@ -15,6 +15,8 @@ struct SkinPackageManifest: Codable {
     var requires: [String] = []
     var uses: [String] = []
     var fonts: [String] = []
+    /// Named expressions shared by every scene, used as `let.name`.
+    var lets: [String: String] = [:]
 }
 
 enum SkinPackageOrigin {

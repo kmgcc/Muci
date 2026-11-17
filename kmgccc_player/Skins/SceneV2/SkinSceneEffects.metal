@@ -99,9 +99,10 @@ static float skinFbm(float2 p) {
                              cos(position.x * k * 0.7 + time * speed * 0.8) * amplitude * 0.5);
 }
 
-/// Domain-warped fbm between `low` and `high`. `feature` is the size of one fog bank in points.
-[[stitchable]] half4 skinFxFog(float2 position, half4 color, float time, float feature, float speed, float warp, float gain, half4 low, half4 high) {
-    float2 p = position / max(1.0, feature);
+/// Domain-warped fbm between `low` and `high`. `feature` is the size of one fog bank in points;
+/// `scroll` slides the field under the frame, so it reaches on without end.
+[[stitchable]] half4 skinFxFog(float2 position, half4 color, float time, float feature, float speed, float warp, float gain, half4 low, half4 high, float2 scroll) {
+    float2 p = (position + scroll) / max(1.0, feature);
     float t = time * speed;
     float2 q = float2(skinFbm(p + float2(0.0, t * 0.6)), skinFbm(p + float2(5.2, 1.3) - float2(t * 0.4, 0.0)));
     float n = skinFbm(p + warp * q + float2(t * 0.25, -t * 0.15));
