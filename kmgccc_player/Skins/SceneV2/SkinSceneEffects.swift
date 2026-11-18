@@ -181,11 +181,13 @@ struct SkinSceneFog: View {
 nonisolated struct SkinSceneCamera: Equatable, Sendable {
     var x: Double, y: Double, zoom: Double
     var rotation: Double, rotationX: Double, rotationY: Double, perspective: Double
+    var rasterize: Bool
 
     @MainActor init(_ value: SkinValue) {
         x = value[member: "x"].number(); y = value[member: "y"].number(); zoom = max(0.05, value[member: "zoom"].number(1))
         rotation = value[member: "rotation"].number(); rotationX = value[member: "rotationX"].number(); rotationY = value[member: "rotationY"].number()
         perspective = value[member: "perspective"].number(0.5)
+        rasterize = value[member: "rasterize"].isTruthy
     }
 
     /// The child's centre and scale after the camera, for a child at `depth`.
@@ -269,10 +271,17 @@ struct SkinCameraTurn: ViewModifier {
     }
 
     private func turn(_ content: Content, camera: SkinSceneCamera) -> some View {
-        content
-            .rotation3DEffect(.degrees(camera.rotationX), axis: (x: 1, y: 0, z: 0), perspective: camera.perspective)
-            .rotation3DEffect(.degrees(camera.rotationY), axis: (x: 0, y: 1, z: 0), perspective: camera.perspective)
-            .rotationEffect(.degrees(camera.rotation))
+        Group {
+            if camera.rasterize {
+                // Give the perspective transforms one shared surface for overlapping text and shapes.
+                content.drawingGroup()
+            } else {
+                content
+            }
+        }
+        .rotation3DEffect(.degrees(camera.rotationX), axis: (x: 1, y: 0, z: 0), perspective: camera.perspective)
+        .rotation3DEffect(.degrees(camera.rotationY), axis: (x: 0, y: 1, z: 0), perspective: camera.perspective)
+        .rotationEffect(.degrees(camera.rotation))
     }
 }
 
