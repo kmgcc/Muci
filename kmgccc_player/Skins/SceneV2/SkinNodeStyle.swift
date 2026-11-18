@@ -187,27 +187,6 @@ struct SkinGlyphStyle: Equatable, Sendable {
     var padding = 0.0
 }
 
-#if DEBUG
-/// Debug builds report the first few texts whose drawable window leaves less room around the
-/// lines than their padding asks for on some side; ink there is cut or drawn out into lines.
-nonisolated enum SkinGlyphRoomCheck {
-    private static let reported = OSAllocatedUnfairLock(initialState: 0)
-
-    static func check(layout: Text.Layout, window: CGRect, padding: Double) {
-        guard padding > 2, reported.withLock({ $0 }) < 4 else { return }
-        var bounds = CGRect.null
-        for line in layout { bounds = bounds.union(line.typographicBounds.rect) }
-        guard !bounds.isNull, !window.isInfinite else { return }
-        let room = (left: bounds.minX - window.minX, right: window.maxX - bounds.maxX,
-                    top: bounds.minY - window.minY, bottom: window.maxY - bounds.maxY)
-        let least = padding * 0.9
-        guard min(room.left, room.right, room.top, room.bottom) < least else { return }
-        guard reported.withLock({ count in count += 1; return count <= 4 }) else { return }
-        Log.info(String(format: "[SkinGlyphRoom] padding=%.1f left=%.1f right=%.1f top=%.1f bottom=%.1f",
-                        padding, room.left, room.right, room.top, room.bottom), category: .ui)
-    }
-}
-#endif
 
 /// One glyph slice, drawn as its outline when the text is `subpixel` and the outline is known.
 private struct SkinGlyphShape {
@@ -258,9 +237,6 @@ struct SkinGlyphRenderer: TextRenderer {
     }
 
     func draw(layout: Text.Layout, in context: inout GraphicsContext) {
-        #if DEBUG
-        SkinGlyphRoomCheck.check(layout: layout, window: context.clipBoundingRect, padding: style.padding)
-        #endif
         var index = 0
         // Outlines only when every slice is one character, so slice and character stay paired.
         var vector = style.vector
