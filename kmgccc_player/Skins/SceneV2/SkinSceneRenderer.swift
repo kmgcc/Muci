@@ -163,13 +163,21 @@ struct SkinSceneNodeV2View: View {
         let width = dimension(frame[member: "width"], horizontal: true) ?? dimension(frame[member: "size"], horizontal: true)
         let height = dimension(frame[member: "height"], horizontal: false) ?? dimension(frame[member: "size"], horizontal: false)
         let childSize = CGSize(width: width ?? size.width, height: height ?? size.height)
+        let centre = positioned ? self.centre(of: frame, width: width, height: height) : nil
+        let forwardsCamera = node.type == "repeat" && values["layout"]?.textValue == "free"
+        // A viewport-sized, untransformed repeat shares the camera layer's coordinates.
+        // For other repeats, cancel the shared transform at the wrapper and keep its cells local.
+        let compensateRepeat = forwardsCamera && camera?.placement == .rasterLayer
+            && !sharesRasterCoordinates(centre: centre, childSize: childSize, frame: frame, values: values)
+        var repeatCamera = camera
+        if compensateRepeat { repeatCamera?.placement = .compensatedSubtree }
         // A node hidden behind a transition stays mounted so it can fade out. Once the fade has
         // had its time it keeps only this shell: a hidden subtree would otherwise still draw and
         // animate every frame at zero opacity. Showing it again brings the content straight back,
         // so the fade-in plays as before. Only a positioned node does this: in a stack its empty
         // shell would give up the space its siblings are laid out around.
         let collapses = positioned && hidden && transition != nil && node.children.allSatisfy(\.mountQuiet)
-        var result = collapses && collapsed ? AnyView(EmptyView()) : content(values, size: childSize, now: now)
+        var result = collapses && collapsed ? AnyView(EmptyView()) : content(values, size: childSize, now: now, repeatCamera: repeatCamera)
         result = AnyView(result.frame(width: width, height: height, alignment: alignment(frame[member: "align"].textValue)))
         result = AnyView(result.frame(minWidth: dimension(frame[member: "minWidth"], horizontal: true), maxWidth: dimension(frame[member: "maxWidth"], horizontal: true), minHeight: dimension(frame[member: "minHeight"], horizontal: false), maxHeight: dimension(frame[member: "maxHeight"], horizontal: false)))
         if let aspect = frame[member: "aspectRatio"].numberValue, aspect > 0 { result = AnyView(result.aspectRatio(aspect, contentMode: .fit)) }
@@ -281,16 +289,11 @@ struct SkinSceneNodeV2View: View {
         if values["motion"] != nil { result = AnyView(result.environment(\.motionTokens, tokens)) }
         // Positioning comes last: `.position` fills the parent layer, so any hit shape,
         // hover or help attached after it would claim the whole layer.
-        if positioned {
-            let anchor = frame[member: "anchor"].textValue
-            let point = unitPoint(anchor.isEmpty ? "center" : anchor)
-            let x = dimension(frame[member: "x"], horizontal: true, signed: true) ?? size.width / 2
-            let y = dimension(frame[member: "y"], horizontal: false, signed: true) ?? size.height / 2
-            let centre = CGPoint(x: x + (0.5 - point.x) * (width ?? 0), y: y + (0.5 - point.y) * (height ?? 0))
-            // A free repeat hands the camera on to its cells instead of following it as a whole.
-            if let camera, !(node.type == "repeat" && values["layout"]?.textValue == "free") {
+        if let centre {
+            if let camera, !forwardsCamera || compensateRepeat {
                 let paused = !active || camera.source.isStill(data: data, playing: components.snapshot.playback.isPlaying)
-                result = AnyView(result.modifier(SkinCameraFollow(link: camera, centre: centre, depth: values["depth"]?.number() ?? 0, size: size, paused: paused)))
+                let depth: Double? = forwardsCamera ? nil : (values["depth"]?.number() ?? 0)
+                result = AnyView(result.modifier(SkinCameraFollow(link: camera, centre: centre, depth: depth, size: size, paused: paused)))
             }
             result = AnyView(result.position(centre))
         }
@@ -300,11 +303,29 @@ struct SkinSceneNodeV2View: View {
 
     private var readerID: String { node.id + ":" + (locals["index"]?.textValue ?? "") }
 
+    private func centre(of frame: SkinValue, width: CGFloat?, height: CGFloat?) -> CGPoint {
+        let anchor = frame[member: "anchor"].textValue
+        let point = unitPoint(anchor.isEmpty ? "center" : anchor)
+        let x = dimension(frame[member: "x"], horizontal: true, signed: true) ?? size.width / 2
+        let y = dimension(frame[member: "y"], horizontal: false, signed: true) ?? size.height / 2
+        return CGPoint(x: x + (0.5 - point.x) * (width ?? 0), y: y + (0.5 - point.y) * (height ?? 0))
+    }
+
+    private static let plainRepeatProperties: Set<String> = ["frame", "layout", "items", "limit", "visible", "hitTesting", "zIndex"]
+    private static let plainRepeatFrame: Set<String> = ["x", "y", "width", "height", "size", "anchor", "align"]
+
+    private func sharesRasterCoordinates(centre: CGPoint?, childSize: CGSize, frame: SkinValue, values: [String: SkinValue]) -> Bool {
+        guard centre == CGPoint(x: size.width / 2, y: size.height / 2), childSize == size,
+              node.mask == nil, Self.plainRepeatProperties.isSuperset(of: values.keys) else { return false }
+        if case .record(let fields) = frame { return Self.plainRepeatFrame.isSuperset(of: fields.keys) }
+        return frame.type == .null
+    }
+
     private func child(_ node: SkinCompiledSceneNode, size: CGSize, positioned: Bool = false, locals: [String: SkinValue]? = nil, camera: SkinCameraLink? = nil) -> some View {
         SkinSceneNodeV2View(node: node, data: data, components: components, size: size, locals: locals ?? self.locals, positioned: positioned, camera: camera)
     }
 
-    private func content(_ values: [String: SkinValue], size: CGSize, now: Double) -> AnyView {
+    private func content(_ values: [String: SkinValue], size: CGSize, now: Double, repeatCamera: SkinCameraLink?) -> AnyView {
         let spacing = values["spacing"]?.number(12) ?? 12
         let foreground = values["color"]?.colorValue?.swiftUIColor ?? (backdropReading ?? inheritedReading)?.primary
             ?? data.theme["theme.appForeground.primary"]?.colorValue?.swiftUIColor ?? .primary
@@ -314,7 +335,7 @@ struct SkinSceneNodeV2View: View {
             let stack = AnyView(ZStack(alignment: .topLeading) { ForEach(node.children) { child($0, size: size, positioned: true, camera: link) } }.frame(width: size.width, height: size.height))
             guard let link else { return stack }
             let paused = !active || link.source.isStill(data: data, playing: components.snapshot.playback.isPlaying)
-            return AnyView(stack.modifier(SkinCameraTurn(link: link, paused: paused)))
+            return AnyView(stack.modifier(SkinCameraTurn(link: link, size: size, paused: paused)))
         case "row": return AnyView(HStack(spacing: spacing) { ForEach(node.children) { child($0, size: size) } })
         case "column": return AnyView(VStack(spacing: spacing) { ForEach(node.children) { child($0, size: size) } })
         case "stack":
@@ -339,7 +360,7 @@ struct SkinSceneNodeV2View: View {
                 if let template = node.children.first {
                     let scoped = locals.merging(["item": items[index], "index": .number(Double(index)), "count": .number(Double(items.count))]) { _, new in new }
                     // Repeat cells carry their index so a scroll can follow `scrollTo`.
-                    child(template, size: size, positioned: free, locals: scoped, camera: free ? camera : nil).id(index)
+                    child(template, size: size, positioned: free, locals: scoped, camera: free ? repeatCamera : nil).id(index)
                 }
             })
             if free { return AnyView(ZStack(alignment: .topLeading) { cells }.frame(width: size.width, height: size.height)) }
@@ -520,11 +541,18 @@ struct SkinSceneNodeV2View: View {
         guard property.tier == .frame, moves else {
             return SkinCameraLink(source: cameraSource, steady: SkinSceneCamera(property.evaluate(context(now: now))))
         }
+        let placement: SkinCameraLink.Placement
+        if case .object(let fields) = property, case .expression(let flag)? = fields["rasterize"],
+           flag.constantValue?.isTruthy == true {
+            placement = .rasterLayer
+        } else {
+            placement = .local
+        }
         let view = self
         cameraSource.inputs = node.cameraInputs
         cameraSource.followers = followers
         cameraSource.evaluate = { now in SkinSceneCamera(property.evaluate(view.context(now: now))) }
-        return SkinCameraLink(source: cameraSource, steady: nil)
+        return SkinCameraLink(source: cameraSource, steady: nil, placement: placement)
     }
 
     private func perform(_ event: String, now: Double, gesture: SkinValue? = nil) {

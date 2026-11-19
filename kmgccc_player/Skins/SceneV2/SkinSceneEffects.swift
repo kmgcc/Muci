@@ -191,11 +191,18 @@ nonisolated struct SkinSceneCamera: Equatable, Sendable {
     }
 
     /// The child's centre and scale after the camera, for a child at `depth`.
-    func place(_ point: CGPoint, depth: Double, in size: CGSize) -> (point: CGPoint, scale: Double) {
+    func place(_ point: CGPoint, depth: Double?, in size: CGSize) -> (point: CGPoint, scale: Double) {
+        guard let depth else { return (point, 1) }
         let factor = 1 / (1 + max(-0.9, depth))
         let scale = 1 + (zoom - 1) * factor
         let centre = CGPoint(x: size.width / 2, y: size.height / 2)
         return (CGPoint(x: centre.x + (point.x - centre.x - x * factor) * scale, y: centre.y + (point.y - centre.y - y * factor) * scale), scale)
+    }
+
+    /// The depth-zero camera transform, applied to the completed stage image.
+    func rasterTransform(in size: CGSize) -> CGAffineTransform {
+        let origin = place(.zero, depth: 0, in: size).point
+        return CGAffineTransform(a: zoom, b: 0, c: 0, d: zoom, tx: origin.x, ty: origin.y)
     }
 }
 
@@ -223,11 +230,32 @@ final class SkinCameraSource {
 /// What a layer hands its children: a camera that changes only with data (`steady`), or the
 /// source to ask each frame. The source is compared by identity, so per-frame motion never
 /// re-renders the children themselves.
-struct SkinCameraLink: Equatable {
+nonisolated struct SkinCameraLink: Equatable {
+    enum Placement: Equatable {
+        case local, rasterLayer, compensatedSubtree
+    }
+
     let source: SkinCameraSource
     let steady: SkinSceneCamera?
+    var placement: Placement = .local
 
-    nonisolated static func == (lhs: Self, rhs: Self) -> Bool { lhs.source === rhs.source && lhs.steady == rhs.steady }
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.source === rhs.source && lhs.steady == rhs.steady && lhs.placement == rhs.placement
+    }
+}
+
+/// The outer raster transform and its child placements use the same camera sample.
+nonisolated struct SkinRasterCameraFrame: Equatable {
+    let source: SkinCameraSource
+    let camera: SkinSceneCamera
+
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.source === rhs.source && lhs.camera == rhs.camera
+    }
+}
+
+extension EnvironmentValues {
+    @Entry var skinRasterCameraFrame: SkinRasterCameraFrame?
 }
 
 /// Moves one positioned child with its layer's camera: geometry only, on a timeline that wraps
@@ -235,12 +263,18 @@ struct SkinCameraLink: Equatable {
 struct SkinCameraFollow: ViewModifier {
     let link: SkinCameraLink
     let centre: CGPoint
-    let depth: Double
+    /// A compensated repeat wrapper has no camera placement of its own.
+    let depth: Double?
     let size: CGSize
     let paused: Bool
+    @Environment(\.skinRasterCameraFrame) private var rasterFrame
 
     func body(content: Content) -> some View {
-        if let steady = link.steady {
+        if link.placement == .rasterLayer, depth == 0 {
+            content
+        } else if link.placement != .local, let rasterFrame, rasterFrame.source === link.source {
+            place(content, camera: rasterFrame.camera)
+        } else if let steady = link.steady {
             place(content, camera: steady)
         } else {
             TimelineView(.animation(minimumInterval: nil, paused: paused)) { timeline in
@@ -250,7 +284,12 @@ struct SkinCameraFollow: ViewModifier {
     }
 
     private func place(_ content: Content, camera: SkinSceneCamera) -> some View {
-        let placed = camera.place(centre, depth: depth, in: size)
+        var placed = camera.place(centre, depth: depth, in: size)
+        if link.placement == .rasterLayer {
+            // Leave only this child's difference from the shared pan and zoom in the bitmap.
+            placed.point = placed.point.applying(camera.rasterTransform(in: size).inverted())
+            placed.scale /= camera.zoom
+        }
         return content.scaleEffect(placed.scale).offset(x: placed.point.x - centre.x, y: placed.point.y - centre.y)
     }
 }
@@ -258,7 +297,9 @@ struct SkinCameraFollow: ViewModifier {
 /// Turns a camera layer as a whole.
 struct SkinCameraTurn: ViewModifier {
     let link: SkinCameraLink
+    let size: CGSize
     let paused: Bool
+    @Environment(\.displayScale) private var displayScale
 
     func body(content: Content) -> some View {
         if let steady = link.steady {
@@ -272,7 +313,9 @@ struct SkinCameraTurn: ViewModifier {
 
     private func turn(_ content: Content, camera: SkinSceneCamera) -> some View {
         Group {
-            if camera.rasterize {
+            if link.placement == .rasterLayer {
+                rasterizedStage(content, camera: camera)
+            } else if camera.rasterize {
                 // Give the perspective transforms one shared surface for overlapping text and shapes.
                 content.drawingGroup()
             } else {
@@ -282,6 +325,29 @@ struct SkinCameraTurn: ViewModifier {
         .rotation3DEffect(.degrees(camera.rotationX), axis: (x: 1, y: 0, z: 0), perspective: camera.perspective)
         .rotation3DEffect(.degrees(camera.rotationY), axis: (x: 0, y: 1, z: 0), perspective: camera.perspective)
         .rotationEffect(.degrees(camera.rotation))
+    }
+
+    private func rasterizedStage(_ content: Content, camera: SkinSceneCamera) -> some View {
+        let transform = camera.rasterTransform(in: size)
+        let viewport = CGRect(origin: .zero, size: size)
+        let pixel = 1 / max(1, displayScale)
+        let tile = 32 * pixel
+        // Keep the inverse viewport and a sampling border inside the bitmap. Align its edges
+        // to backing pixels so a bounds change does not shift the raster's sampling grid.
+        let source = viewport.applying(transform.inverted()).insetBy(dx: -pixel, dy: -pixel)
+        let left = floor(source.minX / tile) * tile
+        let top = floor(source.minY / tile) * tile
+        let right = ceil(source.maxX / tile) * tile
+        let bottom = ceil(source.maxY / tile) * tile
+        let insets = EdgeInsets(top: -top, leading: -left, bottom: bottom - size.height, trailing: right - size.width)
+        let restore = EdgeInsets(top: top, leading: left, bottom: size.height - bottom, trailing: size.width - right)
+        return content
+            .environment(\.skinRasterCameraFrame, SkinRasterCameraFrame(source: link.source, camera: camera))
+            .padding(insets)
+            .drawingGroup()
+            .padding(restore)
+            .transformEffect(transform)
+            .clipped()
     }
 }
 

@@ -244,7 +244,7 @@ token 可以是名称，也可以是与 `animation` 相同的记录。`spring` �
 
 `camera` 写在 `layer` 上，记录含 x、y、zoom、rotation、rotationX、rotationY 与 perspective。层内定位的子节点随镜头平移与缩放，幅度乘以 `1 / (1 + depth)`：`depth` 为 0 时完全跟随，越大越远、移动越少，负值则更近。旋转作用于整层，rotationX 与 rotationY 带透视。把镜头写成随 `time` 缓慢变化的表达式，画面便有持续的漂移与缓推。
 
-`camera.rasterize` 默认为 `false`。设为 `true` 会在透视旋转前把图层内容绘制到一张透明位图，适用于文字和形状等由 SwiftUI 绘制的图层。每次图层内容更新会增加一次离屏绘制。包含视频、AppKit 视图或其他原生平台内容的图层应使用默认值。
+`camera.rasterize` 默认为 `false`。设为 `true` 会在透视旋转前把图层内容绘制到一张透明位图，适用于文字和形状等由 SwiftUI 绘制的图层。相机以常量 `true` 启用时，共同的平移与缩放作用于合成后的位图，图层中各节点仍按自身的 `depth` 保留景深差。每次图层内容更新会增加一次离屏绘制。包含视频、AppKit 视图或其他原生平台内容的图层应使用默认值。
 
 `contextMenu` 是带 title 与 do 的菜单项数组。宿主保留全局快捷键、空白处恢复菜单和全屏所需入口。
 
