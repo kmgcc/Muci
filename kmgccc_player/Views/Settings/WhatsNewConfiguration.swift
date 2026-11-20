@@ -56,9 +56,24 @@ enum WhatsNewConfiguration {
         title: "什么是新的",
         features: [
             WhatsNew.Feature(
+                image: .init(systemName: "cube.transparent.fill", foregroundColor: .blue),
+                title: "皮肤 GPU 渲染",
+                subtitle: "封面、文字、描边与光环改由 Metal 绘制，舞台运动更顺滑。"
+            ),
+            WhatsNew.Feature(
+                image: .init(systemName: "curlybraces", foregroundColor: .pink),
+                title: "皮肤脚本",
+                subtitle: "自定义皮肤支持 JavaScript 脚本，可自行编排舞台与镜头运动。"
+            ),
+            WhatsNew.Feature(
+                image: .init(systemName: "slider.horizontal.3", foregroundColor: .green),
+                title: "新增播放界面组件",
+                subtitle: "进度条、操作栈与播放模式栈可作为独立组件摆放。"
+            ),
+            WhatsNew.Feature(
                 image: .init(systemName: "books.vertical", foregroundColor: .orange),
                 title: "资料库修复",
-                subtitle: "修复资料库打开或删除异常的问题。"
+                subtitle: "修复移除资料库根目录时的异常。"
             )
         ],
         primaryAction: .init(
