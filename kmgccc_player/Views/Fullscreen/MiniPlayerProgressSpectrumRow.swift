@@ -28,8 +28,8 @@ struct MiniPlayerProgressSpectrumRow: View {
     let spectrumUsesDarkForeground: Bool
     let ledToneVariant: PerceptualToneLadder.LEDToneVariant
     let adaptsWideVisualizationSegments: Bool
-    /// Capsules shown when the row is too narrow to grow. Six everywhere except
-    /// the fullscreen mini player, which starts at seven.
+    /// Capsules shown when the row is too narrow to grow (or always, when the
+    /// row is fixed). Six everywhere except the fullscreen mini player's seven.
     let spectrumBaselineCount: Int
     let usesVisualizationAsCompactProgress: Bool
     let isolatesGeometryAnimation: Bool
@@ -60,44 +60,45 @@ struct MiniPlayerProgressSpectrumRow: View {
         max(18 * scale, timeFontSize + 6 * scale)
     }
     private var compactSpectrumLabelCutoutFeather: CGFloat { 3 * scale }
-    // A window row should not gain extra dots while it is still in its normal
-    // compact range; once it is genuinely wide, grow the right-hand visualizer
-    // so the progress track does not consume empty space.
-    private var baseVisualizationCount: Int { visualization == .led ? 5 : 9 }
-    private var wideVisualizationStartWidth: CGFloat { max(260, 300 * scale) }
-    /// The app's minimum content width (`WindowMetrics.minimumContentSize`).
-    /// A window this narrow shows exactly `spectrumBaselineCount` capsules.
-    static let minimumWindowWidth: CGFloat = 980
-    /// Points of extra window width per additional capsule.
-    static let windowWidthPerCapsule: CGFloat = 28
-    /// Widest the spectrum slot may grow; beyond this the capsules get too dense
-    /// to read and the progress track would lose its drag target.
-    private var spectrumMaximumWidth: CGFloat { 300 * scale }
-    /// Hard ceiling on capsule count, derived from the slot ceiling.
-    private var spectrumMaximumCount: Int {
-        let baseline = spectrumBaselineCount
-        let room = max(0, spectrumMaximumWidth - spectrumIntrinsicWidth(count: baseline))
-        return baseline + Int(room / spectrumBarPitch)
+    // Segment counts beside the progress track. A fixed row (fullscreen) always
+    // shows the baseline. An adaptive row (window mini player, scene skins)
+    // holds the baseline through its narrow range, then adds one segment per
+    // `segmentGrowthStep` of extra row width.
+    private static let ledBaselineCount = 5
+    private var visualizationBaselineCount: Int {
+        visualization == .led ? Self.ledBaselineCount : spectrumBaselineCount
     }
+    /// Row width at which an adaptive row starts adding segments.
+    private var segmentGrowthStartWidth: CGFloat { 360 * scale }
+    /// Extra row width each additional segment costs.
+    private var segmentGrowthStep: CGFloat { visualization == .led ? 84 * scale : 60 * scale }
+    /// Widest the visualizer may grow; beyond this the segments get too dense
+    /// to read and the progress track would lose its drag target.
+    private var visualizationMaximumWidth: CGFloat { visualization == .led ? 220 * scale : 300 * scale }
+    /// Seek target kept for the progress track when the row is tight.
+    private var progressTrackReservedWidth: CGFloat { 58 * scale }
+    private var ledDotSize: CGFloat { 10 * scale }
+    private var ledSpacing: CGFloat { 6 * scale }
     /// Capsule width. Matches the progress bar's own thickness (`barHeight`), so a
     /// capsule resting at zero height is a circle with exactly the radius of the
     /// bar's rounded ends.
     private var spectrumCapsuleWidth: CGFloat { 6 * scale }
-    /// Capsule pitch of the spectrum row (bar + gap).
-    private var spectrumBarPitch: CGFloat { 10 * scale }
     /// Exact width `count` capsules need.
     private func spectrumIntrinsicWidth(count: Int) -> CGFloat {
         let bars = CGFloat(max(1, count))
         return bars * spectrumCapsuleWidth + (bars - 1) * 4 * scale + 6 * scale
     }
-    private var wideVisualizationMaximumWidth: CGFloat {
-        max(spectrumExpandedWidth, 220 * scale)
+    /// Slot width for `count` segments. Capsules are framed exactly; the LED
+    /// keeps its classic slot until its dots need more.
+    private func visualizationSlotWidth(count: Int) -> CGFloat {
+        switch visualization {
+        case .led:
+            let dots = CGFloat(max(1, count))
+            return max(spectrumExpandedWidth, dots * ledDotSize + (dots - 1) * ledSpacing)
+        case .spectrum, .off:
+            return spectrumIntrinsicWidth(count: count)
+        }
     }
-    
-    /// Width of the window this row lives in. The row itself is a fixed slice of
-    /// the mini player pill, so its own width barely changes when the window
-    /// grows; the capsule count has to follow the window instead.
-    @State private var windowWidth: CGFloat = 0
 
     /// Unified hover state for the entire row
     @State private var isRowHovered = false
@@ -183,9 +184,6 @@ struct MiniPlayerProgressSpectrumRow: View {
         }
         .frame(maxHeight: .infinity)
         .clipped()
-        .background(WindowWidthProbe { width in
-            if abs(width - windowWidth) >= 1 { windowWidth = width }
-        })
         // CRITICAL: Single hover handler for the entire row
         .onHover { hovering in
             FullscreenBottomControlsAnimationPolicy.animateGeometry(
@@ -268,24 +266,10 @@ struct MiniPlayerProgressSpectrumRow: View {
     
     private func visualizationSection(availableWidth: CGFloat, availableHeight: CGFloat, revealProgress: CGFloat) -> some View {
         let height = min(spectrumHeight, availableHeight)
-        var expandedWidth = resolvedVisualizationWidth(for: availableWidth)
-        let count: Int
-        if visualization == .spectrum {
-            // Derive the count from the width the row is willing to give, then
-            // size the frame to exactly what those capsules need. Growing the
-            // count past the frame (the old order) pushed bars outside the slot
-            // and they got clipped at both ends.
-            count = wideSpectrumSegmentCount(availableWidth: availableWidth)
-            // Frame the row at exactly what `count` capsules need, so no dead
-            // margin is left either side of the bars.
-            expandedWidth = spectrumIntrinsicWidth(count: count)
-        } else {
-            let shouldAdaptWideSegments = adaptsWideVisualizationSegments
-                && availableWidth > wideVisualizationStartWidth
-            count = shouldAdaptWideSegments
-                ? max(baseVisualizationCount, adaptiveSegmentCount(for: expandedWidth))
-                : baseVisualizationCount
-        }
+        // Count first, then frame the slot at exactly what those segments need,
+        // so nothing is clipped and no dead margin is left beside them.
+        let count = visualizationSegmentCount(rowWidth: availableWidth)
+        let expandedWidth = visualizationSlotWidth(count: count)
         return visualizationContent(
             count: count,
             width: expandedWidth,
@@ -476,23 +460,21 @@ struct MiniPlayerProgressSpectrumRow: View {
     }
 
 
-    /// Capsule count for this row width. Growth starts only once the row is
-    /// wider than `spectrumWideSegmentStartWidth`, and each capsule costs one
-    /// pitch of the extra width the row hands over — never `count = f(slot)`,
-    /// which showed a dozen bars in a window barely wider than the minimal one.
-    private func wideSpectrumSegmentCount(availableWidth: CGFloat) -> Int {
-        let baseline = spectrumBaselineCount
+    /// Segment count for this row width. It follows the row, which is the room
+    /// the visualizer actually shares with the progress track: the window width
+    /// stays large while side panels or the fullscreen surface narrow the row.
+    private func visualizationSegmentCount(rowWidth: CGFloat) -> Int {
+        let baseline = visualizationBaselineCount
         guard adaptsWideVisualizationSegments else { return baseline }
-        // Six capsules at the narrowest window, one more per ~28pt of window
-        // width. Deriving this from the row instead pinned the count forever:
-        // the pill is a fixed slice, so 980pt and 1470pt windows measured the
-        // same row width.
-        let width = windowWidth > 0 ? windowWidth : availableWidth
-        let extra = max(0, width - Self.minimumWindowWidth)
-        let count = min(spectrumMaximumCount, baseline + Int(extra / Self.windowWidthPerCapsule))
+        let extra = max(0, rowWidth - segmentGrowthStartWidth)
+        var count = baseline + Int(extra / segmentGrowthStep)
+        let ceiling = min(visualizationMaximumWidth, rowWidth - progressTrackReservedWidth)
+        while count > baseline, visualizationSlotWidth(count: count) > ceiling {
+            count -= 1
+        }
         #if DEBUG
         if ProcessInfo.processInfo.environment["KMGCCC_SPECTRUM_DEBUG"] == "1" {
-            Self.probeCount(count, slot: availableWidth)
+            Self.probeCount(count, slot: rowWidth)
         }
         #endif
         return count
@@ -523,17 +505,6 @@ struct MiniPlayerProgressSpectrumRow: View {
         }
         .frame(width: filledWidth)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-    }
-
-    private func resolvedVisualizationWidth(for availableWidth: CGFloat) -> CGFloat {
-        // Only the LED branch still sizes itself from the row; the spectrum sets
-        // its own width from the capsule count.
-        let growthStartWidth = wideVisualizationStartWidth
-        let extraWidth = adaptsWideVisualizationSegments ? max(0, availableWidth - growthStartWidth) : 0
-        let grownWidth = spectrumExpandedWidth + extraWidth * 0.38
-        // Reserve a usable seek target when the neighbouring controls expand.
-        let availableSpectrumWidth = max(0, availableWidth - 58 * scale)
-        return min(wideVisualizationMaximumWidth, grownWidth, availableSpectrumWidth)
     }
 
     private func seekGesture(width: CGFloat) -> some Gesture {
@@ -739,53 +710,4 @@ struct MiniPlayerProgressSpectrumRow: View {
     }
     .padding(40)
     .frame(width: 800)
-}
-
-
-/// Reports the width of the window hosting this row, and keeps it current while
-/// the user resizes. The spectrum's capsule count is a function of the window,
-/// not of the row: the row is a fixed slice of the mini player pill.
-private struct WindowWidthProbe: NSViewRepresentable {
-    let onChange: (CGFloat) -> Void
-
-    func makeNSView(context: Context) -> ProbeView {
-        let view = ProbeView()
-        view.onChange = onChange
-        return view
-    }
-
-    func updateNSView(_ view: ProbeView, context: Context) {
-        view.onChange = onChange
-        view.report()
-    }
-
-    final class ProbeView: NSView {
-        var onChange: ((CGFloat) -> Void)?
-
-        override func viewDidMoveToWindow() {
-            super.viewDidMoveToWindow()
-            NotificationCenter.default.removeObserver(
-                self, name: NSWindow.didResizeNotification, object: nil
-            )
-            guard let window else { return }
-            NotificationCenter.default.addObserver(
-                self,
-                selector: #selector(handleResize),
-                name: NSWindow.didResizeNotification,
-                object: window
-            )
-            report()
-        }
-
-        @objc private func handleResize() { report() }
-
-        func report() {
-            guard let width = window?.frame.width, width > 0 else { return }
-            onChange?(width)
-        }
-
-        deinit {
-            NotificationCenter.default.removeObserver(self)
-        }
-    }
 }

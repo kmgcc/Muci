@@ -413,6 +413,7 @@
             "control.previous", "control.next", "control.progress", "control.volume", "control.expandableVolume", "control.playbackMode",
             "control.like", "control.dislike", "control.outputDevice", "control.queue", "control.lyricsToggle", "control.fullscreen", "control.settings", "control.quickPanel",
             "control.actionButton", "control.glassButton", "control.glassTriplePill",
+            "control.progressLine", "control.actionStack", "control.playbackModeStack",
             "text.trackInfo", "text.trackDescription", "text.marquee", "transition.bokeh",
             "panel.queue", "panel.quickAppearance", "panel.trackDetail", "sheet.trackEdit", "sheet.externalInfo", "sheet.settings", "menu.trackContext", "menu.player",
             "behavior.autoHide", "behavior.lyricsEndAutoHide", "behavior.scrollVolume", "behavior.pointerOcclusion", "behavior.windowDrag",

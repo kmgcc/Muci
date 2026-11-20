@@ -41,6 +41,24 @@ struct SkinSceneSwitchTransition: ViewModifier {
     }
 }
 
+/// The play queue over a skin scene, coloured by the skin's control foreground as the fullscreen
+/// queue is; chrome skins keep the App's own colours.
+struct SkinSceneQueuePanel: View {
+    @Environment(\.skinScenePresentation) private var presentation
+    @Environment(\.colorScheme) private var colorScheme
+    @EnvironmentObject private var themeStore: ThemeStore
+
+    var body: some View {
+        let style = presentation.controlForeground
+        let foreground = style == .chrome ? nil : FullscreenMiniPlayerForegroundStrategy.resolveOverlaySurface(
+            palette: themeStore.semanticPalette, localArtworkPolarity: nil,
+            controlForeground: style, colorScheme: colorScheme
+        )
+        WindowPlaybackQueuePanelView(foreground: foreground)
+            .environment(\.colorScheme, foreground?.colorScheme ?? colorScheme)
+    }
+}
+
 /// Authors own content; the host owns the single native surface and recovery affordances.
 struct SkinSceneHost: View {
     let skin: any NowPlayingSkin
@@ -105,7 +123,7 @@ struct SkinSceneHost: View {
             )
 
             if uiState.isWindowPlaybackQueueVisible && isActive && !sceneDrawsQueue {
-                WindowPlaybackQueuePanelView()
+                SkinSceneQueuePanel()
                     .frame(width: min(viewport.size.width, 620), height: viewport.size.height)
                     .frame(maxWidth: .infinity, alignment: .trailing)
                     .skinControlRegion()

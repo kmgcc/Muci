@@ -396,9 +396,9 @@ struct FullscreenMiniPlayerView: View {
             ledToneVariant: SkinRegistry.fullscreenSkin(for: settings.fullscreen.skinID).descriptor.presentation.controlForeground == .fixedLight
                 ? .appleStyleBright
                 : .miniPlayer,
-            // Fullscreen starts at seven capsules instead of six, and keeps
-            // growing with the bar width like the window mini player.
-            adaptsWideVisualizationSegments: true,
+            // Fullscreen keeps a fixed visualizer in every skin: five LEDs or
+            // seven capsules, whatever the screen width.
+            adaptsWideVisualizationSegments: false,
             spectrumBaselineCount: 7,
             progress: progressDisplayTime(for: presentation),
             duration: presentation.duration,
