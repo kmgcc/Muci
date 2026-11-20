@@ -98,8 +98,16 @@ struct SkinSceneNodeV2View: View {
     @Environment(\.skinBackdropReading) private var inheritedReading
     @Namespace private var glassNamespace
 
+    /// A `render: "gpu"` layer draws on its own display clock and evaluates its own `visible`
+    /// and `opacity` there, so its view updates only when data changes.
+    private var gpuSurface: Bool {
+        guard node.type == "layer", case .expression(let render)? = node.properties["render"] else { return false }
+        return render.constantValue?.textValue == "gpu" && SkinGPURenderer.shared != nil
+    }
+
     private var needsFrames: Bool {
-        node.tier == .frame || node.watches.contains(where: { $0.value.tier == .frame }) || node.properties["keyframes"] != nil || node.properties["glyphMotion"] != nil
+        if gpuSurface { return false }
+        return node.tier == .frame || node.watches.contains(where: { $0.value.tier == .frame }) || node.properties["keyframes"] != nil || node.properties["glyphMotion"] != nil
             || ["spectrum", "waveform", "meter", "particles", "shader", "fog", "lyricLine", "comet"].contains(node.type)
     }
 
@@ -150,7 +158,8 @@ struct SkinSceneNodeV2View: View {
     private func render(at now: Double) -> AnyView {
         let context = context(now: now, memo: SkinLetMemo())
         // A hidden node with no transition draws nothing, so the rest of its values are not evaluated.
-        if node.hidesWithoutTransition, node.properties["visible"]?.evaluate(context).isTruthy == false {
+        let gpuSurface = gpuSurface
+        if !gpuSurface, node.hidesWithoutTransition, node.properties["visible"]?.evaluate(context).isTruthy == false {
             return AnyView(EmptyView())
         }
         var values = node.values(context, cache: valueCache)
@@ -159,6 +168,7 @@ struct SkinSceneNodeV2View: View {
             if SkinSceneCompiler.effectNames.contains(name) { values[name] = effect[member: "value"] }
         }
         applyKeyframes(&values, now: now)
+        if gpuSurface { values["visible"] = nil; values["opacity"] = nil }
         // With a transition the node stays mounted and animates to its hidden look instead.
         let hidden = values["visible"]?.isTruthy == false
         let transition = values["transition"]
@@ -605,6 +615,7 @@ struct SkinSceneNodeV2View: View {
         if let filter = values["filter"] { filters = filter.type == .list ? filter.listValue : [filter] }
         var grain = 0.0
         if let entry = filters.first(where: { $0[member: "type"].textValue == "grain" }) { grain = entry[member: "amount"].number(0.08) }
+        let lens = filters.first(where: { $0[member: "type"].textValue == "fov" }).map(SkinGPULens.init)
         let view = self, node = node, followers = followers, data = data
         var camera: (@MainActor (Double) -> SkinSceneCamera)?
         if let property = node.camera {
@@ -613,7 +624,7 @@ struct SkinSceneNodeV2View: View {
         return SkinGPULayerInputs(
             node: node, data: data, size: size, locals: locals, live: live, motionTokens: motionTokens, moves: moves,
             playing: components.snapshot.playback.isPlaying, active: active, renderScale: renderScale,
-            resolution: values["resolution"]?.numberValue ?? 1, grain: grain, camera: camera,
+            resolution: values["resolution"]?.numberValue ?? 1, grain: grain, lens: lens, camera: camera,
             cameraStill: { playing, timeMoves in
                 node.camera == nil || node.cameraInputs.isStill(playing: playing, timeMoves: timeMoves, following: followers.isMoving)
             },

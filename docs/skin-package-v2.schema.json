@@ -336,7 +336,7 @@
         },
         "render": {
           "enum": ["gpu"],
-          "description": "layer: draws its children into one Metal surface on its own display clock, resting while still. Children are rectangle shapes, gradients, fog and particles (particles may carry motionBlur); the camera takes x, y, zoom and perspective; the layer filter is grain, added as the surface scales up; resolution sets the surface resolution"
+          "description": "layer: draws its children into one Metal surface on its own display clock, resting while still. Children are shapes (rectangle, circle, ellipse and path, with stroke, trim, rotation and blur; a path may take an angular gradient mask), gradients, fog, particles (particles may carry motionBlur), comets and text, plus nested layers (with offsetX, offsetY) and repeats with layout free; text takes font, size, tracking, alignment, line limit, color, rotation, scale, offsets, blur, glow and glyphMotion and is drawn glyph by glyph from cached masks; the camera takes x, y, zoom, perspective, rotation, rotationX and rotationY; the layer filter is grain and fov, with distortion, chromatic aberration and edge blur drawn on the surface and grain added as it scales up; resolution sets the surface resolution"
         },
         "outline": {
           "description": "text, lyricLine: a width, or {width, color, hollow}; hollow keeps only the ring"

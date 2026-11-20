@@ -179,8 +179,8 @@ manifest 顶层的 `let` 为反复出现的表达式命名，例如 `"let": {"he
 | `spring(token, 秒)` | 该 token 的弹簧在给定秒数时的进度，自 0 起、到 1 落定，带回弹的 token 会略过 1 |
 | `springVelocity(token, 秒)` | 同一弹簧每秒的进度变化 |
 | `springTo(秒, 时长, 弹性)` | 一段给定时长与弹性（0 到 1）的 MotionKit 弹簧在该时刻的进度；弹性为 0 时平滑落定、不越过 1。时长与弹性可以来自参数，让用户调整入场的长短与回弹 |
-| `follow(目标, token)` | 一个追随目标的弹簧；目标改变时从当前位置与速度接着追，不会跳变。token 省略时为 control |
-| `followVelocity(目标, token)` | 同一追随弹簧的速度，单位为目标单位每秒，适合做拉伸与倾斜 |
+| `follow(目标, token, 缓起)` | 一个追随目标的弹簧；目标改变时从当前位置与速度接着追。token 省略时为 control。缓起（秒）让目标跳变后的拉力逐渐加大，镜头便像手持一样先倾身再移动 |
+| `followVelocity(目标, token, 缓起)` | 同一追随弹簧的速度，单位为目标单位每秒，适合做拉伸与倾斜 |
 
 token 可以是名称，也可以是与 `animation` 相同的记录。`spring` 适合有起点的动作，例如 `"=mix(-40, 0, spring(\"emphasis\", glyph.age))"` 让字带着回弹落位；`follow` 适合跟随会变的值，例如 `"=follow(self.hovered ? 1.08 : 1, \"emphasis\")"`。每个 `follow` 在每个节点与每个字上各有一份弹簧；数字写成 `spring(t, 频率, 阻尼)` 时仍是自 1 衰减到 0 的振荡。
 
@@ -280,7 +280,7 @@ token 可以是名称，也可以是与 `animation` 相同的记录。`spring` �
 
 节点的 `resolution`（0.25 至 1）让其内容以更低分辨率绘制后放大，再乘以渲染质量，适合雾、渐变等柔和的背景；节点自身的滤镜与泛光随后按常规分辨率叠加，颗粒依旧清晰。
 
-整屏背景可在 layer 上写 `render: "gpu"`，其子节点合进一张 Metal 画面，按自己的显示时钟绘制，画面静止时随之停歇。子节点限于矩形 `shape`、`gradient`、`fog` 与 `particles`，各自为单个图形，属性与表达式照常书写，粒子可带 `motionBlur`。图层的镜头取 `x`、`y`、`zoom` 与 `perspective`，滤镜取 `grain`，颗粒在放大到画面时叠加；`resolution` 决定这张画面的分辨率。
+整屏画面可在 layer 上写 `render: "gpu"`，其子节点合进一张 Metal 画面，按自己的显示时钟绘制，画面静止时随之停歇。子节点可用 `shape`（矩形、圆、椭圆与 `path`，可带 `stroke`、`trimStart`、`trimEnd`、`rotation`、`blur`，`path` 还可带 angular `gradient` 遮罩）、`gradient`、`fog`、`particles`、`comet` 与 `text`，也可嵌套 `layer`（可带 `offsetX`、`offsetY`）与 `layout: "free"` 的 `repeat`；属性与表达式照常书写，粒子可带 `motionBlur`，嵌套节点各按自己的 `depth` 取镜头视差，未写时随父层。画面空无一物时随之隐去。`text` 取字体、字号、字距、对齐、行数、颜色、旋转、缩放、偏移、`blur`、`glow` 与 `glyphMotion`，字形经 Core Text 排版后按字号缓存，在 GPU 上逐字绘制，适合整屏逐字运动的歌词。图层的镜头取 `x`、`y`、`zoom`、`perspective`、`rotation`、`rotationX` 与 `rotationY`，倾斜与同一镜头下的其他图层重合；滤镜取 `grain` 与 `fov`，畸变、色散与边缘模糊都在这张画面上完成，颗粒在放大到画面时叠加；`resolution` 决定这张画面的分辨率。
 
 `fog` 节点绘制域扭曲的分形噪声雾，`colors` 给出由暗到亮的两色（只给一色时从透明过渡），`size` 为一团雾的尺度（点），另有 `speed`、`warp`（折叠强度）与 `gain`（对比）。叠一层低不透明度的 fog 即是网易云式的流雾，换成暗红两色便是流体底。
 

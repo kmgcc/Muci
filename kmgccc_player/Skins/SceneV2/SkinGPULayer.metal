@@ -11,13 +11,38 @@ struct SkinGPUFrame {
     float grain;        // grain amount
     float pointScale;   // drawable pixels per point
     float pad0, pad1, pad2;
+    // The camera's turn (rotationX, rotationY with perspective, then rotation) as a plane
+    // homography in layer points, by columns: (x, y, 1) -> (x', y', w).
+    float4 turn0, turn1, turn2;
+};
+
+struct SkinGPUGlyph {
+    float4 affine0;     // a, b, c, d: glyph points (baseline origin, y down) to layer points
+    float4 affine1;     // tx, ty
+    float4 rect;        // the texture's rectangle in glyph points: origin, size
+    float4 color;       // premultiplied ink
+    float4 motion;      // split (uv), smear x, smear y (uv), blur mip level
+    float4 extra;       // quad expansion (uv), opacity, texel size x, texel size y
+};
+
+struct SkinGPUPost {
+    float2 size;        // surface pixels
+    float distortion;
+    float chromatic;    // pixels
+    float blur;         // pixels
+    float start;
+    float2 axis;
+    float grain;
+    float time;
+    float pointScale;   // surface pixels per point
+    float pad;
 };
 
 struct SkinGPUQuad {
     float2 origin;      // layer point of the node's top-left corner
     float2 localSize;   // node size in points
     float scale;        // camera scale of the node
-    int kind;           // 0 solid, 1 gradient, 2 fog
+    int kind;           // 0 solid, 1 gradient, 2 fog, 3 ellipse outline
     int stopCount;
     float opacity;
     float4 color;       // solid colour; fog low
@@ -37,8 +62,9 @@ struct SkinGPUDot {
 
 struct SkinGPUVertex {
     float2 position;
-    float2 pad;
+    float2 edge;        // signed distance from a stroke's centre line, the stroke's half width (0: solid)
     float4 color;
+    float4 blur;        // the stroke's blur (standard deviation), all in layer points
 };
 
 struct SkinQuadOut {
@@ -58,16 +84,37 @@ struct SkinDotOut {
 struct SkinColorOut {
     float4 position [[position]];
     float4 color;
+    float distance;
+    float halfWidth [[flat]];
+    float blur [[flat]];
 };
+
+static float skinGPUErf(float x) {
+    float x2 = x * x;
+    float t = sqrt(1.0 - exp(-x2 * (1.27323954 + 0.147 * x2) / (1.0 + 0.147 * x2)));
+    return x < 0 ? -t : t;
+}
+
+/// Coverage at signed distance `d` from the centre of a band `2 * halfWidth` wide under a
+/// Gaussian blur of `sigma`; `aa` (one pixel) keeps a sharp band's edge smooth.
+static float skinGPUBand(float d, float halfWidth, float sigma, float aa) {
+    float s = sqrt(sigma * sigma + 0.16 * aa * aa);
+    float k = 0.70710678 / max(s, 1e-4);
+    return clamp(0.5 * (skinGPUErf((d + halfWidth) * k) - skinGPUErf((d - halfWidth) * k)), 0.0, 1.0);
+}
 
 struct SkinPresentOut {
     float4 position [[position]];
     float2 uv;
 };
 
-static float4 skinGPUClip(float2 point, float2 size) {
-    float2 unit = point / max(size, float2(1));
-    return float4(unit.x * 2 - 1, 1 - unit.y * 2, 0, 1);
+/// A layer point through the camera's turn, as a clip position. The homogeneous w is kept, so
+/// textures and gradients stay perspective-correct across a tilted quad.
+static float4 skinGPUClip(float2 point, constant SkinGPUFrame &frame) {
+    float3 h = frame.turn0.xyz * point.x + frame.turn1.xyz * point.y + frame.turn2.xyz;
+    float w = max(h.z, 1e-3);
+    float2 size = max(frame.size, float2(1));
+    return float4(2 * h.x / size.x - w, w - 2 * h.y / size.y, 0, w);
 }
 
 static float skinGPUHash(float2 p) {
@@ -96,7 +143,7 @@ vertex SkinQuadOut skinGPUQuadVertex(uint vid [[vertex_id]],
                                      constant SkinGPUQuad &quad [[buffer(1)]]) {
     float2 corner = float2(float(vid & 1), float(vid >> 1)) * quad.localSize;
     SkinQuadOut out;
-    out.position = skinGPUClip(quad.origin + corner * quad.scale, frame.size);
+    out.position = skinGPUClip(quad.origin + corner * quad.scale, frame);
     out.local = corner;
     return out;
 }
@@ -136,6 +183,18 @@ fragment float4 skinGPUQuadFragment(SkinQuadOut in [[stage_in]],
             t = dot(in.local - a, axis) / max(1e-4, dot(axis, axis));
         }
         color = skinGPUStops(clamp(t, 0.0, 1.0), stops, quad.stopCount);
+    } else if (quad.kind == 3) {
+        // An ellipse's outline (`color`) and optional fill (`color2`): params hold the stroke's
+        // half width, blur, and the radii; params2 the centre, in the quad's local points.
+        float2 p = in.local - quad.params2.xy;
+        float2 r = max(quad.params.zw, float2(1e-3));
+        float k = length(p / r);
+        float g = max(length(p / (r * r)), 1e-5);
+        float d = (k - 1.0) * k / g;
+        float aa = max(fwidth(d), 1e-3);
+        float ring = skinGPUBand(d, quad.params.x, quad.params.y, aa);
+        float inside = clamp(0.5 - d / aa, 0.0, 1.0);
+        color = quad.color * ring + quad.color2 * inside * (1.0 - quad.color.a * ring);
     } else {
         float2 p = (in.local + quad.params2.yz) / max(1.0, quad.params.y);
         float t = quad.params.x * quad.params.z;
@@ -159,7 +218,7 @@ vertex SkinDotOut skinGPUDotVertex(uint vid [[vertex_id]], uint iid [[instance_i
     float2 sign = float2(float(vid & 1), float(vid >> 1)) * 2.0 - 1.0;
     float2 offset = along * sign.x * (reach + length2 * 0.5) + across * sign.y * reach;
     SkinDotOut out;
-    out.position = skinGPUClip(dot.centre + offset, frame.size);
+    out.position = skinGPUClip(dot.centre + offset, frame);
     out.offset = offset;
     out.streak = dot.streak;
     out.radius = dot.radius;
@@ -194,13 +253,18 @@ vertex SkinColorOut skinGPURibbonVertex(uint vid [[vertex_id]],
                                         constant SkinGPUFrame &frame [[buffer(0)]],
                                         const device SkinGPUVertex *vertices [[buffer(1)]]) {
     SkinColorOut out;
-    out.position = skinGPUClip(vertices[vid].position, frame.size);
+    out.position = skinGPUClip(vertices[vid].position, frame);
     out.color = vertices[vid].color;
+    out.distance = vertices[vid].edge.x;
+    out.halfWidth = vertices[vid].edge.y;
+    out.blur = vertices[vid].blur.x;
     return out;
 }
 
 fragment float4 skinGPURibbonFragment(SkinColorOut in [[stage_in]]) {
-    return in.color;
+    // A comet tail is solid; a stroke fades across its width.
+    if (in.halfWidth <= 0) { return in.color; }
+    return in.color * skinGPUBand(in.distance, in.halfWidth, in.blur, fwidth(in.distance));
 }
 
 vertex SkinPresentOut skinGPUPresentVertex(uint vid [[vertex_id]]) {
@@ -212,15 +276,129 @@ vertex SkinPresentOut skinGPUPresentVertex(uint vid [[vertex_id]]) {
 }
 
 fragment float4 skinGPUPresentFragment(SkinPresentOut in [[stage_in]],
-                                       constant SkinGPUFrame &frame [[buffer(0)]],
+                                       constant SkinGPUPost &post [[buffer(0)]],
                                        texture2d<float> scene [[texture(0)]],
                                        sampler linear [[sampler(0)]]) {
     float4 color = scene.sample(linear, in.uv);
-    if (frame.grain > 0) {
+    if (post.grain > 0) {
         // Film grain per point, as the `grain` filter draws it.
-        float2 point = floor(in.position.xy / max(1.0, frame.pointScale));
-        float grain = skinGPUHash(point + fract(frame.time * 13.7) * 431.0) - 0.5;
-        color.rgb = clamp(color.rgb + grain * frame.grain * color.a, float3(0), float3(1));
+        float2 point = floor(in.position.xy / max(1.0, post.pointScale));
+        float grain = skinGPUHash(point + fract(post.time * 13.7) * 431.0) - 0.5;
+        color.rgb = clamp(color.rgb + grain * post.grain * color.a, float3(0), float3(1));
     }
     return color;
+}
+
+// MARK: Glyphs
+
+struct SkinGlyphOut {
+    float4 position [[position]];
+    float2 uv;
+};
+
+vertex SkinGlyphOut skinGPUGlyphVertex(uint vid [[vertex_id]],
+                                       constant SkinGPUFrame &frame [[buffer(0)]],
+                                       constant SkinGPUGlyph &glyph [[buffer(1)]]) {
+    float expand = glyph.extra.x;
+    float2 uv = float2(float(vid & 1), float(vid >> 1)) * (1 + 2 * expand) - expand;
+    float2 local = glyph.rect.xy + uv * glyph.rect.zw;
+    float2 point = float2(glyph.affine0.x * local.x + glyph.affine0.z * local.y + glyph.affine1.x,
+                          glyph.affine0.y * local.x + glyph.affine0.w * local.y + glyph.affine1.y);
+    SkinGlyphOut out;
+    out.position = skinGPUClip(point, frame);
+    out.uv = uv;
+    return out;
+}
+
+/// Coverage at `uv`, blurred by reading a coarser mip level through four offset taps.
+static float skinGlyphCoverage(texture2d<float> mask, sampler s, float2 uv, float lod, float2 texel) {
+    if (lod < 0.25) { return mask.sample(s, uv, level(lod)).r; }
+    float2 step = texel * exp2(lod) * 0.5;
+    float sum = mask.sample(s, uv + float2(step.x, step.y), level(lod)).r
+              + mask.sample(s, uv + float2(-step.x, step.y), level(lod)).r
+              + mask.sample(s, uv + float2(step.x, -step.y), level(lod)).r
+              + mask.sample(s, uv + float2(-step.x, -step.y), level(lod)).r;
+    return sum * 0.25;
+}
+
+fragment float4 skinGPUGlyphFragment(SkinGlyphOut in [[stage_in]],
+                                     constant SkinGPUGlyph &glyph [[buffer(1)]],
+                                     texture2d<float> mask [[texture(0)]],
+                                     sampler s [[sampler(0)]]) {
+    float split = glyph.motion.x;
+    float2 smear = glyph.motion.yz;
+    // The blur's level, or the level the glyph's on-screen size reads anyway, whichever is coarser.
+    float lod = max(glyph.motion.w, mask.calculate_clamped_lod(s, in.uv));
+    float2 texel = glyph.extra.zw;
+    // A smear averages copies along its vector; a split draws red and blue apart, as the view
+    // renderer's channel copies do.
+    int copies = (abs(smear.x) + abs(smear.y)) > 1e-4 ? 6 : 1;
+    float3 coverage = float3(0);
+    for (int i = 0; i < copies; i++) {
+        float t = copies > 1 ? float(i) / float(copies - 1) - 0.5 : 0.0;
+        float2 uv = in.uv - smear * t;
+        float g = skinGlyphCoverage(mask, s, uv, lod, texel);
+        if (abs(split) > 1e-5) {
+            coverage += float3(skinGlyphCoverage(mask, s, uv - float2(split, 0), lod, texel), g,
+                               skinGlyphCoverage(mask, s, uv + float2(split, 0), lod, texel));
+        } else {
+            coverage += float3(g);
+        }
+    }
+    coverage /= float(copies);
+    float4 ink = glyph.color;
+    float alpha = abs(split) > 1e-5 ? min(1.0, ink.a * (coverage.r + coverage.g + coverage.b)) : ink.a * coverage.g;
+    return float4(ink.rgb * coverage, alpha) * glyph.extra.y;
+}
+
+// MARK: Lens (`fov`)
+
+static float skinGPUEdge(float2 position, float2 size, float edgeStart) {
+    float2 half_ = max(size * 0.5, float2(1.0));
+    float2 c = (position - size * 0.5) / half_;
+    float r = length(c) * 0.70710678;
+    return smoothstep(clamp(edgeStart, 0.0, 0.98), 1.0, r);
+}
+
+fragment float4 skinGPULensFragment(SkinPresentOut in [[stage_in]],
+                                    constant SkinGPUPost &post [[buffer(0)]],
+                                    texture2d<float> scene [[texture(0)]],
+                                    sampler linear [[sampler(0)]]) {
+    float2 size = post.size, position = in.position.xy;
+    float2 centre = size * 0.5;
+    float2 c = (position - centre) / max(centre, float2(1));
+    float r2 = dot(c, c) * 0.5;
+    float2 source = centre + (position - centre) * (1.0 - clamp(post.distortion, -0.6, 0.6) * 0.35 * r2);
+    float edge = skinGPUEdge(position, size, post.start);
+    float2 radial = length(c) > 1e-4 ? normalize(position - centre) : float2(0.0);
+    float2 split = radial * max(0.0, post.chromatic) * edge;
+    float4 g = scene.sample(linear, clamp(source, float2(0), size) / size);
+    if (post.chromatic <= 0.0 || edge <= 0.0) { return g; }
+    float4 r = scene.sample(linear, clamp(source + split, float2(0), size) / size);
+    float4 b = scene.sample(linear, clamp(source - split, float2(0), size) / size);
+    return float4(r.r, g.g, b.b, max(g.a, max(r.a, b.a)));
+}
+
+fragment float4 skinGPUEdgeBlurFragment(SkinPresentOut in [[stage_in]],
+                                        constant SkinGPUPost &post [[buffer(0)]],
+                                        texture2d<float> scene [[texture(0)]],
+                                        sampler linear [[sampler(0)]]) {
+    float2 size = post.size, position = in.position.xy;
+    float edge = skinGPUEdge(position, size, post.start);
+    float reach = max(0.0, post.blur) * edge * edge;
+    if (reach < 0.4) { return scene.sample(linear, position / size); }
+    int taps = int(min(8.0, max(ceil(reach * 0.5), min(4.0, ceil(reach)))));
+    float spacing = reach / float(taps);
+    float sigma = reach * 0.5;
+    float falloff = 1.0 / (2.0 * sigma * sigma);
+    float4 sum = scene.sample(linear, position / size);
+    float weight = 1.0;
+    for (int i = 1; i <= taps; i++) {
+        float d = spacing * float(i);
+        float w = exp(-d * d * falloff);
+        sum += w * scene.sample(linear, clamp(position + post.axis * d, float2(0), size) / size);
+        sum += w * scene.sample(linear, clamp(position - post.axis * d, float2(0), size) / size);
+        weight += 2.0 * w;
+    }
+    return sum / weight;
 }

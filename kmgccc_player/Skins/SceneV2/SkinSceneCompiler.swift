@@ -191,8 +191,8 @@ enum SkinSceneCompiler {
                 guard type == "layer", render.stringValue == "gpu" else { throw error(path + ".render", "render 只用于 layer，取值 gpu") }
                 try SkinGPULayer.validate(children, camera: fields["camera"]?.objectValue) { error(path + $0, $1) }
                 let filters = fields["filter"].map { $0.arrayValue ?? [$0] } ?? []
-                guard fields["bloom"] == nil, filters.allSatisfy({ $0.objectValue?["type"]?.stringValue == "grain" }) else {
-                    throw error(path + ".filter", "render: gpu 的图层滤镜限于 grain")
+                guard fields["bloom"] == nil, filters.allSatisfy({ ["grain", "fov"].contains($0.objectValue?["type"]?.stringValue ?? "") }) else {
+                    throw error(path + ".filter", "render: gpu 的图层滤镜限于 grain、fov")
                 }
             }
             let mask = try fields["mask"].map { try node($0, path: path + ".mask", environment: environment, depth: depth + 1, templates: templates) }
