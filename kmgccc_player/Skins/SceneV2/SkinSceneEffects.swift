@@ -1,3 +1,4 @@
+import AppKit
 import MotionKit
 import SwiftUI
 
@@ -98,7 +99,7 @@ struct SkinSceneFilters: ViewModifier {
     private static func custom(_ view: AnyView, filter: SkinValue, time: Double, enabled: Bool, root: URL?) -> AnyView {
         guard let library = SkinShaderLibraries.library(filter[member: "library"].textValue, root: root) else { return view }
         let function = ShaderFunction(library: library, name: filter[member: "function"].textValue)
-        let arguments = filter[member: "args"].listValue.map(SkinShaderLibraries.argument)
+        let arguments = filter[member: "args"].listValue.prefix(16).map { SkinShaderLibraries.argument($0, root: root) }
         let reach = max(0, filter[member: "reach"].number())
         let offset = CGSize(width: reach, height: reach)
         switch filter[member: "kind"].textValue {
@@ -184,15 +185,33 @@ enum SkinShaderLibraries {
         return library
     }
 
-    static func argument(_ value: SkinValue) -> Shader.Argument {
+    private static var images: [URL: Image] = [:]
+
+    /// Numbers as float; lists of 2 to 4 numbers as float2 to float4; longer lists (such as
+    /// `spectrum(64)`) as a float array, which the function receives as `device const float *`
+    /// and `int`; colours as half4; `{image: path}` as a package image, `texture2d<half>`.
+    static func argument(_ value: SkinValue, root: URL?) -> Shader.Argument {
+        if value.type == .record {
+            let path = value[member: "image"].textValue
+            return .image((path.isEmpty ? nil : image(path, root: root)) ?? Image(nsImage: NSImage(size: NSSize(width: 1, height: 1))))
+        }
         if let color = value.colorValue, value.type == .color { return .color(color.swiftUIColor) }
-        let numbers = value.listValue.map { Float($0.number()) }
+        let numbers = value.listValue.prefix(4096).map { Float($0.number()) }
         switch numbers.count {
         case 2: return .float2(numbers[0], numbers[1])
         case 3: return .float3(numbers[0], numbers[1], numbers[2])
         case 4: return .float4(numbers[0], numbers[1], numbers[2], numbers[3])
+        case 5...: return .floatArray(numbers)
         default: return .float(Float(value.number()))
         }
+    }
+
+    private static func image(_ path: String, root: URL?) -> Image? {
+        guard let root, let url = try? SkinResourceResolver.resolve(path, root: root) else { return nil }
+        if let image = images[url] { return image }
+        guard let image = NSImage(contentsOf: url).map(Image.init(nsImage:)) else { return nil }
+        images[url] = image
+        return image
     }
 }
 

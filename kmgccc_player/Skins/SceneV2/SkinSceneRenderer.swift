@@ -12,15 +12,15 @@ struct SkinSceneV2View: View {
     @State private var resourceError: String?
     @State private var metricsID = UUID().uuidString
     @State private var didPrepare = false
-    @State private var backdrop = SkinBackdropReadability()
     @State private var readsBackdrop = false
     @Environment(\.skinPackageResources) private var resources
     @Environment(\.skinPackageFonts) private var fontPaths
     @Environment(\.skinSceneLyricsVisible) private var lyricsVisible
     @Environment(\.skinScenePresentation) private var presentation
+    @Environment(\.skinSceneHost) private var host
 
     var body: some View {
-        Group {
+        let nodes = Group {
             if didPrepare { SkinSceneNodeV2View(node: program.root, data: data, components: components, size: viewport.size) }
             else { Color.clear }
         }
@@ -29,15 +29,10 @@ struct SkinSceneV2View: View {
             .environment(\.skinSceneLiveViewport, SkinLiveViewport(size: viewport.size, surface: viewport.surface,
                                                                    lyricsVisible: lyricsVisible, presentation: presentation))
             .transaction(value: viewport.size) { $0.disablesAnimations = true }
-            .coordinateSpace(.named(SkinBackdropReadability.space))
-            .environment(\.skinBackdropReadability, backdrop)
-            .task(id: readsBackdrop ? "\(snapshot.track?.id.uuidString ?? "")|\(snapshot.track?.artworkChecksum ?? 0)" : nil) {
-                guard readsBackdrop else { return }
-                await backdrop.load(key: "\(snapshot.track?.id.uuidString ?? "")|\(snapshot.track?.artworkChecksum ?? 0)", artwork: snapshot.track?.artworkData)
-            }
-            .onChange(of: viewport.size, initial: true) { _, size in backdrop.setViewport(size) }
+        (host?.backdrop(AnyView(nodes), snapshot: snapshot, size: viewport.size, enabled: readsBackdrop) ?? AnyView(nodes))
+            .coordinateSpace(.named(SkinSceneSpace.name))
             .background {
-                SkinSceneFeeds(data: data, program: program, snapshot: snapshot, viewport: viewport, parameters: components.parameters)
+                host?.feeds(.init(data: data, program: program, snapshot: snapshot, viewport: viewport, parameters: components.parameters))
             }
             .onAppear {
                 guard !didPrepare else { return }
@@ -96,6 +91,7 @@ struct SkinSceneNodeV2View: View {
     /// Set once a hidden node's transition has had its time; see `render(at:)`.
     @State private var collapsed = false
     @Environment(\.skinBackdropReading) private var inheritedReading
+    @Environment(\.skinSceneHost) private var host
     @Namespace private var glassNamespace
 
     /// A `render: "gpu"` layer draws on its own display clock and evaluates its own `visible`
@@ -211,7 +207,8 @@ struct SkinSceneNodeV2View: View {
         let drawsOnGPU = rendersOnGPU(values)
         // `resolution` draws soft content on a smaller surface, scaled with the render quality.
         // Filters and bloom below run on the scaled-up result, so grain keeps full resolution.
-        if !drawsOnGPU, let resolution = values["resolution"]?.numberValue, SkinRenderScale.factor(resolution) < 1 {
+        // A shader node sizes its own Metal drawable.
+        if !drawsOnGPU, node.type != "shader", let resolution = values["resolution"]?.numberValue, SkinRenderScale.factor(resolution) < 1 {
             let scale = SkinRenderScale.factor(resolution * SkinRenderScale.factor(renderScale))
             result = SkinRenderScale.reduced(result, scale: scale) { $0.drawingGroup() }
         }
@@ -228,11 +225,11 @@ struct SkinSceneNodeV2View: View {
         if let key = values["key"] {
             result = AnyView(SkinKeyedSwap(key: String(describing: key), transition: transition ?? .null, content: result))
         }
-        if values["adaptive"]?.isTruthy == true {
-            result = AnyView(result.modifier(SkinAdaptiveBackdropProbe(reading: $backdropReading)))
+        if values["adaptive"]?.isTruthy == true, let host {
+            result = host.adaptive(result, reading: $backdropReading)
         }
         if values["measure"]?.isTruthy == true {
-            result = AnyView(result.onGeometryChange(for: CGRect.self) { $0.frame(in: .named(SkinBackdropReadability.space)) } action: { rect in
+            result = AnyView(result.onGeometryChange(for: CGRect.self) { $0.frame(in: .named(SkinSceneSpace.name)) } action: { rect in
                 if measuredFrame != rect { measuredFrame = rect }
             })
         }
@@ -454,7 +451,7 @@ struct SkinSceneNodeV2View: View {
                 // Word by word: each word moves toward `highlightColor` as it is sung, so wrapped lines stay right.
                 if values["highlightStyle"]?.textValue == "word", field == "text",
                    let words = data.lyricsTimeline.wordProgress(index: lineIndex, time: lyricTime) {
-                    let base = values["color"]?.colorValue ?? (backdropReading ?? inheritedReading).map { OKLCHColor($0.profile.primary) }
+                    let base = values["color"]?.colorValue ?? (backdropReading ?? inheritedReading).map { OKLCHColor($0.primaryColor) }
                         ?? data.theme["theme.appForeground.primary"]?.colorValue ?? .white
                     let line = words.reduce(Text("")) { text, word in
                         Text("\(text)\(Text(word.text).foregroundStyle(base.mixed(with: highlight, amount: word.progress).swiftUIColor))")
@@ -473,7 +470,7 @@ struct SkinSceneNodeV2View: View {
         case "symbol": return AnyView(Image(systemName: values["name"]?.textValue ?? "circle").resizable().scaledToFit().foregroundStyle(foreground))
         case "artwork":
             if let id = values["track"]?.textValue, let trackID = UUID(uuidString: id) {
-                return AnyView(SkinQueueTrackArtwork(trackID: trackID, fills: values["fit"]?.textValue == "fill"))
+                return host?.trackArtwork(id: trackID, fills: values["fit"]?.textValue == "fill") ?? AnyView(Color.clear)
             }
             return components.component("artwork.basic", configuration: .init(values: values.mapValues(\.parameterValue)))
         case "image": return AnyView(SkinPackageImage(path: values["path"]?.textValue ?? "", fit: values["fit"]?.textValue ?? "fit"))
@@ -514,7 +511,7 @@ struct SkinSceneNodeV2View: View {
             }
         case "spectrum", "waveform", "meter": return AnyView(SkinSceneAudioCanvas(kind: node.type, data: data, values: values, now: now, color: components.snapshot.theme.accentColor))
         case "particles": return AnyView(SkinSceneParticles(data: data, values: values, now: now, reduceMotion: reduceMotion))
-        case "shader": return AnyView(SkinSceneShader(path: values["path"]?.textValue ?? "", function: values["function"]?.textValue ?? "skinFragment", data: data, snapshot: components.snapshot, now: now))
+        case "shader": return AnyView(SkinSceneShader(values: values, data: data, snapshot: components.snapshot, now: now))
         case "comet": return AnyView(SkinSceneComet(values: values).frame(width: size.width, height: size.height))
         default: return AnyView(EmptyView())
         }

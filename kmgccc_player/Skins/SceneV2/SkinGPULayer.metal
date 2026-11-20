@@ -310,15 +310,44 @@ vertex SkinGlyphOut skinGPUGlyphVertex(uint vid [[vertex_id]],
     return out;
 }
 
-/// Coverage at `uv`, blurred by reading a coarser mip level through four offset taps.
-static float skinGlyphCoverage(texture2d<float> mask, sampler s, float2 uv, float lod, float2 texel) {
-    if (lod < 0.25) { return mask.sample(s, uv, level(lod)).r; }
-    float2 step = texel * exp2(lod) * 0.5;
-    float sum = mask.sample(s, uv + float2(step.x, step.y), level(lod)).r
-              + mask.sample(s, uv + float2(-step.x, step.y), level(lod)).r
-              + mask.sample(s, uv + float2(step.x, -step.y), level(lod)).r
-              + mask.sample(s, uv + float2(-step.x, -step.y), level(lod)).r;
-    return sum * 0.25;
+/// A disc of taps on a golden-angle spiral, evenly spread over the unit circle.
+constant float2 skinBlurDisc[16] = {
+    float2(0.1768, 0.0000), float2(-0.2258, 0.2068), float2(0.0346, -0.3938), float2(0.2846, 0.3712),
+    float2(-0.5222, -0.0924), float2(0.4947, -0.3147), float2(-0.1655, 0.6155), float2(-0.3156, -0.6076),
+    float2(0.6846, 0.2500), float2(-0.7123, 0.2940), float2(0.3434, -0.7337), float2(0.2537, 0.8089),
+    float2(-0.7647, -0.4432), float2(0.8971, -0.1972), float2(-0.5475, 0.7788), float2(-0.1265, -0.9761)
+};
+
+/// Coverage at `uv`, blurred like a Gaussian of `sigma` mask texels. A mip level carries part
+/// of the blur, kept fine enough that the mask stays at least two texels across; a weighted
+/// disc of taps carries the rest. `fine` false trades the disc for four taps, for the copies a
+/// smear or split multiplies.
+static float skinGlyphCoverage(texture2d<float> mask, sampler s, float2 uv, float sigma, float screenLod, float2 texel, bool fine) {
+    if (sigma < 0.35) { return mask.sample(s, uv, level(screenLod)).r; }
+    float shortest = float(min(mask.get_width(), mask.get_height()));
+    float lod = max(screenLod, min(log2(1.5 * sigma), max(0.0, log2(shortest) - 1.0)));
+    float box = exp2(lod) * 0.2887;
+    float spread = sqrt(max(sigma * sigma - box * box, 0.0));
+    if (spread < 0.5) { return mask.sample(s, uv, level(lod)).r; }
+    if (!fine) {
+        // Half a level texel apart at most, so the four taps blend rather than show as copies.
+        float2 step = texel * min(spread, exp2(lod)) * 0.5;
+        float sum = mask.sample(s, uv + float2(step.x, step.y), level(lod)).r
+                  + mask.sample(s, uv + float2(-step.x, step.y), level(lod)).r
+                  + mask.sample(s, uv + float2(step.x, -step.y), level(lod)).r
+                  + mask.sample(s, uv + float2(-step.x, -step.y), level(lod)).r;
+        return sum * 0.25;
+    }
+    // Taps out to two deviations, weighted by the Gaussian at their distance.
+    float2 reach = texel * spread * 2.0;
+    float sum = mask.sample(s, uv, level(lod)).r, weight = 1.0;
+    for (int i = 0; i < 16; i++) {
+        float2 d = skinBlurDisc[i];
+        float w = exp(-2.0 * dot(d, d));
+        sum += w * mask.sample(s, uv + d * reach, level(lod)).r;
+        weight += w;
+    }
+    return sum / weight;
 }
 
 fragment float4 skinGPUGlyphFragment(SkinGlyphOut in [[stage_in]],
@@ -327,20 +356,22 @@ fragment float4 skinGPUGlyphFragment(SkinGlyphOut in [[stage_in]],
                                      sampler s [[sampler(0)]]) {
     float split = glyph.motion.x;
     float2 smear = glyph.motion.yz;
-    // The blur's level, or the level the glyph's on-screen size reads anyway, whichever is coarser.
-    float lod = max(glyph.motion.w, mask.calculate_clamped_lod(s, in.uv));
+    // The blur (a deviation in mask texels), over the level the glyph's on-screen size reads anyway.
+    float sigma = glyph.motion.w;
+    float screenLod = mask.calculate_clamped_lod(s, in.uv);
     float2 texel = glyph.extra.zw;
     // A smear averages copies along its vector; a split draws red and blue apart, as the view
     // renderer's channel copies do.
     int copies = (abs(smear.x) + abs(smear.y)) > 1e-4 ? 6 : 1;
+    bool fine = copies == 1 && abs(split) <= 1e-5;
     float3 coverage = float3(0);
     for (int i = 0; i < copies; i++) {
         float t = copies > 1 ? float(i) / float(copies - 1) - 0.5 : 0.0;
         float2 uv = in.uv - smear * t;
-        float g = skinGlyphCoverage(mask, s, uv, lod, texel);
+        float g = skinGlyphCoverage(mask, s, uv, sigma, screenLod, texel, fine);
         if (abs(split) > 1e-5) {
-            coverage += float3(skinGlyphCoverage(mask, s, uv - float2(split, 0), lod, texel), g,
-                               skinGlyphCoverage(mask, s, uv + float2(split, 0), lod, texel));
+            coverage += float3(skinGlyphCoverage(mask, s, uv - float2(split, 0), sigma, screenLod, texel, false), g,
+                               skinGlyphCoverage(mask, s, uv + float2(split, 0), sigma, screenLod, texel, false));
         } else {
             coverage += float3(g);
         }

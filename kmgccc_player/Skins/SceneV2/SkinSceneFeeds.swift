@@ -28,6 +28,7 @@ struct SkinSceneFeeds: View {
     @Environment(\.skinSceneLyricsVisible) private var lyricsVisible
     @Environment(\.skinScenePresentation) private var presentation
     @Environment(\.motionArtworkFullscreenCoordinator) private var motionFullscreen
+    @State private var audioLease = SkinSceneAudioLease()
 
     var body: some View {
         let domains = values
@@ -40,7 +41,7 @@ struct SkinSceneFeeds: View {
             }
             .onChange(of: audioKey, initial: true) { _, _ in updateAudio() }
             .onChange(of: NativeLyricsSurfaceManager.shared.documentPublication.revision, initial: true) { _, _ in updateLyrics() }
-            .onDisappear { data.audio.stop() }
+            .onDisappear { audioLease.stop(data.audio) }
             .overlay { SkinSceneClockFeed(data: data, role: viewport.surface == .window ? .main : .fullscreen, lead: lyricsLead) }
             .background { SkinSceneHostProbe(data: data) }
             .allowsHitTesting(false)
@@ -57,7 +58,7 @@ struct SkinSceneFeeds: View {
     private var audioKey: String { "\(active)|\(snapshot.playback.isPlaying)|\(playback.stablePresentation.source)|\(data.audioReaders.isEmpty)" }
 
     private func updateAudio() {
-        data.audio.update(provider: meter, source: playback.stablePresentation.source,
+        audioLease.update(data.audio, provider: meter, source: playback.stablePresentation.source,
                           active: active && !data.audioReaders.isEmpty, isPlaying: snapshot.playback.isPlaying, usesLED: true)
         data.audioAvailability = data.audio.availability.rawValue
     }

@@ -334,6 +334,27 @@
         "resolution": {
           "description": "any node: share of display resolution (0.25 to 1) its content is drawn at before scaling back up, multiplied by the render quality setting; for soft content such as backgrounds. The node's own filter and bloom run afterwards at the usual resolution"
         },
+        "args": {
+          "type": "array",
+          "maxItems": 16,
+          "description": "shader: values the full signature reads with skinArg(in, i); a number fills x, a list of up to four numbers fills x to w, a colour is sRGB rgba. Expressions are evaluated every frame"
+        },
+        "images": {
+          "type": "array",
+          "maxItems": 4,
+          "items": { "type": "string" },
+          "description": "shader: package images read with skinImage(in, i, uv, blur), decoded at most 2048 pixels on the long side, with mipmaps and repeating edges"
+        },
+        "spectrum": {
+          "description": "shader: number of log-spaced spectrum bands from 30 Hz to 16 kHz (0 to 256, default 64), read with skinSpectrum(in, x)"
+        },
+        "waveform": {
+          "description": "shader: number of waveform samples in −1…1 (0 to 2048, default 256), read with skinWaveform(in, x)"
+        },
+        "feedback": {
+          "type": "boolean",
+          "description": "shader: keeps the previous frame at half-float precision for skinPrevious(in, uv), for trails and accumulation"
+        },
         "render": {
           "enum": ["gpu"],
           "description": "layer: draws its children into one Metal surface on its own display clock, resting while still. Children are shapes (rectangle, circle, ellipse and path, with stroke, trim, rotation and blur; a path may take an angular gradient mask), gradients, fog, particles (particles may carry motionBlur), comets and text, plus nested layers (with offsetX, offsetY) and repeats with layout free; text takes font, size, tracking, alignment, line limit, color, rotation, scale, offsets, blur, glow and glyphMotion and is drawn glyph by glyph from cached masks; the camera takes x, y, zoom, perspective, rotation, rotationX and rotationY; the layer filter is grain and fov, with distortion, chromatic aberration and edge blur drawn on the surface and grain added as it scales up; resolution sets the surface resolution"
@@ -342,7 +363,7 @@
           "description": "text, lyricLine: a width, or {width, color, hollow}; hollow keeps only the ring"
         },
         "filter": {
-          "description": "a preset {type, ...} or a list applied in order: chromatic {amount, angle}, glitch {amount, slice, rate, intensity}, motionBlur {x, y, samples}, scanlines {spacing, intensity, speed}, wave {amplitude, wavelength, speed}, grain {amount}, fov {distortion, chromatic, blur, start}, custom {library (.metallib), function, kind (layer, color, distortion), args, reach, animated}"
+          "description": "a preset {type, ...} or a list applied in order: chromatic {amount, angle}, glitch {amount, slice, rate, intensity}, motionBlur {x, y, samples}, scanlines {spacing, intensity, speed}, wave {amplitude, wavelength, speed}, grain {amount}, fov {distortion, chromatic, blur, start}, custom {library (.metallib), function, kind (layer, color, distortion), args, reach, animated}; custom args take numbers, lists of 2 to 4 numbers, longer lists as a float array, colours, and {image: path} as a package texture"
         },
         "bloom": {
           "description": "bright parts of the subtree glow: a radius, or {radius, intensity, threshold}"
