@@ -173,6 +173,12 @@ final class SkinGPUGlyphAtlas {
 
     init(device: MTLDevice) { self.device = device }
 
+    /// The Gaussian deviation of a blur radius, as the layer's shapes read it.
+    static let blurDeviation = 0.5
+
+    /// The empty margin around a mask, in texels, where a little blur fades out.
+    static func pad(em: Int) -> Int { max(4, Int(ceil(Double(em) * 0.4))) }
+
     /// The size step at or above `pixels` per em: half-octave steps from 12 to 512 pixels.
     static func step(_ pixels: Double) -> Int {
         let clamped = min(512, max(12, pixels))
@@ -231,8 +237,8 @@ final class SkinGPUGlyphAtlas {
         var id = glyph
         let bounds = CTFontGetBoundingRectsForGlyphs(sized, .default, &id, nil, 1)
         guard !bounds.isNull, bounds.width > 0.01, bounds.height > 0.01 else { return nil }
-        // Room for blur, read from coarser mip levels, to fade out inside the mask.
-        let pad = max(4, Int(ceil(Double(em) * 0.4)))
+        // Room for blur to fade out inside the mask; a wider blur grows the glyph's quad past it.
+        let pad = Self.pad(em: em)
         let left = floor(bounds.minX), bottom = floor(bounds.minY)
         let width = min(4096, Int(ceil(bounds.maxX) - left) + 2 * pad)
         let height = min(4096, Int(ceil(bounds.maxY) - bottom) + 2 * pad)
@@ -333,21 +339,24 @@ extension SkinGPULayerModel {
             let full = moved.concatenating(toLayer)
             let pixelsPerGlyphPoint = Double(em) / size
             let radius = nodeBlur + motion.blur
-            func level(_ blur: Double) -> Float {
-                guard blur > 0.05 else { return 0 }
-                return Float(min(Double(entry.levels - 1), max(0, log2(blur * pixelsPerGlyphPoint / 0.58))))
-            }
+            // The blur as a Gaussian deviation in mask texels.
+            func deviation(_ blur: Double) -> Double { blur > 0.05 ? blur * pixelsPerGlyphPoint * SkinGPUGlyphAtlas.blurDeviation : 0 }
             let texel = SIMD2<Float>(1 / Float(entry.texture.width), 1 / Float(entry.texture.height))
+            let pad = Double(SkinGPUGlyphAtlas.pad(em: em))
+            let side = Double(min(entry.texture.width, entry.texture.height))
             func draw(ink: SIMD4<Float>, alpha: Double, blur: Double, split: Double = 0, smear: CGSize = .zero, additive: Bool) {
                 let splitUV = split / rect.width
                 let smearUV = CGSize(width: smear.width / rect.width, height: smear.height / rect.height)
-                let expand = max(abs(splitUV) + abs(smearUV.width) / 2, abs(smearUV.height) / 2)
+                let sigma = deviation(blur)
+                // Room for the blur's tail past the mask's own margin.
+                let tail = max(0, 2.6 * sigma - pad) / side
+                let expand = max(abs(splitUV) + abs(smearUV.width) / 2, abs(smearUV.height) / 2) + tail
                 let instance = SkinGPUGlyph(
                     affine0: SIMD4(Float(full.a), Float(full.b), Float(full.c), Float(full.d)),
                     affine1: SIMD4(Float(full.tx), Float(full.ty), 0, 0),
                     rect: SIMD4(Float(rect.minX), Float(rect.minY), Float(rect.width), Float(rect.height)),
                     color: ink,
-                    motion: SIMD4(Float(splitUV), Float(smearUV.width), Float(smearUV.height), level(blur)),
+                    motion: SIMD4(Float(splitUV), Float(smearUV.width), Float(smearUV.height), Float(sigma)),
                     extra: SIMD4(Float(expand), Float(alpha), texel.x, texel.y))
                 scene.items.append(.glyph(instance, texture: entry.texture, additive: additive))
             }

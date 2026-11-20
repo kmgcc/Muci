@@ -545,18 +545,13 @@ final class SkinLyricsTimeline {
 
 // MARK: - Audio
 
-/// A lease on the shared analysis Hub and LED provider. The scene holds at most one, only
-/// while a visible node reads audio and local playback is running. External sources report
-/// that no PCM is available rather than inventing data.
+/// The scene's latest analysis frame. The host feeds it while a visible node reads audio and
+/// local playback is running; external sources report that no PCM is available.
 @MainActor
 final class SkinSceneAudio {
     enum Availability: String { case inactive, localAudio, externalAudioUnavailable }
 
-    private(set) var availability = Availability.inactive
-    private var consumerID: UUID?
-    private var ledConsumerID: UUID?
-    private var provider: LEDMeterServiceProvider?
-    private var generation: UInt64 = 0
+    var availability = Availability.inactive
 
     private var magnitudes: [Float] = []
     private var pcm: [Float] = []
@@ -578,59 +573,26 @@ final class SkinSceneAudio {
         "audio.vocal": (1000, 3500), "audio.treble": (3500, 16_000),
     ]
 
-    func update(provider: LEDMeterServiceProvider, source: PlaybackSource, active: Bool, isPlaying: Bool, usesLED: Bool) {
-        let next: Availability = !active ? .inactive : (source != .local ? .externalAudioUnavailable : (isPlaying ? .localAudio : .inactive))
-        let keepsPausedFrame = active && source == .local && !isPlaying
-        guard next != availability || (next == .localAudio && usesLED != (ledConsumerID != nil)) else { return }
-        release(clear: !keepsPausedFrame)
-        availability = next
-        guard next == .localAudio else { return }
-        self.provider = provider
-        provider.acquireSession()
-        let expected = generation
-        consumerID = AudioAnalysisHub.shared.addConsumer { [weak self] frame in
-            Task { @MainActor [weak self] in
-                guard let self, self.generation == expected, self.availability == .localAudio else { return }
-                self.receive(frame)
-            }
-        }
-        if usesLED {
-            ledConsumerID = provider.addFrameConsumer { [weak self] metrics, _ in
-                guard let self, self.generation == expected else { return }
-                self.ledLevel = Double(metrics.level)
-                self.leds = metrics.leds.map(Double.init)
-            }
-        }
+    func clear() {
+        magnitudes = []; pcm = []
+        rms = 0; peak = 0; fastRMS = 0; fastPeak = 0; ledLevel = 0; leds = []
     }
 
-    func stop() {
-        release(clear: true)
-        availability = .inactive
-    }
-
-    private func release(clear: Bool) {
-        generation &+= 1
-        if let consumerID { AudioAnalysisHub.shared.removeConsumer(consumerID) }
-        if let ledConsumerID { provider?.removeFrameConsumer(ledConsumerID) }
-        consumerID = nil
-        ledConsumerID = nil
-        provider?.releaseSession()
-        provider = nil
-        if clear {
-            magnitudes = []; pcm = []
-            rms = 0; peak = 0; fastRMS = 0; fastPeak = 0; ledLevel = 0; leds = []
-        }
-    }
-
-    /// Preview hosts feed synthetic frames through the same path.
-    func receive(_ frame: AudioAnalysisData) {
+    /// `magnitudes` are FFT power bins of `fftSize`, `pcm` the analysis window in −1…1.
+    func receive(magnitudes: [Float], pcm: [Float], sampleRate: Double, fftSize: Int,
+                 rms: Double, peak: Double, fastRMS: Double, fastPeak: Double) {
         timestamp = Date.timeIntervalSinceReferenceDate
-        magnitudes = frame.magnitudes
-        pcm = frame.pcmSamples
-        sampleRate = Double(frame.sampleRate)
-        fftSize = frame.fftSize
-        rms = Double(frame.rms); peak = Double(frame.peak)
-        fastRMS = Double(frame.fastRMS); fastPeak = Double(frame.fastPeak)
+        self.magnitudes = magnitudes
+        self.pcm = pcm
+        self.sampleRate = sampleRate
+        self.fftSize = fftSize
+        self.rms = rms; self.peak = peak
+        self.fastRMS = fastRMS; self.fastPeak = fastPeak
+    }
+
+    func receiveMeter(level: Double, leds: [Double]) {
+        ledLevel = level
+        self.leds = leds
     }
 
     func receiveSynthetic(magnitudes: [Float], pcm: [Float], level: Double) {

@@ -140,6 +140,7 @@ struct SkinSceneHost: View {
         .environment(\.skinSceneLyricsVisible, lyricsVisible && (viewport.surface == .fullscreen || uiState.skinSceneLyricsVisible))
         .environment(\.skinSceneIsActive, isActive)
         .environment(\.skinSceneSession, session)
+        .environment(\.skinSceneHost, SkinSceneAppHost())
         .environment(\.skinPackageResources, resourceDirectory)
         .environment(\.skinPackageFonts, (skin as? PackagedSkin)?.manifest.fonts ?? [])
         .onPreferenceChange(SkinLyricsSlotKey.self) { configuration in

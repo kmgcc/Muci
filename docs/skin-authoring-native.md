@@ -272,7 +272,7 @@ token 可以是名称，也可以是与 `animation` 相同的记录。`spring` �
 | `grain` | amount | 逐帧胶片颗粒 |
 | `fov` | distortion、chromatic、blur、start | 镜头边缘：广角畸变、边缘色散与半径渐增的边缘模糊；start 以内不受影响。各项为 0 时画面原样，可随表达式在 0 与其他值间平滑变化；子树先按节点画框裁切 |
 
-`custom` 调用包内预编译的着色器库，写法为 `{type: "custom", library: "fx.metallib", function, kind, args, reach, animated}`。`kind` 为 layer（可采样子树）、color 或 distortion；函数在 SwiftUI 规定的参数之后依次收到 `float2 size`（含外扩的画布尺寸）、`float time`，再按顺序收到 `args`：数为 float，2 至 4 个数的列表为 float2 至 float4，颜色为 half4。`reach` 为最大采样偏移，`animated` 为 true 时逐帧更新。用 `xcrun -sdk macosx metal -o fx.metallib fx.metal` 编译，源码以 `#include <SwiftUI/SwiftUI_Metal.h>` 开头，函数标注 `[[stitchable]]`。
+`custom` 调用包内预编译的着色器库，写法为 `{type: "custom", library: "fx.metallib", function, kind, args, reach, animated}`。`kind` 为 layer（可采样子树）、color 或 distortion；函数在 SwiftUI 规定的参数之后依次收到 `float2 size`（含外扩的画布尺寸）、`float time`，再按顺序收到 `args`：数为 float，2 至 4 个数的列表为 float2 至 float4，更长的列表为浮点数组（函数收到 `device const float *` 与 `int` 两个参数，可写 `=spectrum(64)`），颜色为 half4，`{image: "textures/noise.png"}` 为包内图片（`texture2d<half>`）。`reach` 为最大采样偏移，`animated` 为 true 时逐帧更新。用 `xcrun -sdk macosx metal -o fx.metallib fx.metal` 编译，源码以 `#include <SwiftUI/SwiftUI_Metal.h>` 开头，函数标注 `[[stitchable]]`。
 
 `bloom` 让子树的亮部向外泛光并叠加回去，写成半径，或 `{radius, intensity, threshold}`。滤镜与泛光按效果所需的范围外扩绘制，不会被节点边框裁掉；它们作用于整棵子树，应写在文字或装饰等叶子节点上，不要套在整屏图层上。减弱动态效果时，glitch 与 wave 停止。
 
@@ -292,13 +292,39 @@ token 可以是名称，也可以是与 `animation` 相同的记录。`spring` �
 
 `fonts` 列出包内 ttf、otf 或 ttc 路径。字体按可见场景持有，退出后释放登记。
 
-Metal 节点用 `path` 指向源码，`function` 默认为 skinFragment，须为常量标识符。源码定义以下函数：
+Metal 节点用 `path` 指向源码，`function` 默认为 skinFragment，须为常量标识符。源码定义以下两种函数之一：
 
 ```cpp
-float4 skinFragment(float2 uv, constant SkinUniforms& u, texture2d<float> artwork)
+float4 skinFragment(float2 uv, constant SkinUniforms& u, SkinInputs in)          // 完整输入
+float4 skinFragment(float2 uv, constant SkinUniforms& u, texture2d<float> artwork) // 只取封面
 ```
 
-宿主提供 resolution、time、lyricsTime、progress、bass、mid、treble 与 accent。编译异步进行，错误显示在该节点。请从[流彩样例](examples/skins/shader/shaders/flow.metal)开始。
+`uv` 从左上角 (0, 0) 到右下角 (1, 1)。`SkinUniforms` 逐帧提供：
+
+| 字段 | 含义 |
+| --- | --- |
+| resolution、pixelsPerPoint | 画面像素尺寸、每点像素数 |
+| time、deltaTime、frame | 场景时间、距上一帧的秒数、帧序号 |
+| lyricsTime、progress、duration、playing | 歌词时间、播放进度 0 至 1、时长、是否在播放 |
+| bass、lowMid、mid、vocal、treble、level、beat | 分频能量、整体响度与鼓点脉冲，均为 0 至 1 |
+| pointer、pointerInside | 指针在节点内的 uv 位置，及指针是否在节点内 |
+| accent、averageColor、palette[4] | 主题色、封面平均色与封面调色板，sRGB rgba |
+| spectrumCount、waveformCount、argCount、imageCount | 下列数据的数量 |
+
+完整输入还带来以下数据，由节点属性决定：
+
+| 属性 | 着色器中读取 | 说明 |
+| --- | --- | --- |
+| `spectrum`（默认 64，至多 256） | `skinSpectrum(in, x)` | 30 Hz 至 16 kHz 按对数分布的频段，0 至 1，x 从 0 到 1 插值 |
+| `waveform`（默认 256，至多 2048） | `skinWaveform(in, x)` | 实时波形，−1 至 1 |
+| `args`（至多 16 项） | `skinArg(in, i)` | 任意表达式，逐帧求值：数填 x，至多 4 个数的列表填 x 至 w，颜色为 rgba |
+| `images`（至多 4 张） | `skinImage(in, i, uv, blur)` | 包内图片，边缘重复，适合噪声与纹理 |
+| `feedback: true` | `skinPrevious(in, uv)` | 上一帧画面，以半精度保存，用于拖尾、积累与流体 |
+| — | `skinArtwork(in, uv, blur)` | 封面；`blur` 为 mip 层级，0 最清晰，每加 1 尺寸减半 |
+
+`in.position` 为像素坐标；`skinLinear` 与 `skinRepeat` 是两种现成的采样器。节点的 `resolution`（0.25 至 1）决定着色器画面的分辨率，柔和的背景用 0.5 至 0.75 足够。输出按预乘 alpha 与下层叠加，写 1 即为不透明。
+
+编译异步进行，错误显示在该节点。源码至多 1 MB；图片与封面按长边至多 2048 像素解码并生成 mip；GPU 上至多排队两帧，较慢的着色器只降低自己的帧率；GPU 耗时连续 60 帧超过每帧 25 毫秒时，节点停用并显示原因。请从[流彩样例](examples/skins/shader/shaders/flow.metal)开始。
 
 ## 参数、安装和开发
 
