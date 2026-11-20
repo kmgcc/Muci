@@ -31,6 +31,41 @@ struct SkinFunction {
 enum SkinFunctions {
     static let maximumGeneratedListCount = 1024
 
+    /// Functions of one number, including easings over a 0…1 progress (clamped).
+    static let unary: [String: @MainActor (Double) -> Double] = [
+        "abs": { abs($0) },
+        "floor": { Foundation.floor($0) },
+        "ceil": { Foundation.ceil($0) },
+        "sqrt": { Foundation.sqrt(max(0, $0)) },
+        "exp": { Foundation.exp($0) },
+        "log": { Foundation.log(max(1e-12, $0)) },
+        "log2": { Foundation.log2(max(1e-12, $0)) },
+        "log10": { Foundation.log10(max(1e-12, $0)) },
+        "sin": { Foundation.sin($0) },
+        "cos": { Foundation.cos($0) },
+        "tan": { Foundation.tan($0) },
+        "asin": { Foundation.asin(min(1, max(-1, $0))) },
+        "acos": { Foundation.acos(min(1, max(-1, $0))) },
+        "atan": { Foundation.atan($0) },
+        "sign": { $0 > 0 ? 1 : ($0 < 0 ? -1 : 0) },
+        "fract": { $0 - Foundation.floor($0) },
+        "deg": { $0 * 180 / .pi },
+        "rad": { $0 * .pi / 180 },
+        "easeIn": { let t = min(1, max(0, $0)); return t * t * t },
+        "easeOut": { let t = 1 - min(1, max(0, $0)); return 1 - t * t * t },
+        "easeInOut": { let t = min(1, max(0, $0)); return t < 0.5 ? 4 * t * t * t : 1 - Foundation.pow(-2 * t + 2, 3) / 2 },
+        "random": { SkinFunctions.hash01($0) },
+        "noise": { SkinFunctions.valueNoise($0) },
+    ]
+
+    /// Functions of exactly two numbers.
+    static let binary: [String: @MainActor (Double, Double) -> Double] = [
+        "pow": { Foundation.pow($0, $1) },
+        "atan2": { Foundation.atan2($0, $1) },
+        "mod": { $1 == 0 ? 0 : $0 - $1 * Foundation.floor($0 / $1) },
+        "step": { $1 < $0 ? 0 : 1 },
+    ]
+
     static let table: [String: SkinFunction] = {
         var table: [String: SkinFunction] = [:]
         @MainActor func number(_ name: String, _ arity: ClosedRange<Int>, _ body: @escaping @MainActor ([Double]) -> Double) {
@@ -39,33 +74,14 @@ enum SkinFunctions {
             }
         }
 
-        // Maths
-        number("abs", 1...1) { abs($0[0]) }
-        number("floor", 1...1) { Foundation.floor($0[0]) }
-        number("ceil", 1...1) { Foundation.ceil($0[0]) }
+        // Maths. The one- and two-number functions live in `unary` and `binary`, which the
+        // compiler also calls directly.
+        for (name, body) in SkinFunctions.unary { number(name, 1...1) { body($0[0]) } }
+        for (name, body) in SkinFunctions.binary { number(name, 2...2) { body($0[0], $0[1]) } }
         number("round", 1...2) { $0.count == 2 && $0[1] > 0 ? ($0[0] / $0[1]).rounded() * $0[1] : $0[0].rounded() }
-        number("sqrt", 1...1) { Foundation.sqrt(max(0, $0[0])) }
-        number("pow", 2...2) { Foundation.pow($0[0], $0[1]) }
-        number("exp", 1...1) { Foundation.exp($0[0]) }
-        number("log", 1...1) { Foundation.log(max(1e-12, $0[0])) }
-        number("log2", 1...1) { Foundation.log2(max(1e-12, $0[0])) }
-        number("log10", 1...1) { Foundation.log10(max(1e-12, $0[0])) }
-        number("sin", 1...1) { Foundation.sin($0[0]) }
-        number("cos", 1...1) { Foundation.cos($0[0]) }
-        number("tan", 1...1) { Foundation.tan($0[0]) }
-        number("asin", 1...1) { Foundation.asin(min(1, max(-1, $0[0]))) }
-        number("acos", 1...1) { Foundation.acos(min(1, max(-1, $0[0]))) }
-        number("atan", 1...1) { Foundation.atan($0[0]) }
-        number("atan2", 2...2) { Foundation.atan2($0[0], $0[1]) }
-        number("sign", 1...1) { $0[0] > 0 ? 1 : ($0[0] < 0 ? -1 : 0) }
-        number("fract", 1...1) { $0[0] - Foundation.floor($0[0]) }
-        number("mod", 2...2) { $0[1] == 0 ? 0 : $0[0] - $0[1] * Foundation.floor($0[0] / $0[1]) }
         number("min", 1...Int.max) { $0.min() ?? 0 }
         number("max", 1...Int.max) { $0.max() ?? 0 }
         number("clamp", 3...3) { min(max($0[0], $0[1]), $0[2]) }
-        number("deg", 1...1) { $0[0] * 180 / .pi }
-        number("rad", 1...1) { $0[0] * .pi / 180 }
-        number("step", 2...2) { $0[1] < $0[0] ? 0 : 1 }
         number("smoothstep", 3...3) { arguments in
             let range = arguments[1] - arguments[0]
             guard range != 0 else { return arguments[2] < arguments[0] ? 0 : 1 }
@@ -78,16 +94,11 @@ enum SkinFunctions {
             if arguments.count == 6, arguments[5] != 0 { t = min(1, max(0, t)) }
             return arguments[3] + (arguments[4] - arguments[3]) * t
         }
-        // Easing over a 0…1 progress, clamped; `backOut` overshoots by its optional second argument.
-        number("easeIn", 1...1) { let t = min(1, max(0, $0[0])); return t * t * t }
-        number("easeOut", 1...1) { let t = 1 - min(1, max(0, $0[0])); return 1 - t * t * t }
-        number("easeInOut", 1...1) { let t = min(1, max(0, $0[0])); return t < 0.5 ? 4 * t * t * t : 1 - Foundation.pow(-2 * t + 2, 3) / 2 }
+        // `backOut` overshoots by its optional second argument; the other easings are in `unary`.
         number("backOut", 1...2) { arguments in
             let t = min(1, max(0, arguments[0])) - 1, s = arguments.count == 2 ? arguments[1] : 1.70158
             return 1 + (s + 1) * t * t * t + s * t * t
         }
-        number("random", 1...1) { SkinFunctions.hash01($0[0]) }
-        number("noise", 1...1) { SkinFunctions.valueNoise($0[0]) }
         // `spring(token, t)`: the MotionKit spring of a token (or a retuning record, or one of the
         // skin's own tokens) from 0 to 1 over `t` seconds, at the user's motion speed, overshoot
         // included; `springVelocity` is its rate per second. Reduced motion lands at 1 at once.

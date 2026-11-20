@@ -328,6 +328,16 @@
         "curve": {
           "description": "particles with lifetime: turn added to the travel direction over time, in radians per second squared"
         },
+        "soft": {
+          "description": "particles without lifetime: points over which each dot's edge fades out, drawn per dot without a layer blur"
+        },
+        "resolution": {
+          "description": "any node: share of display resolution (0.25 to 1) its content is drawn at before scaling back up, multiplied by the render quality setting; for soft content such as backgrounds. The node's own filter and bloom run afterwards at the usual resolution"
+        },
+        "render": {
+          "enum": ["gpu"],
+          "description": "layer: draws its children into one Metal surface on its own display clock, resting while still. Children are rectangle shapes, gradients, fog and particles (particles may carry motionBlur); the camera takes x, y, zoom and perspective; the layer filter is grain, added as the surface scales up; resolution sets the surface resolution"
+        },
         "outline": {
           "description": "text, lyricLine: a width, or {width, color, hollow}; hollow keeps only the ring"
         },
@@ -431,6 +441,7 @@
             "control.previous", "control.next", "control.progress", "control.volume", "control.expandableVolume", "control.playbackMode",
             "control.like", "control.dislike", "control.outputDevice", "control.queue", "control.lyricsToggle", "control.fullscreen", "control.settings", "control.quickPanel",
             "control.actionButton", "control.glassButton", "control.glassTriplePill",
+            "control.progressLine", "control.actionStack", "control.playbackModeStack",
             "text.trackInfo", "text.trackDescription", "text.marquee", "transition.bokeh",
             "panel.queue", "panel.quickAppearance", "panel.trackDetail", "sheet.trackEdit", "sheet.externalInfo", "sheet.settings", "menu.trackContext", "menu.player",
             "behavior.autoHide", "behavior.lyricsEndAutoHide", "behavior.scrollVolume", "behavior.pointerOcclusion", "behavior.windowDrag",

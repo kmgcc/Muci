@@ -201,41 +201,14 @@ private struct SkinPlayerMenuItems: View {
     @ViewBuilder private func orderPicker(_ presentation: NowPlayingPresentation) -> some View {
         if presentation.source == .local {
             Picker(selection: Binding(get: { presentation.localPlaybackOrderMode ?? settings.playbackOrderMode }, set: { actions.setPlaybackOrder($0) })) {
-                ForEach([PlaybackOrderMode.shuffle, .sequence, .repeatOne, .stopAfterTrack], id: \.self) { mode in
-                    Label(Self.title(mode), systemImage: Self.symbol(mode)).tag(mode)
+                ForEach(SkinPlaybackOrderLabels.localModes, id: \.self) { mode in
+                    Label(SkinPlaybackOrderLabels.title(mode), systemImage: SkinPlaybackOrderLabels.symbol(mode)).tag(mode)
                 }
-            } label: { Label("播放顺序", systemImage: Self.symbol(presentation.localPlaybackOrderMode ?? settings.playbackOrderMode)) }
+            } label: { Label("播放顺序", systemImage: SkinPlaybackOrderLabels.symbol(presentation.localPlaybackOrderMode ?? settings.playbackOrderMode)) }
         } else {
             Picker(selection: Binding(get: { presentation.appleMusicPlaybackMode ?? .sequence }, set: { actions.setExternalPlaybackOrder($0) })) {
-                ForEach(AppleMusicPlaybackMode.allCases) { mode in Text(Self.title(mode)).tag(mode) }
+                ForEach(AppleMusicPlaybackMode.allCases) { mode in Text(SkinPlaybackOrderLabels.title(mode)).tag(mode) }
             } label: { Label("播放顺序", systemImage: "list.bullet") }
-        }
-    }
-
-    private static func title(_ mode: PlaybackOrderMode) -> String {
-        switch mode {
-        case .shuffle: "随机播放"
-        case .sequence: "顺序播放"
-        case .repeatOne: "单曲循环"
-        case .stopAfterTrack: "播完停止"
-        }
-    }
-
-    private static func symbol(_ mode: PlaybackOrderMode) -> String {
-        switch mode {
-        case .shuffle: "shuffle"
-        case .sequence: "list.bullet"
-        case .repeatOne: "repeat.1"
-        case .stopAfterTrack: "pause.circle"
-        }
-    }
-
-    private static func title(_ mode: AppleMusicPlaybackMode) -> String {
-        switch mode {
-        case .sequence: "顺序播放"
-        case .shuffle: "随机播放"
-        case .repeatAll: "列表循环"
-        case .repeatOne: "单曲循环"
         }
     }
 }

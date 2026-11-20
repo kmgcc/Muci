@@ -82,6 +82,7 @@ struct SkinSceneNodeV2View: View {
     @Environment(\.skinSceneActions) private var actions
     @Environment(\.skinSceneMetricsID) private var metricsID
     @Environment(\.skinSceneLiveViewport) private var live
+    @Environment(\.skinRenderScale) private var renderScale
     @State private var hovered = false
     @State private var dragging = false
     @State private var animationStart = Date.timeIntervalSinceReferenceDate
@@ -125,7 +126,9 @@ struct SkinSceneNodeV2View: View {
         }
     }
 
-    private func context(now: Double, gesture: SkinValue? = nil) -> SkinEvaluationContext {
+    /// `memo` keeps let values for one drawing pass; actions run without it, since their commands
+    /// change state between reads.
+    private func context(now: Double, gesture: SkinValue? = nil, memo: SkinLetMemo? = nil) -> SkinEvaluationContext {
         var values = locals
         var own: [String: SkinValue] = ["hovered": .boolean(hovered), "pressed": .boolean(dragging), "dragging": .boolean(dragging)]
         if case .record(let reading)? = (backdropReading ?? inheritedReading)?.value { own.merge(reading) { _, new in new } }
@@ -140,11 +143,12 @@ struct SkinSceneNodeV2View: View {
         context.motionTokens = motionTokens
         context.moves = moves
         context.followers = followers
+        context.memo = memo
         return context
     }
 
     private func render(at now: Double) -> AnyView {
-        let context = context(now: now)
+        let context = context(now: now, memo: SkinLetMemo())
         // A hidden node with no transition draws nothing, so the rest of its values are not evaluated.
         if node.hidesWithoutTransition, node.properties["visible"]?.evaluate(context).isTruthy == false {
             return AnyView(EmptyView())
@@ -167,8 +171,8 @@ struct SkinSceneNodeV2View: View {
         let forwardsCamera = node.type == "repeat" && values["layout"]?.textValue == "free"
         // A viewport-sized, untransformed repeat shares the camera layer's coordinates.
         // For other repeats, cancel the shared transform at the wrapper and keep its cells local.
-        let compensateRepeat = forwardsCamera && camera?.placement == .rasterLayer
-            && !sharesRasterCoordinates(centre: centre, childSize: childSize, frame: frame, values: values)
+        let compensateRepeat = forwardsCamera && camera?.placement == .sharedLayer
+            && !sharesCameraCoordinates(centre: centre, childSize: childSize, frame: frame, values: values)
         var repeatCamera = camera
         if compensateRepeat { repeatCamera?.placement = .compensatedSubtree }
         // A node hidden behind a transition stays mounted so it can fade out. Once the fade has
@@ -178,21 +182,38 @@ struct SkinSceneNodeV2View: View {
         // shell would give up the space its siblings are laid out around.
         let collapses = positioned && hidden && transition != nil && node.children.allSatisfy(\.mountQuiet)
         var result = collapses && collapsed ? AnyView(EmptyView()) : content(values, size: childSize, now: now, repeatCamera: repeatCamera)
-        result = AnyView(result.frame(width: width, height: height, alignment: alignment(frame[member: "align"].textValue)))
-        result = AnyView(result.frame(minWidth: dimension(frame[member: "minWidth"], horizontal: true), maxWidth: dimension(frame[member: "maxWidth"], horizontal: true), minHeight: dimension(frame[member: "minHeight"], horizontal: false), maxHeight: dimension(frame[member: "maxHeight"], horizontal: false)))
+        // Every modifier is one more piece SwiftUI updates on each frame, so the ones a node can
+        // never use are left out. The choice is fixed at compile time, so the view keeps its shape.
+        func sets(_ names: [String]) -> Bool { node.frameKeys.map { !$0.isDisjoint(with: names) } ?? true }
+        if sets(["width", "height", "size", "align"]) {
+            result = AnyView(result.frame(width: width, height: height, alignment: alignment(frame[member: "align"].textValue)))
+        }
+        if sets(["minWidth", "maxWidth", "minHeight", "maxHeight"]) {
+            result = AnyView(result.frame(minWidth: dimension(frame[member: "minWidth"], horizontal: true), maxWidth: dimension(frame[member: "maxWidth"], horizontal: true), minHeight: dimension(frame[member: "minHeight"], horizontal: false), maxHeight: dimension(frame[member: "maxHeight"], horizontal: false)))
+        }
         if let aspect = frame[member: "aspectRatio"].numberValue, aspect > 0 { result = AnyView(result.aspectRatio(aspect, contentMode: .fit)) }
         if frame[member: "fill"].isTruthy {
             result = AnyView(result.frame(maxWidth: .infinity, maxHeight: .infinity))
         }
-        result = AnyView(result.padding(frame[member: "padding"].number()))
+        if sets(["padding"]) { result = AnyView(result.padding(frame[member: "padding"].number())) }
+        // A GPU layer draws at its `resolution` and adds its grain itself; SwiftUI filters cannot
+        // sample its Metal surface.
+        let drawsOnGPU = rendersOnGPU(values)
+        // `resolution` draws soft content on a smaller surface, scaled with the render quality.
+        // Filters and bloom below run on the scaled-up result, so grain keeps full resolution.
+        if !drawsOnGPU, let resolution = values["resolution"]?.numberValue, SkinRenderScale.factor(resolution) < 1 {
+            let scale = SkinRenderScale.factor(resolution * SkinRenderScale.factor(renderScale))
+            result = SkinRenderScale.reduced(result, scale: scale) { $0.drawingGroup() }
+        }
         // `group` composites the subtree first, so blend modes inside it mix only with each other.
         if values["group"]?.isTruthy == true { result = AnyView(result.compositingGroup()) }
         // A hidden node that keeps its transition stays mounted; its effects stop with it.
         let dormant = hidden || (values["opacity"]?.number(1) ?? 1) <= 0
-        if let filter = values["filter"] {
-            result = AnyView(result.modifier(SkinSceneFilters(filters: filter.type == .list ? filter.listValue : [filter], dormant: dormant)))
+        if !drawsOnGPU, let filter = values["filter"] {
+            let frozen = !data.timeMoves(playing: components.snapshot.playback.isPlaying)
+            result = AnyView(result.modifier(SkinSceneFilters(filters: filter.type == .list ? filter.listValue : [filter], dormant: dormant, frozen: frozen)))
         }
-        if let bloom = values["bloom"] { result = AnyView(result.modifier(SkinSceneBloom(value: bloom, dormant: dormant))) }
+        if !drawsOnGPU, let bloom = values["bloom"] { result = AnyView(result.modifier(SkinSceneBloom(value: bloom, dormant: dormant))) }
         result = SkinNodeStyle.apply(result, values: values, keys: node.styleKeys, reduceTransparency: reduceTransparency)
         if let key = values["key"] {
             result = AnyView(SkinKeyedSwap(key: String(describing: key), transition: transition ?? .null, content: result))
@@ -218,7 +239,8 @@ struct SkinSceneNodeV2View: View {
         if let animation = values["animation"] {
             let spec = SkinMotion.spec(animation, tokens: tokens, custom: data.motion.tokens)
             // Per-frame values are already continuous; animating them would chase every frame.
-            let animated = values.filter { node.properties[$0.key]?.tier != .frame }
+            // The resolution surface's layout cannot follow an animated scale, so it switches at once.
+            let animated = values.filter { $0.key != "resolution" && node.properties[$0.key]?.tier != .frame }
             result = AnyView(result.motionAnimation(spec, value: animated))
         }
         if node.tracksPointer {
@@ -227,19 +249,27 @@ struct SkinSceneNodeV2View: View {
                 perform(inside ? "hoverStart" : "hoverEnd", now: now)
             })
         }
-        result = AnyView(result
-            .onAppear {
-                animationStart = Date.timeIntervalSinceReferenceDate
-                if node.ownDomains.contains(.audio) { data.audioReaders.insert(readerID) }
-                perform("appear", now: now)
-            }
-            .onDisappear { data.audioReaders.remove(readerID); perform("disappear", now: now) }
-            .onChange(of: values["keyframes"]?[member: "trigger"]) { _, _ in animationStart = Date.timeIntervalSinceReferenceDate }
-            .task(id: collapses) {
+        func mayHave(_ name: String) -> Bool { node.styleKeys?.contains(name) ?? true }
+        let keyframed = mayHave("keyframes")
+        if keyframed || node.ownDomains.contains(.audio) || node.actions["appear"] != nil || node.actions["disappear"] != nil {
+            result = AnyView(result
+                .onAppear {
+                    animationStart = Date.timeIntervalSinceReferenceDate
+                    if node.ownDomains.contains(.audio) { data.audioReaders.insert(readerID) }
+                    perform("appear", now: now)
+                }
+                .onDisappear { data.audioReaders.remove(readerID); perform("disappear", now: now) })
+        }
+        if keyframed {
+            result = AnyView(result.onChange(of: values["keyframes"]?[member: "trigger"]) { _, _ in animationStart = Date.timeIntervalSinceReferenceDate })
+        }
+        if positioned, mayHave("transition") {
+            result = AnyView(result.task(id: collapses) {
                 guard collapses else { if collapsed { collapsed = false }; return }
                 try? await Task.sleep(for: .seconds(2.5))
                 if !Task.isCancelled { collapsed = true }
             })
+        }
         if let help = values["help"]?.textValue { result = AnyView(result.help(help)) }
         if let cursor = values["cursor"]?.textValue { result = AnyView(result.background(SkinSceneCursorRegion(name: cursor))) }
         if let controls = values["controls"] { result = AnyView(result.skinProvidesControls(Set(controls.listValue.compactMap { SkinSceneControl(rawValue: $0.textValue) }))) }
@@ -280,12 +310,15 @@ struct SkinSceneNodeV2View: View {
         // Applied after the gestures: a hidden node that keeps its transition stays mounted, and a
         // full-viewport tap layer would otherwise catch every click. The modifiers stay in place
         // either way, so toggling visibility keeps the subtree's identity.
+        // A node that can never turn these off leaves the modifiers out.
         let interactive = values["hitTesting"]?.isTruthy != false && !hidden
         let reportsControls = interactive && (values["opacity"]?.number(1) ?? 1) > 0
-        result = AnyView(result
-            .allowsHitTesting(interactive)
-            .transformPreference(SkinControlRegionKey.self) { if !interactive { $0 = [] } }
-            .transformPreference(SkinSceneControlsKey.self) { if !reportsControls { $0 = [] } })
+        if ["hitTesting", "visible", "opacity"].contains(where: mayHave) {
+            result = AnyView(result
+                .allowsHitTesting(interactive)
+                .transformPreference(SkinControlRegionKey.self) { if !interactive { $0 = [] } }
+                .transformPreference(SkinSceneControlsKey.self) { if !reportsControls { $0 = [] } })
+        }
         if values["motion"] != nil { result = AnyView(result.environment(\.motionTokens, tokens)) }
         // Positioning comes last: `.position` fills the parent layer, so any hit shape,
         // hover or help attached after it would claim the whole layer.
@@ -314,7 +347,7 @@ struct SkinSceneNodeV2View: View {
     private static let plainRepeatProperties: Set<String> = ["frame", "layout", "items", "limit", "visible", "hitTesting", "zIndex"]
     private static let plainRepeatFrame: Set<String> = ["x", "y", "width", "height", "size", "anchor", "align"]
 
-    private func sharesRasterCoordinates(centre: CGPoint?, childSize: CGSize, frame: SkinValue, values: [String: SkinValue]) -> Bool {
+    private func sharesCameraCoordinates(centre: CGPoint?, childSize: CGSize, frame: SkinValue, values: [String: SkinValue]) -> Bool {
         guard centre == CGPoint(x: size.width / 2, y: size.height / 2), childSize == size,
               node.mask == nil, Self.plainRepeatProperties.isSuperset(of: values.keys) else { return false }
         if case .record(let fields) = frame { return Self.plainRepeatFrame.isSuperset(of: fields.keys) }
@@ -330,6 +363,8 @@ struct SkinSceneNodeV2View: View {
         let foreground = values["color"]?.colorValue?.swiftUIColor ?? (backdropReading ?? inheritedReading)?.primary
             ?? data.theme["theme.appForeground.primary"]?.colorValue?.swiftUIColor ?? .primary
         switch node.type {
+        case "layer" where rendersOnGPU(values):
+            return AnyView(SkinGPULayerSurface(inputs: gpuInputs(values, size: size)).frame(width: size.width, height: size.height))
         case "layer":
             let link = cameraLink(now: now)
             let stack = AnyView(ZStack(alignment: .topLeading) { ForEach(node.children) { child($0, size: size, positioned: true, camera: link) } }.frame(width: size.width, height: size.height))
@@ -502,12 +537,15 @@ struct SkinSceneNodeV2View: View {
         }
         if times.count != characters.count { times = Array(repeating: (start: clock, end: clock, word: 0), count: characters.count) }
         let lineStart = times.first?.start ?? clock
-        var scope = context(now: now)
+        var scope = context(now: now, memo: SkinLetMemo())
+        let glyphMemo = SkinLetMemo()
+        scope.glyphMemo = glyphMemo
         var reach = 0.0, growth = 0.0
         style.transforms.reserveCapacity(characters.count)
         for (index, character) in characters.enumerated() {
             let time = times[index]
             scope.followSlot = index + 1
+            glyphMemo.values.removeAll(keepingCapacity: true)
             scope.locals["glyph"] = .record([
                 "index": .number(Double(index)), "count": .number(Double(characters.count)), "char": .text(String(character)),
                 "word": .number(Double(time.word)), "line": .number(Double(lineIndex ?? 0)),
@@ -542,9 +580,11 @@ struct SkinSceneNodeV2View: View {
             return SkinCameraLink(source: cameraSource, steady: SkinSceneCamera(property.evaluate(context(now: now))))
         }
         let placement: SkinCameraLink.Placement
-        if case .object(let fields) = property, case .expression(let flag)? = fields["rasterize"],
-           flag.constantValue?.isTruthy == true {
-            placement = .rasterLayer
+        if case .object(let fields) = property, ["rasterize", "sharedMotion"].contains(where: { name in
+            guard case .expression(let flag)? = fields[name] else { return false }
+            return flag.constantValue?.isTruthy == true
+        }) {
+            placement = .sharedLayer
         } else {
             placement = .local
         }
@@ -553,6 +593,31 @@ struct SkinSceneNodeV2View: View {
         cameraSource.followers = followers
         cameraSource.evaluate = { now in SkinSceneCamera(property.evaluate(view.context(now: now))) }
         return SkinCameraLink(source: cameraSource, steady: nil, placement: placement)
+    }
+
+    /// A `render: "gpu"` layer, when Metal is there to draw it; otherwise its children draw as views.
+    private func rendersOnGPU(_ values: [String: SkinValue]) -> Bool {
+        node.type == "layer" && values["render"]?.textValue == "gpu" && SkinGPURenderer.shared != nil
+    }
+
+    private func gpuInputs(_ values: [String: SkinValue], size: CGSize) -> SkinGPULayerInputs {
+        var filters: [SkinValue] = []
+        if let filter = values["filter"] { filters = filter.type == .list ? filter.listValue : [filter] }
+        var grain = 0.0
+        if let entry = filters.first(where: { $0[member: "type"].textValue == "grain" }) { grain = entry[member: "amount"].number(0.08) }
+        let view = self, node = node, followers = followers, data = data
+        var camera: (@MainActor (Double) -> SkinSceneCamera)?
+        if let property = node.camera {
+            camera = { now in SkinSceneCamera(property.evaluate(view.context(now: now))) }
+        }
+        return SkinGPULayerInputs(
+            node: node, data: data, size: size, locals: locals, live: live, motionTokens: motionTokens, moves: moves,
+            playing: components.snapshot.playback.isPlaying, active: active, renderScale: renderScale,
+            resolution: values["resolution"]?.numberValue ?? 1, grain: grain, camera: camera,
+            cameraStill: { playing, timeMoves in
+                node.camera == nil || node.cameraInputs.isStill(playing: playing, timeMoves: timeMoves, following: followers.isMoving)
+            },
+            metricsID: metricsID)
     }
 
     private func perform(_ event: String, now: Double, gesture: SkinValue? = nil) {

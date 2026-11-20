@@ -138,7 +138,9 @@ struct SkinFrameInputs: Equatable {
     var always = false
 
     init(frame: Set<SkinDataDomain>, always: Bool) {
-        self.always = always || !frame.isDisjoint(with: [.host, .wallTime])
+        // A frame expression lists every domain it reads, so `host.lyricsVisible` next to the
+        // lyric clock would otherwise keep the node drawing through a pause.
+        self.always = always || frame.contains(.wallTime)
         time = frame.contains(.time)
         follow = frame.contains(.follow)
         // A node on the timeline for its type alone (spectrum, lyric line) follows playback.

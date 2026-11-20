@@ -6,7 +6,7 @@ enum SkinSceneCompiler {
     static let actionNames: Set<String> = ["playPause", "play", "pause", "stop", "next", "previous", "seek", "seekBy", "seekAndResume", "seekToLyric", "setVolume", "setOrderMode", "setAppleMusicMode", "toggleLike", "toggleDislike", "setLike", "playlist.add", "playlist.new", "track.delete", "musicInfo.open", "artist.show", "album.show", "output.select", "queue.toggle", "queue.show", "queue.hide", "queue.play", "lyrics.toggle", "lyrics.show", "lyrics.hide","fullscreen.toggle", "fullscreen.enter", "fullscreen.exit", "quickPanel.open", "settings.open", "trackDetail.open", "trackEdit.open", "externalInfo.open", "skin.reload", "skin.restore", "state.set", "state.toggle", "state.reset", "params.set"]
     static let filterNames: Set<String> = ["chromatic", "glitch", "motionBlur", "scanlines", "wave", "grain", "fov", "custom"]
     static let effectNames: Set<String> = ["blur", "brightness", "contrast", "saturation", "grayscale", "hueRotation", "invert", "blendMode"]
-    static let propertyNames: Set<String> = ["frame", "visible", "opacity", "rotation", "scale", "scaleX", "scaleY", "offsetX", "offsetY", "zIndex", "blur", "brightness", "contrast", "saturation", "grayscale", "hueRotation", "invert", "blendMode", "cornerRadius", "clip", "background", "material", "glass", "appGlass", "border", "shadow", "animation", "keyframes", "hitTesting", "controls", "cursor", "help", "text", "fontSize", "font", "weight", "color", "lineLimit", "alignment", "spacing", "columns", "items", "layout", "when", "props", "name", "path", "fit", "shape", "points", "colors", "start", "end", "count", "gain", "lineWidth", "function", "speed", "size", "lifetime", "seed", "loop", "muted", "poster", "mode", "index", "watch", "contextMenu", "effects", "limit", "scrollTo", "adaptive", "highlightColor", "highlightStyle", "measure", "transition", "stops", "radius", "tracking", "lineSpacing", "design", "italic", "minScale", "key", "track", "motion", "enter", "group", "glyphMotion", "outline", "glow", "filter", "bloom", "camera", "depth", "stroke", "trimStart", "trimEnd", "warp", "extrude", "angle", "spread", "trail", "turbulence", "wander", "curve", "width", "orbit", "sweep", "progress", "subpixel", "scrollX", "scrollY"]
+    static let propertyNames: Set<String> = ["frame", "visible", "opacity", "rotation", "scale", "scaleX", "scaleY", "offsetX", "offsetY", "zIndex", "blur", "brightness", "contrast", "saturation", "grayscale", "hueRotation", "invert", "blendMode", "cornerRadius", "clip", "background", "material", "glass", "appGlass", "border", "shadow", "animation", "keyframes", "hitTesting", "controls", "cursor", "help", "text", "fontSize", "font", "weight", "color", "lineLimit", "alignment", "spacing", "columns", "items", "layout", "when", "props", "name", "path", "fit", "shape", "points", "colors", "start", "end", "count", "gain", "lineWidth", "function", "speed", "size", "lifetime", "seed", "loop", "muted", "poster", "mode", "index", "watch", "contextMenu", "effects", "limit", "scrollTo", "adaptive", "highlightColor", "highlightStyle", "measure", "transition", "stops", "radius", "tracking", "lineSpacing", "design", "italic", "minScale", "key", "track", "motion", "enter", "group", "glyphMotion", "outline", "glow", "filter", "bloom", "camera", "depth", "stroke", "trimStart", "trimEnd", "warp", "extrude", "angle", "spread", "trail", "turbulence", "wander", "curve", "width", "orbit", "sweep", "progress", "subpixel", "scrollX", "scrollY", "soft", "resolution", "render"]
     static let sceneEvents: Set<String> = ["trackChange", "artworkChange", "motionArtworkReady", "playbackStart", "playbackPause", "seek", "volumeChange", "orderChange", "lyricsChange", "lyricLineChange", "interludeStart", "interludeEnd", "themeChange", "viewportChange", "visibilityChange", "fullscreenHostChange", "lyricsVisibilityChange", "audioAvailabilityChange"]
     static let nodeEvents: Set<String> = ["tap", "doubleTap", "longPress", "hoverStart", "hoverEnd", "appear", "disappear", "scroll", "dragStart", "drag", "dragEnd"]
     private static let structuralKeys: Set<String> = ["type", "id", "children", "template", "cases", "default", "component", "variants", "on", "mask"]
@@ -119,6 +119,7 @@ enum SkinSceneCompiler {
                 guard let name = fields["name"]?.stringValue, !templates.contains(name),
                       var template = (document.components[name] ?? (name.hasPrefix("template.") ? SkinBuiltinSceneTemplates.document(String(name.dropFirst(9)))?.root : nil))?.objectValue else { throw error(path, "组件模板缺失或循环引用") }
                 var templateEnvironment = environment
+                templateEnvironment.scope = path
                 for (key, value) in fields["props"]?.objectValue ?? [:] {
                     templateEnvironment.props[key] = try expression(value, path: path + ".props." + key, environment: environment)
                 }
@@ -186,6 +187,14 @@ enum SkinSceneCompiler {
                 children.append(try node(child, path: path + ".children[\(index)]", environment: childEnvironment, depth: depth + 1, templates: templates))
             }
             if type == "repeat", children.contains(where: { lyricsCount($0) > 0 }) { throw error(path, "原生歌词不能放在 repeat 中") }
+            if let render = fields["render"] {
+                guard type == "layer", render.stringValue == "gpu" else { throw error(path + ".render", "render 只用于 layer，取值 gpu") }
+                try SkinGPULayer.validate(children, camera: fields["camera"]?.objectValue) { error(path + $0, $1) }
+                let filters = fields["filter"].map { $0.arrayValue ?? [$0] } ?? []
+                guard fields["bloom"] == nil, filters.allSatisfy({ $0.objectValue?["type"]?.stringValue == "grain" }) else {
+                    throw error(path + ".filter", "render: gpu 的图层滤镜限于 grain")
+                }
+            }
             let mask = try fields["mask"].map { try node($0, path: path + ".mask", environment: environment, depth: depth + 1, templates: templates) }
             var properties: [String: SkinCompiledProperty] = [:]
             for (key, value) in fields where SkinSceneCompiler.propertyNames.contains(key) {
@@ -254,7 +263,7 @@ enum SkinSceneCompiler {
             case .object(let values): return .object(try values.mapValues { try property($0, path: path, environment: environment) })
             case .array(let values): return .array(try values.enumerated().map { try property($0.element, path: path + "[\($0.offset)]", environment: environment) })
             default:
-                let numbers: Set<String> = ["opacity", "rotation", "scale", "scaleX", "scaleY", "offsetX", "offsetY", "zIndex", "blur", "brightness", "contrast", "saturation", "grayscale", "hueRotation", "cornerRadius", "fontSize", "spacing", "columns", "count", "gain", "lineWidth", "speed", "lifetime", "seed", "limit", "scrollTo", "radius", "tracking", "lineSpacing", "minScale", "depth", "trimStart", "trimEnd", "warp", "angle", "spread", "trail", "turbulence", "wander", "curve", "width", "sweep", "progress"]
+                let numbers: Set<String> = ["opacity", "rotation", "scale", "scaleX", "scaleY", "offsetX", "offsetY", "zIndex", "blur", "brightness", "contrast", "saturation", "grayscale", "hueRotation", "cornerRadius", "fontSize", "spacing", "columns", "count", "gain", "lineWidth", "speed", "lifetime", "seed", "limit", "scrollTo", "radius", "tracking", "lineSpacing", "minScale", "depth", "trimStart", "trimEnd", "warp", "angle", "spread", "trail", "turbulence", "wander", "curve", "width", "sweep", "progress", "soft", "resolution"]
                 let booleans: Set<String> = ["visible", "hitTesting", "when", "clip", "invert", "adaptive", "measure", "italic", "subpixel"]
                 let expected: SkinValueType = numbers.contains(key) ? .number : booleans.contains(key) ? .boolean : ["color", "background", "tint", "highlightColor"].contains(key) ? .color : .any
                 return .expression(try expression(raw, path: path, expected: expected, environment: environment))

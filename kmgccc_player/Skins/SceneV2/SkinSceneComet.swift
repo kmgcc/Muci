@@ -41,9 +41,13 @@ struct SkinSceneComet: View {
             let alpha = SkinCometPath.smooth(progress / 0.1) * (1 - SkinCometPath.smooth((progress - 0.82) / 0.18))
             guard alpha > 0.001 else { return }
             let tail = max(0, progress - trail)
-            let samples = 40
+            let samples = 60
             let points = (0...samples).map { point(tail + (progress - tail) * Double($0) / Double(samples)) }
-            SkinCometPath.draw(in: &context, points: points, width: width, head: head, color: color, alpha: alpha)
+            // Flying in, the head covers several orbits' worth of distance in a moment, and a tail
+            // timed by the flight stretched into a long straight hairline that read as a stray
+            // white line. The tail stays about as long as the orbit is wide.
+            SkinCometPath.draw(in: &context, points: points, width: width, head: head, color: color, alpha: alpha,
+                               maxLength: 1.2 * max(rx, ry))
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
@@ -60,11 +64,22 @@ enum SkinCometPath {
     /// `points` run from the tail to the head. The tail is one filled outline, so no seams or
     /// beads appear along it: it widens from nothing to `width` and fades in from transparent,
     /// and a solid disc of radius `head` sits on its front end.
-    nonisolated static func draw(in context: inout GraphicsContext, points: [CGPoint], width: Double, head: Double, color: Color, alpha: Double) {
+    /// `maxLength` (points) keeps only that much of the tail behind the head.
+    nonisolated static func draw(in context: inout GraphicsContext, points: [CGPoint], width: Double, head: Double, color: Color, alpha: Double,
+                                 maxLength: Double = .infinity) {
+        var points = points
         guard let front = points.last else { return }
-        var lengths = [0.0]
-        for index in points.indices.dropFirst() {
-            lengths.append(lengths[index - 1] + hypot(points[index].x - points[index - 1].x, points[index].y - points[index - 1].y))
+        var lengths = cumulativeLengths(points)
+        if let full = lengths.last, full > maxLength, maxLength > 0 {
+            // Cut the tail where it is `maxLength` from the head, between two samples.
+            let cut = full - maxLength
+            let index = lengths.firstIndex { $0 >= cut } ?? 0
+            if index > 0 {
+                let a = points[index - 1], b = points[index]
+                let t = (cut - lengths[index - 1]) / max(0.0001, lengths[index] - lengths[index - 1])
+                points = [CGPoint(x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t)] + points[index...]
+                lengths = cumulativeLengths(points)
+            }
         }
         let total = lengths.last ?? 0
         if total > 1, points.count > 2 {
@@ -101,5 +116,14 @@ enum SkinCometPath {
             context.fill(ribbon, with: .linearGradient(Gradient(stops: stops), startPoint: points[0], endPoint: front))
         }
         context.fill(Path(ellipseIn: CGRect(x: front.x - head, y: front.y - head, width: head * 2, height: head * 2)), with: .color(color.opacity(alpha)))
+    }
+
+    /// Distance along the polyline from its first point to each point.
+    nonisolated private static func cumulativeLengths(_ points: [CGPoint]) -> [Double] {
+        var lengths = [0.0]
+        for index in points.indices.dropFirst() {
+            lengths.append(lengths[index - 1] + hypot(points[index].x - points[index - 1].x, points[index].y - points[index - 1].y))
+        }
+        return lengths
     }
 }

@@ -137,7 +137,7 @@ nonisolated enum SettingsSearchIndex {
         for category in [SettingsCategory.nowPlaying, .fullscreen] {
             add(category, 0, "皮肤", "skin.select", [("选择外观", "皮肤 主题 自定义 导入")])
             add(category, 1, "歌词", "lyrics.appearance", [
-                ("歌词渲染质量", "清晰度 性能"), ("减弱高亮", "逐字 扫光")
+                ("歌词与皮肤渲染质量", "清晰度 性能 皮肤 特效"), ("减弱高亮", "逐字 扫光")
             ])
             add(category, 1, "歌词", "lyrics.spring", [
                 ("滚动弹性", "歌词 动画 持续时间 反弹")

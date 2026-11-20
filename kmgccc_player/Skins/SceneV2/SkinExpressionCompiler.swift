@@ -19,6 +19,11 @@ struct SkinEvaluationContext {
     var followers: SkinFollowers?
     /// Separates the springs of one call site per glyph.
     var followSlot = 0
+    /// `let` values already worked out while drawing this node instance this frame; nil turns
+    /// the caching off (actions, whose commands change state between reads, leave it nil).
+    var memo: SkinLetMemo?
+    /// The same for lets that read `glyph`, renewed for every glyph.
+    var glyphMemo: SkinLetMemo?
 
     func local(_ name: String) -> SkinValue { locals[name] ?? .null }
 
@@ -31,6 +36,26 @@ struct SkinEvaluationContext {
 }
 
 typealias SkinEvaluator = @MainActor (SkinEvaluationContext) -> SkinValue
+
+/// A `let` is expanded where it is used, so one used by several properties of a node, or several
+/// times in one expression, would be worked out again at each use. Within one evaluation its
+/// inputs stay the same, so the first result is kept here and reused.
+/// A memo lives for one drawing pass of one node instance. A prop expression handed to a component
+/// was compiled where the component is used, so the same let can meet two `props` bindings in one
+/// pass; the key names the binding too.
+final class SkinLetMemo {
+    var values: [Int: SkinValue] = [:]
+
+    private static var keys: [String: Int] = [:]
+
+    static func key(_ name: String, scope: String) -> Int {
+        let text = scope + "|" + name
+        if let key = keys[text] { return key }
+        let key = keys.count
+        keys[text] = key
+        return key
+    }
+}
 
 /// A checked expression. Equality uses the source text: two identical expressions in the same
 /// scope always evaluate the same way.
@@ -68,6 +93,9 @@ struct SkinCompileEnvironment {
     var lets: [String: SkinExpr] = [:]
     /// Functions of the package's `scripts/*.js`; nil when it has none.
     var scriptFunctions: Set<String>?
+    /// Where the current `props` were bound (the `use` node's path), so cached let values are
+    /// shared only where a let reads the same props.
+    var scope = ""
 }
 
 enum SkinExpressionCompiler {
@@ -196,6 +224,11 @@ private struct Compiler {
         func applying(_ node: CompiledNode, _ members: [String]) -> CompiledNode {
             guard !members.isEmpty else { return node }
             let evaluate = node.evaluate
+            if members.count == 1, let member = members.first {
+                return CompiledNode(type: .any, tier: node.tier, domains: node.domains, capabilities: node.capabilities) { context in
+                    evaluate(context)[member: member]
+                }
+            }
             return CompiledNode(type: .any, tier: node.tier, domains: node.domains, capabilities: node.capabilities) { context in
                 members.reduce(evaluate(context)) { $0[member: $1] }
             }
@@ -209,7 +242,8 @@ private struct Compiler {
             }
             guard !expanding.contains(name) else { throw typeError("let.\(name) 引用了自己：" + (expanding + [name]).joined(separator: " → ")) }
             do {
-                return applying(try Compiler(environment: environment, expanding: expanding + [name]).compile(expression), Array(remainder.dropFirst()))
+                let node = try Compiler(environment: environment, expanding: expanding + [name]).compile(expression)
+                return applying(memoized(node, name: name, expression: expression), Array(remainder.dropFirst()))
             } catch let error as SkinExpressionError where expanding.isEmpty {
                 throw typeError("let.\(name)：\(error.message)")
             }
@@ -251,10 +285,60 @@ private struct Compiler {
             let key = components.prefix(components.count - members.count).joined(separator: ".")
             let domain = field.domain
             let sized = domain == .viewport || domain == .host
-            let node = CompiledNode(type: field.type, tier: field.tier, domains: [domain], capabilities: [field.capability]) { context in
+            // `host.pointerIdleTime` counts wall-clock time, so it keeps a node's timeline running
+            // while paused; the rest of `host` only changes with the window.
+            let domains: Set<SkinDataDomain> = domain == .host && field.tier == .frame ? [domain, .wallTime] : [domain]
+            let node = CompiledNode(type: field.type, tier: field.tier, domains: domains, capabilities: [field.capability]) { context in
                 (sized ? context.live?.facts[key] : nil) ?? context.data.value(forKey: key, domain: domain, now: context.now)
             }
             return applying(node, members)
+        }
+    }
+
+    /// Keeps a let's value for the rest of the evaluation. A let with `follow()` (springs per call
+    /// site) or `script()` (which may keep its own state) runs at every use, as written.
+    private func memoized(_ node: CompiledNode, name: String, expression: SkinExpr) -> CompiledNode {
+        guard node.tier != .constant || node.domains.contains(.local), let readsGlyph = Self.letReads(expression, lets: environment.lets, seen: [name]) else { return node }
+        let key = SkinLetMemo.key(name, scope: environment.scope)
+        let evaluate = node.evaluate
+        return CompiledNode(type: node.type, tier: node.tier, domains: node.domains, capabilities: node.capabilities) { context in
+            guard let memo = readsGlyph ? context.glyphMemo : context.memo else { return evaluate(context) }
+            if let value = memo.values[key] { return value }
+            let value = evaluate(context)
+            memo.values[key] = value
+            return value
+        }
+    }
+
+    /// Whether the expression, with the lets it uses, reads `glyph`; nil when it calls
+    /// `follow()`, `followVelocity()` or `script()`, so its value must not be reused.
+    private static func letReads(_ expression: SkinExpr, lets: [String: SkinExpr], seen: Set<String>) -> Bool? {
+        func all(_ expressions: [SkinExpr]) -> Bool? {
+            var glyph = false
+            for expression in expressions {
+                guard let reads = letReads(expression, lets: lets, seen: seen) else { return nil }
+                glyph = glyph || reads
+            }
+            return glyph
+        }
+        switch expression {
+        case .literal: return false
+        case .path(let components):
+            if components.first == "glyph" { return true }
+            if components.first == "let", components.count > 1, !seen.contains(components[1]), let inner = lets[components[1]] {
+                return letReads(inner, lets: lets, seen: seen.union([components[1]]))
+            }
+            return false
+        case .member(let base, _): return letReads(base, lets: lets, seen: seen)
+        case .index(let base, let index): return all([base, index])
+        case .call(let name, let arguments):
+            if ["follow", "followVelocity", "script"].contains(name) { return nil }
+            return all(arguments)
+        case .unary(_, let operand): return letReads(operand, lets: lets, seen: seen)
+        case .binary(_, let lhs, let rhs): return all([lhs, rhs])
+        case .conditional(let condition, let whenTrue, let whenFalse): return all([condition, whenTrue, whenFalse])
+        case .list(let items): return all(items)
+        case .record(_, let values): return all(values)
         }
     }
 
@@ -288,13 +372,19 @@ private struct Compiler {
             guard lhs.type.conforms(to: .number), rhs.type.conforms(to: .number) else {
                 throw typeError("“\(operation.rawValue)”需要数字")
             }
-            return merge([lhs, rhs], type: .number) { context in
-                let a = l(context).number(), b = r(context).number()
-                switch operation {
-                case .subtract: return .number(a - b)
-                case .multiply: return .number(a * b)
-                case .divide: return .number(b == 0 ? 0 : a / b)
-                default: return .number(b == 0 ? 0 : a.truncatingRemainder(dividingBy: b))
+            // One closure per operator: these run for most properties on every frame.
+            switch operation {
+            case .subtract: return merge([lhs, rhs], type: .number) { .number(l($0).number() - r($0).number()) }
+            case .multiply: return merge([lhs, rhs], type: .number) { .number(l($0).number() * r($0).number()) }
+            case .divide:
+                return merge([lhs, rhs], type: .number) { context in
+                    let a = l(context).number(), b = r(context).number()
+                    return .number(b == 0 ? 0 : a / b)
+                }
+            default:
+                return merge([lhs, rhs], type: .number) { context in
+                    let a = l(context).number(), b = r(context).number()
+                    return .number(b == 0 ? 0 : a.truncatingRemainder(dividingBy: b))
                 }
             }
         case .equal, .notEqual:
@@ -362,6 +452,7 @@ private struct Compiler {
                 throw typeError("脚本里没有函数“\(scriptName)”" + skinSuggestion(scriptName, in: available))
             }
         }
+        if let direct = numeric(name, arguments) { return direct }
         let evaluators = arguments.map(\.evaluate)
         let implementation = function.implementation
         let base = merge(arguments, type: function.resultType(arguments.map(\.type))) { context in
@@ -374,6 +465,44 @@ private struct Compiler {
             capabilities: base.capabilities.union(function.capabilities),
             evaluate: base.evaluate
         )
+    }
+
+    /// Plain maths called with its arguments directly, without gathering them into arrays first.
+    /// Same results as the table's implementations.
+    private func numeric(_ name: String, _ arguments: [CompiledNode]) -> CompiledNode? {
+        switch arguments.count {
+        case 1:
+            guard let body = SkinFunctions.unary[name] else { return nil }
+            let a = arguments[0].evaluate
+            return merge(arguments, type: .number) { .number(SkinFunctions.sanitized(body(a($0).number()))) }
+        case 2:
+            let a = arguments[0].evaluate, b = arguments[1].evaluate
+            if let body = SkinFunctions.binary[name] {
+                return merge(arguments, type: .number) { .number(SkinFunctions.sanitized(body(a($0).number(), b($0).number()))) }
+            }
+            // As `[x, y].min()` and `.max()`: the second wins only when strictly smaller or larger.
+            if name == "min" {
+                return merge(arguments, type: .number) { context in
+                    let x = a(context).number(), y = b(context).number()
+                    return .number(SkinFunctions.sanitized(y < x ? y : x))
+                }
+            }
+            if name == "max" {
+                return merge(arguments, type: .number) { context in
+                    let x = a(context).number(), y = b(context).number()
+                    return .number(SkinFunctions.sanitized(y > x ? y : x))
+                }
+            }
+            return nil
+        case 3:
+            guard name == "clamp" else { return nil }
+            let a = arguments[0].evaluate, b = arguments[1].evaluate, c = arguments[2].evaluate
+            return merge(arguments, type: .number) { context in
+                .number(SkinFunctions.sanitized(min(max(a(context).number(), b(context).number()), c(context).number())))
+            }
+        default:
+            return nil
+        }
     }
 
     /// `follow(target, token)`: a MotionKit spring for this call site in each node instance (and

@@ -140,6 +140,9 @@ final class SkinCompiledSceneNode: Identifiable {
     /// Style properties the node can ever set, fixed at compile time; nil when effects or keyframes
     /// may set any of them. The renderer applies only these, so the view's structure never changes.
     let styleKeys: Set<String>?
+    /// The `frame` fields the node can ever set, so frames, padding and size limits it never uses
+    /// stay out of its view; nil when they are only known while drawing.
+    let frameKeys: Set<String>?
     /// What keeps the node's display timeline running, so it can rest once every input stands still.
     let frameInputs: SkinFrameInputs
     /// True when nothing in the node or below it reacts to being mounted or unmounted: no
@@ -197,6 +200,12 @@ final class SkinCompiledSceneNode: Identifiable {
         hidesWithoutTransition = properties["visible"] != nil && properties["transition"] == nil && !setsAnyProperty
             && !variants.contains { $0.properties["visible"] != nil || $0.properties["transition"] != nil }
         styleKeys = setsAnyProperty ? nil : variants.reduce(into: Set(properties.keys)) { $0.formUnion($1.properties.keys) }
+        var frameFields: Set<String>? = setsAnyProperty ? nil : []
+        for frame in [properties["frame"]] + variants.map({ $0.properties["frame"] }) {
+            guard let frame else { continue }
+            if case .object(let fields) = frame { frameFields?.formUnion(fields.keys) } else { frameFields = nil }
+        }
+        self.frameKeys = frameFields
         var frame = properties.filter { $0.key != "camera" }.values.reduce(into: Set<SkinDataDomain>()) { $0.formUnion($1.frameDomains) }
         for variant in variants {
             if variant.condition.tier == .frame { frame.formUnion(variant.condition.domains) }

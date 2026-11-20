@@ -41,6 +41,24 @@ struct SkinSceneSwitchTransition: ViewModifier {
     }
 }
 
+/// The play queue over a skin scene, coloured by the skin's control foreground as the fullscreen
+/// queue is; chrome skins keep the App's own colours.
+struct SkinSceneQueuePanel: View {
+    @Environment(\.skinScenePresentation) private var presentation
+    @Environment(\.colorScheme) private var colorScheme
+    @EnvironmentObject private var themeStore: ThemeStore
+
+    var body: some View {
+        let style = presentation.controlForeground
+        let foreground = style == .chrome ? nil : FullscreenMiniPlayerForegroundStrategy.resolveOverlaySurface(
+            palette: themeStore.semanticPalette, localArtworkPolarity: nil,
+            controlForeground: style, colorScheme: colorScheme
+        )
+        WindowPlaybackQueuePanelView(foreground: foreground)
+            .environment(\.colorScheme, foreground?.colorScheme ?? colorScheme)
+    }
+}
+
 /// Authors own content; the host owns the single native surface and recovery affordances.
 struct SkinSceneHost: View {
     let skin: any NowPlayingSkin
@@ -57,6 +75,8 @@ struct SkinSceneHost: View {
     @Environment(UIStateViewModel.self) private var uiState
     @Environment(\.motionArtworkFullscreenCoordinator) private var motionFullscreen
     @AppStorage(AppSettings.motionArtworkEnabledDefaultsKey) private var motionArtworkEnabled = true
+    /// The render quality setting the lyrics share; it sets the scene's offscreen resolution.
+    @AppStorage("amllLyricsRenderQuality") private var renderQuality: String = "medium"
     @ObservedObject private var fullscreen = FullscreenWindowManager.shared
     @State private var lyricsConfiguration: SkinComponentConfiguration?
     @State private var reloadError: String?
@@ -91,6 +111,7 @@ struct SkinSceneHost: View {
                             skinManager.catalog.parameters.set(skinID: skin.id, surface: viewport.surface, definition: definition, value: value)
                         }
                     }
+                    .environment(\.skinRenderScale, AppSettings.AMLLLyricsRenderQuality(rawValue: renderQuality)?.renderScale ?? 0.75)
                     .frame(width: viewport.size.width, height: viewport.size.height)
                     .id(skin.id)
                     .onPreferenceChange(SkinSceneControlsKey.self) { sceneDrawsQueue = $0.contains(.queue) }
@@ -105,7 +126,7 @@ struct SkinSceneHost: View {
             )
 
             if uiState.isWindowPlaybackQueueVisible && isActive && !sceneDrawsQueue {
-                WindowPlaybackQueuePanelView()
+                SkinSceneQueuePanel()
                     .frame(width: min(viewport.size.width, 620), height: viewport.size.height)
                     .frame(maxWidth: .infinity, alignment: .trailing)
                     .skinControlRegion()

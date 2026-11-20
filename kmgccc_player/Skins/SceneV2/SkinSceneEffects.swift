@@ -6,13 +6,18 @@ import SwiftUI
 /// The node is padded by each filter's reach first, so offsets and glows are not cut at its frame.
 /// Moving presets keep their own display timeline around the effect only, so the subtree is not
 /// rebuilt per frame. Reduced motion drops glitch and wave; a dormant node keeps its effects off.
+/// A chain with a sampling pass runs on a surface of `skinRenderScale` times the subtree's
+/// resolution, its point radii scaled to match; package `custom` shaders keep full resolution.
 struct SkinSceneFilters: ViewModifier {
     let filters: [SkinValue]
     var dormant = false
+    /// Scene time stands still: moving presets keep drawing at their last time without a timeline.
+    var frozen = false
     @Environment(\.skinSceneIsActive) private var active
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.motionPolicy) private var motionPolicy
     @Environment(\.skinPackageResources) private var root
+    @Environment(\.skinRenderScale) private var renderScale
 
     func body(content: Content) -> some View {
         let moves = motionPolicy.resolving(accessibilityReduceMotion: reduceMotion) == .full
@@ -24,43 +29,61 @@ struct SkinSceneFilters: ViewModifier {
             default: false
             }
         }
-        TimelineView(.animation(minimumInterval: nil, paused: !animated || !active || dormant)) { timeline in
-            Self.apply(AnyView(content), filters: filters, time: timeline.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 3600),
-                       moves: moves, enabled: !dormant, root: root)
+        let scale = Self.reduces(filters) ? SkinRenderScale.factor(renderScale) : 1
+        TimelineView(.animation(minimumInterval: nil, paused: !animated || !active || dormant || frozen)) { timeline in
+            SkinRenderScale.reduced(AnyView(content), scale: scale) { surface in
+                Self.apply(surface, filters: filters, time: timeline.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 3600),
+                           moves: moves, enabled: !dormant, root: root, scale: scale)
+            }
         }
     }
 
-    private static func apply(_ content: AnyView, filters: [SkinValue], time: Double, moves: Bool, enabled: Bool, root: URL?) -> AnyView {
+    /// Colour-only chains read one pixel each, so a smaller surface saves little and coarsens the
+    /// grain. A package shader's arguments are in points the host cannot rescale.
+    private static func reduces(_ filters: [SkinValue]) -> Bool {
+        var samples = false
+        for filter in filters {
+            switch filter[member: "type"].textValue {
+            case "custom": return false
+            case "chromatic", "glitch", "motionBlur", "wave", "fov": samples = true
+            default: break
+            }
+        }
+        return samples
+    }
+
+    /// `scale` is the surface's share of the subtree's resolution; point values are multiplied by it.
+    private static func apply(_ content: AnyView, filters: [SkinValue], time: Double, moves: Bool, enabled: Bool, root: URL?, scale: Double) -> AnyView {
         var view = content
         let library = ShaderLibrary.default
         for filter in filters {
             switch filter[member: "type"].textValue {
             case "chromatic":
-                let amount = filter[member: "amount"].number(2)
+                let amount = filter[member: "amount"].number(2) * scale
                 let shader = library.skinFxChromatic(.float(amount), .float(filter[member: "angle"].number() * .pi / 180))
                 view = padded(view, reach: abs(amount)) { $0.layerEffect(shader, maxSampleOffset: CGSize(width: abs(amount), height: abs(amount)), isEnabled: enabled) }
             case "glitch" where moves:
-                let amount = filter[member: "amount"].number(12)
-                let shader = library.skinFxGlitch(.float(time), .float(amount), .float(filter[member: "slice"].number(6)),
+                let amount = filter[member: "amount"].number(12) * scale
+                let shader = library.skinFxGlitch(.float(time), .float(amount), .float(filter[member: "slice"].number(6) * scale),
                                                   .float(filter[member: "rate"].number(8)), .float(filter[member: "intensity"].number(0.3).clamped01))
                 view = padded(view, reach: abs(amount) * 1.2) { $0.layerEffect(shader, maxSampleOffset: CGSize(width: abs(amount) * 1.2, height: 0), isEnabled: enabled) }
             case "motionBlur":
-                let x = filter[member: "x"].number(), y = filter[member: "y"].number()
+                let x = filter[member: "x"].number() * scale, y = filter[member: "y"].number() * scale
                 let reach = max(abs(x), abs(y)) / 2
                 let shader = library.skinFxMotionBlur(.float2(x, y), .float(filter[member: "samples"].number(12)))
-                view = padded(view, reach: reach) { $0.layerEffect(shader, maxSampleOffset: CGSize(width: abs(x) / 2, height: abs(y) / 2), isEnabled: enabled && reach > 0.25) }
+                view = padded(view, reach: reach) { $0.layerEffect(shader, maxSampleOffset: CGSize(width: abs(x) / 2, height: abs(y) / 2), isEnabled: enabled && reach > 0.25 * scale) }
             case "scanlines":
-                let shader = library.skinFxScanlines(.float(time), .float(filter[member: "spacing"].number(3)),
-                                                     .float(filter[member: "intensity"].number(0.25).clamped01), .float(moves ? filter[member: "speed"].number() : 0))
+                let shader = library.skinFxScanlines(.float(time), .float(filter[member: "spacing"].number(3) * scale),
+                                                     .float(filter[member: "intensity"].number(0.25).clamped01), .float(moves ? filter[member: "speed"].number() * scale : 0))
                 view = AnyView(view.colorEffect(shader, isEnabled: enabled))
             case "grain":
                 view = AnyView(view.colorEffect(library.skinFxGrain(.float(moves ? time : 0), .float(filter[member: "amount"].number(0.08))), isEnabled: enabled))
             case "wave" where moves:
-                let amplitude = filter[member: "amplitude"].number(4)
-                let shader = library.skinFxWave(.float(time), .float(amplitude), .float(filter[member: "wavelength"].number(180)), .float(filter[member: "speed"].number(1.5)))
+                let amplitude = filter[member: "amplitude"].number(4) * scale
+                let shader = library.skinFxWave(.float(time), .float(amplitude), .float(filter[member: "wavelength"].number(180) * scale), .float(filter[member: "speed"].number(1.5)))
                 view = padded(view, reach: abs(amplitude)) { $0.distortionEffect(shader, maxSampleOffset: CGSize(width: abs(amplitude), height: abs(amplitude)), isEnabled: enabled) }
             case "fov":
-                view = SkinSceneFOV.apply(view, filter: filter, enabled: enabled)
+                view = SkinSceneFOV.apply(view, filter: filter, enabled: enabled, scale: scale)
             case "custom":
                 view = custom(view, filter: filter, time: moves ? time : 0, enabled: enabled, root: root)
             default: break
@@ -107,6 +130,47 @@ struct SkinSceneFilters: ViewModifier {
     }
 }
 
+/// The render quality setting for skin scenes: offscreen surfaces (filters, bloom, rasterized
+/// camera layers) render at this share of the display's resolution and are scaled back up.
+/// Hit testing and layout keep full size; the transforms cancel out.
+enum SkinRenderScale {
+    static func factor(_ value: Double) -> Double {
+        value.isFinite ? min(1, max(0.25, value)) : 1
+    }
+
+    /// Lays `content` out at full size, draws it `scale` times smaller into a surface that size,
+    /// runs `effect` on that surface and scales the result back. Offscreen passes render in their
+    /// own coordinate space at the display scale and keep that resolution under later
+    /// transforms, so this is what makes a pass cost fewer pixels. The structure is the same at
+    /// any scale, so changing the setting keeps the subtree's identity and state.
+    static func reduced(_ content: AnyView, scale: Double, effect: (AnyView) -> some View) -> AnyView {
+        let scale = CGFloat(factor(scale))
+        let surface = AnyView(SkinRenderScaleFrame(factor: scale) { content.scaleEffect(scale, anchor: .topLeading) })
+        return AnyView(SkinRenderScaleFrame(factor: 1 / scale) { effect(surface).scaleEffect(1 / scale, anchor: .topLeading) })
+    }
+}
+
+/// Proposes `1 / factor` of its proposal to its one subview, places it at the top leading corner
+/// and reports `factor` of the subview's size. Paired with a `scaleEffect` of the same factor,
+/// the subview looks unchanged while the frame around it is resized.
+private struct SkinRenderScaleFrame: Layout {
+    let factor: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard let subview = subviews.first else { return .zero }
+        let size = subview.sizeThatFits(inner(proposal))
+        return CGSize(width: size.width * factor, height: size.height * factor)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        subviews.first?.place(at: bounds.origin, anchor: .topLeading, proposal: inner(proposal))
+    }
+
+    private func inner(_ proposal: ProposedViewSize) -> ProposedViewSize {
+        ProposedViewSize(width: proposal.width.map { $0 / factor }, height: proposal.height.map { $0 / factor })
+    }
+}
+
 /// Precompiled package shader libraries, loaded once per file.
 @MainActor
 enum SkinShaderLibraries {
@@ -136,13 +200,17 @@ enum SkinShaderLibraries {
 struct SkinSceneBloom: ViewModifier {
     let value: SkinValue
     var dormant = false
+    @Environment(\.skinRenderScale) private var renderScale
 
     func body(content: Content) -> some View {
-        let radius = max(1, value.numberValue ?? value[member: "radius"].number(16))
+        let scale = SkinRenderScale.factor(renderScale)
+        let radius = max(1, value.numberValue ?? value[member: "radius"].number(16)) * scale
         let intensity = value[member: "intensity"].number(0.8)
         let shader = ShaderLibrary.default.skinFxBloom(.float(radius), .float(intensity), .float(value[member: "threshold"].number().clamped01))
-        SkinSceneFilters.padded(AnyView(content), reach: radius) {
-            $0.layerEffect(shader, maxSampleOffset: CGSize(width: radius, height: radius), isEnabled: !dormant && intensity > 0.001)
+        SkinRenderScale.reduced(AnyView(content), scale: scale) { surface in
+            SkinSceneFilters.padded(surface, reach: radius) {
+                $0.layerEffect(shader, maxSampleOffset: CGSize(width: radius, height: radius), isEnabled: !dormant && intensity > 0.001)
+            }
         }
     }
 }
@@ -199,8 +267,8 @@ nonisolated struct SkinSceneCamera: Equatable, Sendable {
         return (CGPoint(x: centre.x + (point.x - centre.x - x * factor) * scale, y: centre.y + (point.y - centre.y - y * factor) * scale), scale)
     }
 
-    /// The depth-zero camera transform, applied to the completed stage image.
-    func rasterTransform(in size: CGSize) -> CGAffineTransform {
+    /// The depth-zero camera transform, applied to the whole stage.
+    func layerTransform(in size: CGSize) -> CGAffineTransform {
         let origin = place(.zero, depth: 0, in: size).point
         return CGAffineTransform(a: zoom, b: 0, c: 0, d: zoom, tx: origin.x, ty: origin.y)
     }
@@ -232,7 +300,7 @@ final class SkinCameraSource {
 /// re-renders the children themselves.
 nonisolated struct SkinCameraLink: Equatable {
     enum Placement: Equatable {
-        case local, rasterLayer, compensatedSubtree
+        case local, sharedLayer, compensatedSubtree
     }
 
     let source: SkinCameraSource
@@ -244,8 +312,8 @@ nonisolated struct SkinCameraLink: Equatable {
     }
 }
 
-/// The outer raster transform and its child placements use the same camera sample.
-nonisolated struct SkinRasterCameraFrame: Equatable {
+/// The outer layer transform and its child placements use the same camera sample.
+nonisolated struct SkinSharedCameraFrame: Equatable {
     let source: SkinCameraSource
     let camera: SkinSceneCamera
 
@@ -255,7 +323,10 @@ nonisolated struct SkinRasterCameraFrame: Equatable {
 }
 
 extension EnvironmentValues {
-    @Entry var skinRasterCameraFrame: SkinRasterCameraFrame?
+    @Entry var skinSharedCameraFrame: SkinSharedCameraFrame?
+    /// The render quality setting's share of display resolution for the scene's offscreen
+    /// surfaces; see `SkinRenderScale`. 1 outside a skin host.
+    @Entry var skinRenderScale: Double = 1
 }
 
 /// Moves one positioned child with its layer's camera: geometry only, on a timeline that wraps
@@ -267,13 +338,13 @@ struct SkinCameraFollow: ViewModifier {
     let depth: Double?
     let size: CGSize
     let paused: Bool
-    @Environment(\.skinRasterCameraFrame) private var rasterFrame
+    @Environment(\.skinSharedCameraFrame) private var sharedFrame
 
     func body(content: Content) -> some View {
-        if link.placement == .rasterLayer, depth == 0 {
+        if link.placement == .sharedLayer, depth == 0 {
             content
-        } else if link.placement != .local, let rasterFrame, rasterFrame.source === link.source {
-            place(content, camera: rasterFrame.camera)
+        } else if link.placement != .local, let sharedFrame, sharedFrame.source === link.source {
+            place(content, camera: sharedFrame.camera)
         } else if let steady = link.steady {
             place(content, camera: steady)
         } else {
@@ -285,9 +356,9 @@ struct SkinCameraFollow: ViewModifier {
 
     private func place(_ content: Content, camera: SkinSceneCamera) -> some View {
         var placed = camera.place(centre, depth: depth, in: size)
-        if link.placement == .rasterLayer {
-            // Leave only this child's difference from the shared pan and zoom in the bitmap.
-            placed.point = placed.point.applying(camera.rasterTransform(in: size).inverted())
+        if link.placement == .sharedLayer {
+            // Leave only this child's difference from the shared pan and zoom in its placement.
+            placed.point = placed.point.applying(camera.layerTransform(in: size).inverted())
             placed.scale /= camera.zoom
         }
         return content.scaleEffect(placed.scale).offset(x: placed.point.x - centre.x, y: placed.point.y - centre.y)
@@ -300,6 +371,7 @@ struct SkinCameraTurn: ViewModifier {
     let size: CGSize
     let paused: Bool
     @Environment(\.displayScale) private var displayScale
+    @Environment(\.skinRenderScale) private var renderScale
 
     func body(content: Content) -> some View {
         if let steady = link.steady {
@@ -313,11 +385,11 @@ struct SkinCameraTurn: ViewModifier {
 
     private func turn(_ content: Content, camera: SkinSceneCamera) -> some View {
         Group {
-            if link.placement == .rasterLayer {
-                rasterizedStage(content, camera: camera)
+            if link.placement == .sharedLayer {
+                sharedStage(content, camera: camera)
             } else if camera.rasterize {
                 // Give the perspective transforms one shared surface for overlapping text and shapes.
-                content.drawingGroup()
+                SkinRenderScale.reduced(AnyView(content), scale: renderScale) { $0.drawingGroup() }
             } else {
                 content
             }
@@ -327,8 +399,25 @@ struct SkinCameraTurn: ViewModifier {
         .rotationEffect(.degrees(camera.rotation))
     }
 
-    private func rasterizedStage(_ content: Content, camera: SkinSceneCamera) -> some View {
-        let transform = camera.rasterTransform(in: size)
+    @ViewBuilder
+    private func sharedStage(_ content: Content, camera: SkinSceneCamera) -> some View {
+        let sampled = content.environment(\.skinSharedCameraFrame, SkinSharedCameraFrame(source: link.source, camera: camera))
+        if camera.rasterize {
+            rasterizedStage(sampled, camera: camera)
+        } else {
+            // Platform-backed children keep their native surfaces inside the shared camera layer.
+            sampled.transformEffect(camera.layerTransform(in: size))
+        }
+    }
+
+    private func rasterizedStage(_ content: some View, camera: SkinSceneCamera) -> some View {
+        // Zoomed out, the inverse viewport holds 1 / zoom² of the screen's pixels. Drawn at full
+        // size and shrunk afterwards, every glyph, glow and blur in it cost that much more, and the
+        // bitmap was resized as the zoom eased. The bitmap takes the zoom-out itself, so it stays
+        // about the size of the screen; zooming in still scales the finished bitmap. The render
+        // scale shrinks it the same way, and the transform below scales it back up.
+        let inner = min(1, camera.zoom) * SkinRenderScale.factor(renderScale)
+        let transform = camera.layerTransform(in: size).scaledBy(x: 1 / inner, y: 1 / inner)
         let viewport = CGRect(origin: .zero, size: size)
         let pixel = 1 / max(1, displayScale)
         let tile = 32 * pixel
@@ -342,7 +431,7 @@ struct SkinCameraTurn: ViewModifier {
         let insets = EdgeInsets(top: -top, leading: -left, bottom: bottom - size.height, trailing: right - size.width)
         let restore = EdgeInsets(top: top, leading: left, bottom: size.height - bottom, trailing: size.width - right)
         return content
-            .environment(\.skinRasterCameraFrame, SkinRasterCameraFrame(source: link.source, camera: camera))
+            .scaleEffect(inner, anchor: .topLeading)
             .padding(insets)
             .drawingGroup()
             .padding(restore)

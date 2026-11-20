@@ -213,6 +213,7 @@ enum SkinThemeRoles {
 
     static let colorRoles: [ColorRole] = [
         .init(path: "theme.globalAccent") { $0.globalAccent },
+        .init(path: "theme.lyricHarmony") { $0.lyricHarmony },
         .init(path: "theme.uiAccentOnDark") { $0.uiAccentOnDark },
         .init(path: "theme.uiAccentOnLight") { $0.uiAccentOnLight },
         .init(path: "theme.ambientSurface") { $0.ambientSurface },
