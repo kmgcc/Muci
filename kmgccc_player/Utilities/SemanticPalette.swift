@@ -934,6 +934,69 @@ struct PlusBlendTextForegroundProfile: Equatable, Sendable {
     let colors: PlusBlendTextColorSet
 }
 
+/// The colour that sits beside the lyric accent: backing vocals, and the other voice of a duet.
+///
+/// The artwork's own colours come first. A colour opposite the accent (its complement), a split
+/// complement or a triad, or failing those a near neighbour that still reads apart, is taken
+/// from the cover when it carries enough chroma. With none, a split complement of the accent is
+/// built, on the side nearer the cover's average hue. Lightness and chroma follow the accent, so
+/// tints made from either colour read at the same weight; yellows and olives are lifted, since a
+/// dark yellow turns muddy.
+nonisolated enum LyricHarmonyColor {
+    static func resolve(accent: NSColor, analysis: ArtworkColorAnalysis) -> NSColor {
+        guard let source = OKColor.nsColorToOKLCH(accent) else { return accent }
+        let candidates = (analysis.salientHighlightPalette + analysis.displayPalette + analysis.richPalette + analysis.topPalette)
+            .compactMap(OKColor.nsColorToOKLCH)
+            .filter { $0.l > 0.25 && $0.l < 0.97 }
+
+        // An achromatic accent has no opposite: the most colourful cover colour, else a soft warm tint.
+        guard source.c >= 0.03 else {
+            if let vivid = candidates.filter({ $0.c >= 0.05 }).max(by: { $0.c < $1.c }) {
+                return make(lightness: source.l, chroma: min(vivid.c, 0.12), hue: vivid.h)
+            }
+            return make(lightness: source.l, chroma: 0.06, hue: 75 / 360)
+        }
+
+        let chroma = { (raw: CGFloat) -> CGFloat in
+            let low = max(0.05, source.c * 0.6), high = max(low, source.c * 1.2)
+            return min(high, max(low, raw))
+        }
+        var best: (score: CGFloat, color: OKColor.OKLCH)?
+        for candidate in candidates where candidate.c >= max(0.045, source.c * 0.35) {
+            let weight: CGFloat
+            switch hueDistance(candidate.h, source.h) * 360 {
+            case 165...180: weight = 1        // complement
+            case 130..<165: weight = 0.9      // split complement
+            case 105..<130: weight = 0.75     // triad
+            case 40..<75: weight = 0.55       // neighbour
+            default: continue
+            }
+            let score = weight + 0.25 * min(1.2, candidate.c / source.c)
+            if best.map({ score > $0.score }) ?? true { best = (score, candidate) }
+        }
+        if let best { return make(lightness: source.l, chroma: chroma(best.color.c), hue: best.color.h) }
+
+        let sides = [(source.h + 150 / 360), (source.h + 210 / 360)].map { $0.truncatingRemainder(dividingBy: 1) }
+        var hue = sides[0]
+        if let average = OKColor.nsColorToOKLCH(analysis.averageColor), average.c > 0.015 {
+            hue = sides.min { hueDistance($0, average.h) < hueDistance($1, average.h) } ?? hue
+        }
+        return make(lightness: source.l, chroma: chroma(source.c * 0.8), hue: hue)
+    }
+
+    /// Circular distance between two hues in turns, 0…0.5.
+    private static func hueDistance(_ a: CGFloat, _ b: CGFloat) -> CGFloat {
+        let d = abs(a - b).truncatingRemainder(dividingBy: 1)
+        return min(d, 1 - d)
+    }
+
+    private static func make(lightness: CGFloat, chroma: CGFloat, hue: CGFloat) -> NSColor {
+        let degrees = hue * 360
+        let floor: CGFloat = degrees >= 50 && degrees <= 130 ? 0.75 : 0.62
+        return OKColor.okLCHToNSColor(OKColor.OKLCH(l: min(0.86, max(floor, lightness)), c: chroma, h: hue), alpha: 1)
+    }
+}
+
 extension SemanticPalette {
     /// The accent's complement: the opposite OKLCH hue at the accent's
     /// lightness and chroma, gamut-mapped. For a second element that must
@@ -943,6 +1006,12 @@ extension SemanticPalette {
         guard let source = OKColor.nsColorToOKLCH(globalAccent), source.c > 0.02 else { return globalAccent }
         let hue = (source.h + 0.5).truncatingRemainder(dividingBy: 1)
         return OKColor.okLCHToNSColor(OKColor.OKLCH(l: source.l, c: source.c, h: hue), alpha: 1)
+    }
+
+    /// A second lyric colour beside the accent, for backing vocals and the other voice of a
+    /// duet. See `LyricHarmonyColor`.
+    var lyricHarmony: NSColor {
+        LyricHarmonyColor.resolve(accent: globalAccent, analysis: analysis)
     }
 
     var complementaryAccentColor: Color { ColorRenderingAdapter.makeSwiftUIColor(complementaryAccent) }

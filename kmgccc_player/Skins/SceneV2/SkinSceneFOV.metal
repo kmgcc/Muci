@@ -5,8 +5,9 @@
 //
 // skinFxLens      wide-angle stretch plus lateral chromatic aberration, three samples.
 // skinFxEdgeBlur  one axis of a Gaussian whose radius follows the edge factor. Run once
-//                 horizontally and once vertically. Taps are spaced at most ~1pt apart
-//                 (up to 16 per side), so a wide radius stays a smooth blur, never copies.
+//                 horizontally and once vertically. Up to 8 taps per side, at most half
+//                 a sigma apart from a 4pt reach on (~1pt apart below it), so a wide
+//                 radius stays a smooth blur, never copies.
 
 #include <metal_stdlib>
 #include <SwiftUI/SwiftUI_Metal.h>
@@ -51,7 +52,9 @@ static float skinFxEdge(float2 position, float2 size, float inset, float edgeSta
     if (reach < 0.4) { return layer.sample(position); }
 
     float2 lo = float2(inset), hi = size - float2(inset);
-    int taps = int(min(16.0, ceil(reach)));
+    // Sigma is half the reach, so taps sit 2 / taps sigma apart: 8 is already a quarter sigma.
+    // More only cost samples on most of the screen's edge pixels, twice per frame.
+    int taps = int(min(8.0, max(ceil(reach * 0.5), min(4.0, ceil(reach)))));
     float spacing = reach / float(taps);
     float sigma = reach * 0.5;
     float falloff = 1.0 / (2.0 * sigma * sigma);

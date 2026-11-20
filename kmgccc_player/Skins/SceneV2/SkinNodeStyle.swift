@@ -1,4 +1,5 @@
 import MotionKit
+import os
 import SwiftUI
 
 /// `transition`: how a node enters and leaves as `visible` changes — `fade` (always), `scale`,
@@ -76,9 +77,12 @@ struct SkinGlyphReveal: Equatable, Sendable {
 struct SkinGlyphTransform: Equatable, Sendable {
     var x = 0.0, y = 0.0, rotation = 0.0, scale = 1.0, opacity = 1.0, blur = 0.0
     var split = 0.0, smearX = 0.0, smearY = 0.0
+    /// How strongly the text's `glow` lights this glyph: 0 off, 1 full, more for a flash.
+    var glow = 0.0
     var tint: Color?
 
     init(_ value: SkinValue) {
+        glow = max(0, value[member: "glow"].number())
         x = value[member: "x"].number(); y = value[member: "y"].number()
         rotation = value[member: "rotation"].number(); scale = value[member: "scale"].number(1)
         opacity = value[member: "opacity"].number(1).clamped01; blur = max(0, value[member: "blur"].number())
@@ -105,6 +109,8 @@ struct SkinGlyphInk: Equatable, Sendable {
         matrix.r5 = Float(red); matrix.g5 = Float(green); matrix.b5 = Float(blue); matrix.a4 = Float(alpha)
         return matrix
     }
+
+    func color(opacity: Double) -> Color { Color(.sRGB, red: red, green: green, blue: blue, opacity: alpha * opacity) }
 }
 
 /// `outline`: a ring of `width` around each glyph; `hollow` keeps only the ring.
@@ -142,16 +148,45 @@ struct SkinGlyphExtrude: Equatable, Sendable {
     }
 }
 
+/// `glow`: light in `color` reaching about `radius` points past each glyph. One copy of the glyph
+/// blurred by a seventh of the radius (at most `blurLimit` points) makes a bright rim shaped like
+/// the glyph; a soft round pool of light falling off with distance makes the long tail. A blur as wide as the radius would cost an offscreen pass of most of the screen for
+/// every glyph and frame. `core` (0 to 1) also lifts the glyph itself toward white. Each glyph's
+/// `glyphMotion.glow` scales it, and the light is drawn with the glyph's own motion, so it never
+/// drifts off the text.
+struct SkinGlyphGlow: Equatable, Sendable {
+    static let layers: [(share: Double, weight: Double)] = [(0.14, 1.2)]
+    static let blurLimit = 16.0
+    /// Strength of the round pool.
+    static let pool = 0.7
+    var radius: Double
+    var ink: SkinGlyphInk
+    var core: Double
+
+    init?(_ value: SkinValue?, fallback: OKLCHColor?) {
+        guard let value, value.type == .record else { return nil }
+        radius = min(400, max(0, value[member: "radius"].number(24)))
+        guard radius > 0.5 else { return nil }
+        ink = SkinGlyphInk(value[member: "color"].colorValue ?? fallback ?? OKLCHColor(lightness: 1, chroma: 0, hue: nil))
+        core = value[member: "core"].number(0.5).clamped01
+    }
+
+    /// How far the light reaches past the glyph.
+    var reach: Double { radius * 1.6 }
+}
+
 /// Per-glyph motion, outline and extrusion of one scene text, computed by the node on the main actor.
 struct SkinGlyphStyle: Equatable, Sendable {
     var transforms: [SkinGlyphTransform] = []
     var outline: SkinGlyphOutline?
     var extrude: SkinGlyphExtrude?
+    var glow: SkinGlyphGlow?
     /// Glyphs filled as outlines (`subpixel` text).
     var vector: SkinGlyphVector?
     /// How far glyphs may draw outside the text's frame.
     var padding = 0.0
 }
+
 
 /// One glyph slice, drawn as its outline when the text is `subpixel` and the outline is known.
 private struct SkinGlyphShape {
@@ -175,10 +210,12 @@ struct SkinGlyphRenderer: TextRenderer {
     var stagger = 0.0
     var reveals = false
     var style = SkinGlyphStyle()
+    var alignment: TextAlignment = .leading
 
-    init(reveal: SkinGlyphReveal?, style: SkinGlyphStyle = .init()) {
+    init(reveal: SkinGlyphReveal?, style: SkinGlyphStyle = .init(), alignment: TextAlignment = .leading) {
         if let reveal { progress = reveal.progress; blur = reveal.blur; stagger = reveal.stagger; reveals = true }
         self.style = style
+        self.alignment = alignment
     }
 
     var animatableData: Double {
@@ -186,8 +223,16 @@ struct SkinGlyphRenderer: TextRenderer {
         set { progress = newValue }
     }
 
+    /// SwiftUI aligns the lines inside the text's width plus both side paddings, counted from the
+    /// text's leading edge, so centred lines move right by half the side room. With equal sides
+    /// that left twice the room before a word and none after it: blur, glow and entering glyphs
+    /// met the layer's right edge there and were drawn out into thin lines. A centred text puts
+    /// all its side room after the text, so the lines sit `padding` in from both ends.
     var displayPadding: EdgeInsets {
-        let padding = style.padding + (reveals ? blur * 2 : 0)
+        let padding = style.padding + (reveals ? blur * 3 : 0)
+        if alignment == .center {
+            return EdgeInsets(top: padding, leading: 0, bottom: padding, trailing: 2 * padding)
+        }
         return EdgeInsets(top: padding, leading: padding, bottom: padding, trailing: padding)
     }
 
@@ -213,8 +258,8 @@ struct SkinGlyphRenderer: TextRenderer {
                     }
                     var glyph = context
                     let motion = index < style.transforms.count ? style.transforms[index] : nil
+                    let bounds = slice.typographicBounds.rect
                     if let motion {
-                        let bounds = slice.typographicBounds.rect
                         glyph.translateBy(x: bounds.midX + motion.x, y: bounds.midY + motion.y)
                         if motion.rotation != 0 { glyph.rotate(by: .degrees(motion.rotation)) }
                         if motion.scale != 1 { glyph.scaleBy(x: motion.scale, y: motion.scale) }
@@ -224,12 +269,75 @@ struct SkinGlyphRenderer: TextRenderer {
                     }
                     guard opacity > 0.001 else { continue }
                     glyph.opacity *= opacity
-                    if radius > 0.05 { glyph.addFilter(.blur(radius: radius)) }
                     let outline = vector.flatMap { SkinGlyphOutlines.path($0.characters[index], font: $0.font, weight: $0.weight, size: $0.size) }
-                    Self.draw(SkinGlyphShape(slice: slice, outline: outline, color: vector?.color), motion: motion, style: style, in: glyph)
+                    let shape = SkinGlyphShape(slice: slice, outline: outline, color: vector?.color)
+                    let amount = motion?.glow ?? 0
+                    let lit = amount > 0.001 ? style.glow : nil
+                    if let glow = lit {
+                        Self.pool(glow, amount: amount, bounds: bounds, in: glyph)
+                        for layer in SkinGlyphGlow.layers {
+                            var copy = glyph
+                            copy.blendMode = .plusLighter
+                            copy.opacity *= min(1, layer.weight * amount)
+                            let blur = min(SkinGlyphGlow.blurLimit, radius + glow.radius * layer.share)
+                            Self.blurred(blur, room: 0, bounds: bounds, in: copy, ink: glow.ink) { shape.draw(in: $0) }
+                        }
+                    }
+                    if radius > 0.05 {
+                        let room = (style.outline?.width ?? 0) + (style.extrude?.depth ?? 0) + abs(motion?.split ?? 0)
+                            + abs(motion?.smearX ?? 0) + abs(motion?.smearY ?? 0)
+                        Self.blurred(radius, room: room, bounds: bounds, in: glyph) { Self.draw(shape, motion: motion, style: style, in: $0) }
+                    } else {
+                        Self.draw(shape, motion: motion, style: style, in: glyph)
+                    }
+                    if let glow = lit, glow.core > 0.001 {
+                        var core = glyph
+                        core.blendMode = .plusLighter
+                        core.opacity *= min(1, glow.core * amount)
+                        let white = SkinGlyphInk(OKLCHColor(lightness: 1, chroma: 0, hue: nil))
+                        if radius > 0.05 {
+                            Self.blurred(radius, room: 0, bounds: bounds, in: core, ink: white) { shape.draw(in: $0) }
+                        } else {
+                            core.addFilter(.colorMatrix(white.matrix))
+                            shape.draw(in: core)
+                        }
+                    }
                 }
             }
         }
+    }
+
+    /// Draws a blurred glyph in its own layer, clipped a few radii (plus `room` for outline,
+    /// extrusion and glitch offsets) around the glyph's box, so the blur always fades into empty
+    /// room inside the layer instead of meeting the edge of a tight offscreen.
+    private static func blurred(_ radius: Double, room: Double, bounds: CGRect, in context: GraphicsContext,
+                                ink: SkinGlyphInk? = nil, draw: (inout GraphicsContext) -> Void) {
+        var layer = context
+        let margin = 3 * radius + room + 2
+        layer.clip(to: Path(bounds.insetBy(dx: -margin, dy: -margin)))
+        if let ink { layer.addFilter(.colorMatrix(ink.matrix)) }
+        layer.addFilter(.blur(radius: radius))
+        layer.drawLayer { inner in draw(&inner) }
+    }
+
+    /// The glow's long tail: a round pool of light centred on the glyph, falling off roughly with
+    /// the square of the distance and reaching `1.5 × radius` past the glyph. A gradient, no filter.
+    private static func pool(_ glow: SkinGlyphGlow, amount: Double, bounds: CGRect, in context: GraphicsContext) {
+        let strength = min(1, SkinGlyphGlow.pool * amount)
+        guard strength > 0.001 else { return }
+        let half = max(1, max(bounds.width, bounds.height) / 2)
+        let outer = half + glow.radius * 1.5
+        let centre = CGPoint(x: bounds.midX, y: bounds.midY)
+        let stops = [0, 0.12, 0.25, 0.4, 0.55, 0.7, 0.85, 1].map { fraction -> Gradient.Stop in
+            let distance = fraction * outer / half
+            let light = 0.55 / (1 + 2 * distance * distance) * (1 - fraction * fraction)
+            return Gradient.Stop(color: glow.ink.color(opacity: light), location: fraction)
+        }
+        var light = context
+        light.blendMode = .plusLighter
+        light.opacity *= strength
+        light.fill(Path(ellipseIn: CGRect(x: centre.x - outer, y: centre.y - outer, width: 2 * outer, height: 2 * outer)),
+                   with: .radialGradient(Gradient(stops: stops), center: centre, startRadius: 0, endRadius: outer))
     }
 
     /// Extrusion behind, outline ring, then the face. Plain glyphs skip the offscreen layer.
@@ -326,14 +434,25 @@ struct SkinGlyphRenderer: TextRenderer {
 
 /// Wraps a scene text so its glyph style and any enclosing `glyphs` reveal draw in one renderer.
 /// The innermost renderer wins, so this one replaces the reveal-only renderer of the transition.
+///
+/// A text drawn with display padding is aligned inside its width plus both side paddings, so
+/// centred text lands half that side room to the right of its place and trailing text all of it. The
+/// layer moves it back by the same amount, so a word stays where its frame puts it however much
+/// room its motion and glow ask for. (Seen in recordings: each glyph sat right of its place by
+/// exactly its padding, so a word with a glow, which has more, ran into the next.)
 struct SkinGlyphLayer<Content: View>: View {
     let style: SkinGlyphStyle?
+    var alignment: TextAlignment = .leading
     let content: Content
     @Environment(\.skinGlyphReveal) private var reveal
 
     var body: some View {
         if style != nil || reveal != nil {
-            content.textRenderer(SkinGlyphRenderer(reveal: reveal, style: style ?? .init()))
+            let renderer = SkinGlyphRenderer(reveal: reveal, style: style ?? .init(), alignment: alignment)
+            let insets = renderer.displayPadding
+            let room = insets.leading + insets.trailing
+            content.textRenderer(renderer)
+                .offset(x: alignment == .center ? -room / 2 : (alignment == .trailing ? -room : 0))
         } else {
             content
         }
@@ -584,11 +703,57 @@ nonisolated struct SkinSceneShape: Shape {
     }
 
     /// Unit-square path coordinates. The intentionally finite vocabulary has no execution.
+    /// A path is parsed once per string and only scaled afterwards: shapes redraw every frame
+    /// while their trim or rotation animates, and their points rarely change.
     private func svgPath(in rect: CGRect) -> Path {
-        let pattern = "[MLCQHVZmlcqhvz]|[-+]?(?:[0-9]*\\.)?[0-9]+(?:[eE][-+]?[0-9]+)?"
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return Path() }
-        let text = points as NSString
-        let tokens = regex.matches(in: points, range: NSRange(location: 0, length: text.length)).map { text.substring(with: $0.range) }
+        let unit = Self.unitPaths.withLock { cache in
+            if let path = cache[points] { return path }
+            let path = Self.parse(points)
+            if cache.count > 256 { cache.removeAll() }
+            cache[points] = path
+            return path
+        }
+        return unit.applying(CGAffineTransform(a: rect.width, b: 0, c: 0, d: rect.height, tx: rect.minX, ty: rect.minY))
+    }
+
+    private static let unitPaths = OSAllocatedUnfairLock(initialState: [String: Path]())
+
+    /// Commands and numbers, as `[MLCQHVZmlcqhvz]|[-+]?(?:[0-9]*\.)?[0-9]+(?:[eE][-+]?[0-9]+)?`.
+    private static func tokens(_ text: String) -> [String] {
+        let chars = Array(text.unicodeScalars)
+        var result: [String] = [], index = 0
+        func digit(_ i: Int) -> Bool { i < chars.count && ("0"..."9").contains(chars[i]) }
+        while index < chars.count {
+            let c = chars[index]
+            if "MLCQHVZmlcqhvz".unicodeScalars.contains(c) { result.append(String(c)); index += 1; continue }
+            var end = index
+            if c == "-" || c == "+" { end += 1 }
+            let intStart = end
+            while digit(end) { end += 1 }
+            if end < chars.count, chars[end] == ".", digit(end + 1) {
+                end += 1
+                while digit(end) { end += 1 }
+            }
+            guard end > intStart, digit(end - 1) else { index += 1; continue }
+            if end < chars.count, chars[end] == "e" || chars[end] == "E" {
+                var exp = end + 1
+                if exp < chars.count, chars[exp] == "-" || chars[exp] == "+" { exp += 1 }
+                if digit(exp) {
+                    while digit(exp) { exp += 1 }
+                    end = exp
+                }
+            }
+            var token = String.UnicodeScalarView()
+            token.append(contentsOf: chars[index..<end])
+            result.append(String(token))
+            index = end
+        }
+        return result
+    }
+
+    private static func parse(_ points: String) -> Path {
+        let tokens = tokens(points)
+        let rect = CGRect(x: 0, y: 0, width: 1, height: 1)
         var result = Path(), index = 0, command = "", current = CGPoint.zero
         func point(_ x: Double, _ y: Double) -> CGPoint { CGPoint(x: rect.minX + x * rect.width, y: rect.minY + y * rect.height) }
         while index < tokens.count {

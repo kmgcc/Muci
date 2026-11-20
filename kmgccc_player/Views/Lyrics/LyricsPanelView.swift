@@ -373,6 +373,8 @@ struct LyricsPanelView: View {
 // MARK: - Window Playback Queue
 
 struct WindowPlaybackQueuePanelView: View {
+    /// Set by a surface whose own background decides the text polarity, such as a skin scene.
+    var foreground: FullscreenOverlayForegroundProfile?
     @Environment(LibraryViewModel.self) private var libraryVM
     @Environment(PlayerViewModel.self) private var playerVM
     @Environment(PlaybackCoordinator.self) private var playbackCoordinator
@@ -552,15 +554,15 @@ struct WindowPlaybackQueuePanelView: View {
     }
 
     private var primaryForegroundColor: Color {
-        themeStore.appForegroundPalette.primaryColor.opacity(0.96)
+        foreground?.primaryColor ?? themeStore.appForegroundPalette.primaryColor.opacity(0.96)
     }
 
     private var secondaryForegroundColor: Color {
-        themeStore.appForegroundPalette.secondaryColor.opacity(0.82)
+        foreground?.secondaryColor ?? themeStore.appForegroundPalette.secondaryColor.opacity(0.82)
     }
 
     private var tertiaryForegroundColor: Color {
-        themeStore.appForegroundPalette.tertiaryColor.opacity(0.72)
+        foreground?.tertiaryColor ?? themeStore.appForegroundPalette.tertiaryColor.opacity(0.72)
     }
 
     private var hoverFillColor: Color {

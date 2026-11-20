@@ -51,6 +51,7 @@ enum SkinComponentContract {
         "control.playPause", "control.previous", "control.next", "control.skip", "control.expandableVolume", "control.actionButton", "control.glassButton", "control.glassTriplePill", "transition.bokeh",
         "behavior.autoHide", "behavior.lyricsEndAutoHide", "behavior.scrollVolume", "behavior.pointerOcclusion", "behavior.windowDrag", "menu.trackContext", "menu.player",
         "control.dislike", "control.outputDevice",
+        "control.progressLine", "control.actionStack", "control.playbackModeStack",
         "lyrics.panel", "visualizer.progressSpectrum", "visualizer.pillSpectrum",
     ]
     static var ids: Set<String> { Set(aliases.keys).union(parts).union(SkinBuiltinSceneTemplates.ids) }
@@ -87,6 +88,9 @@ enum SkinComponentContract {
         }
         catalog.register("control.dislike", isInteractive: true) { _, config in SkinLikeComponent(configuration: config, dislike: true) }
         catalog.register("control.outputDevice", isInteractive: true) { _, config in SkinOutputDeviceComponent(configuration: config) }
+        catalog.register("control.progressLine", isInteractive: true) { _, config in SkinProgressLinePart(configuration: config) }
+        catalog.register("control.actionStack", isInteractive: true) { _, config in SkinActionStackPart(configuration: config) }
+        catalog.register("control.playbackModeStack", isInteractive: true) { _, config in SkinPlaybackModeStackPart(configuration: config) }
         catalog.register("artwork.appleStyle") { snapshot, config in SkinClassicCoverPart(snapshot: snapshot, configuration: config, appleStyle: true) }
         catalog.register("artwork.rotatingDisc") { snapshot, config in SkinRotatingDiscPart(snapshot: snapshot, configuration: config) }
         catalog.register("artwork.coverGradientBlur") { snapshot, _ in SkinCoverGradientBlurArtworkPart(snapshot: snapshot) }
@@ -106,7 +110,7 @@ enum SkinComponentContract {
             SeamlessMarqueeText(text: config.text("text", fallback: snapshot.track?.title ?? ""), style: .custom(fontSize: config.number("fontSize", fallback: 24)), fontWeight: .regular, color: config.color(fallback: snapshot.theme.accentColor), speed: config.number("speed", fallback: 24))
         }
         catalog.register("text.trackDescription", isInteractive: true) { _, config in SkinTrackDescriptionComponent(configuration: config) }
-        catalog.register("panel.queue", isInteractive: true) { _, _ in WindowPlaybackQueuePanelView() }
+        catalog.register("panel.queue", isInteractive: true) { _, _ in SkinSceneQueuePanel() }
         for (id, action) in [("panel.quickAppearance", "quickPanel"), ("panel.trackDetail", "detail"), ("sheet.trackEdit", "edit"), ("sheet.externalInfo", "external"), ("sheet.settings", "settings")] {
             catalog.register(id, isInteractive: true) { _, config in SkinPanelLauncher(action: action, configuration: config) }
         }

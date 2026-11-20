@@ -160,19 +160,27 @@ final class SkinPackageStore {
         }
         let renderer = catalog.nativePreset(for: manifest.nativePreset)
         if let preset = manifest.nativePreset, renderer == nil { throw SkinPackageError.missingPreset(preset) }
+        let resourceRoot: URL?
+        var scripts: SkinScripts?
+        switch origin {
+        case .installed(let url), .development(let url):
+            resourceRoot = url
+            do { scripts = try SkinScripts.load(from: url) }
+            catch { throw SkinPackageError.invalidManifest(error.localizedDescription) }
+        case .bundled: resourceRoot = Bundle.main.resourceURL
+        }
         var programs: [String: SkinSceneProgram] = [:]
         if let document = manifest.sceneV2 {
-            programs["default"] = try SkinSceneCompiler.compile(document, parameters: manifest.parameters, requires: manifest.requires, file: manifest.scenePath ?? "manifest.json")
+            programs["default"] = try SkinSceneCompiler.compile(document, parameters: manifest.parameters, requires: manifest.requires, file: manifest.scenePath ?? "manifest.json",
+                                                                lets: manifest.lets, scripts: scripts)
         }
         for (surface, document) in manifest.scenes {
             guard SkinSurface(rawValue: surface) != nil else { throw SkinPackageError.invalidManifest("显示模式无效：\(surface)") }
-            programs[surface] = try SkinSceneCompiler.compile(document, parameters: manifest.parameters, requires: manifest.requires)
+            programs[surface] = try SkinSceneCompiler.compile(document, parameters: manifest.parameters, requires: manifest.requires, lets: manifest.lets, scripts: scripts)
         }
         guard renderer != nil || manifest.descriptor.surfaces.allSatisfy({ programs[$0.rawValue] != nil || programs["default"] != nil }) else {
             throw SkinPackageError.invalidManifest("缺少显示模式的场景")
         }
-        let resourceRoot: URL?
-        switch origin { case .installed(let url), .development(let url): resourceRoot = url; case .bundled: resourceRoot = Bundle.main.resourceURL }
         if let resourceRoot {
             try validateResources(in: resourceRoot, fonts: manifest.fonts)
             let assets = programs.values.reduce(into: Set<String>()) { $0.formUnion($1.root.referencedAssets) }

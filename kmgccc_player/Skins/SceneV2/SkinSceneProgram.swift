@@ -97,6 +97,27 @@ struct SkinCompiledWatch {
     var initial = false
 }
 
+extension SkinCompiledSceneNode {
+    /// Nodes redrawn on every display frame, for `skin.check`: which values put each one there,
+    /// and how many nodes below it are rebuilt with it. Ordered by that count, since a per-frame
+    /// value on a node with a large subtree is the usual cost. `glyphMotion` and `camera` run on
+    /// their own clocks and are left out.
+    func frameReport() -> [(node: String, properties: [String], rebuilds: Int)] {
+        var result: [(node: String, properties: [String], rebuilds: Int)] = []
+        func visit(_ node: SkinCompiledSceneNode) {
+            var keys = node.properties.filter { !["glyphMotion", "camera"].contains($0.key) && $0.value.tier == .frame }.keys.sorted()
+            keys += node.watches.indices.filter { node.watches[$0].value.tier == .frame }.map { "watch[\($0)]" }
+            if !keys.isEmpty { result.append((node.id, keys, node.descendantCount)) }
+            node.children.forEach(visit)
+            node.mask.map(visit)
+        }
+        visit(self)
+        return result.sorted { $0.rebuilds > $1.rebuilds }
+    }
+
+    var descendantCount: Int { children.reduce(0) { $0 + 1 + $1.descendantCount } + (mask.map { 1 + $0.descendantCount } ?? 0) }
+}
+
 final class SkinCompiledSceneNode: Identifiable {
     let id: String
     let type: String
@@ -119,8 +140,15 @@ final class SkinCompiledSceneNode: Identifiable {
     /// Style properties the node can ever set, fixed at compile time; nil when effects or keyframes
     /// may set any of them. The renderer applies only these, so the view's structure never changes.
     let styleKeys: Set<String>?
+    /// The `frame` fields the node can ever set, so frames, padding and size limits it never uses
+    /// stay out of its view; nil when they are only known while drawing.
+    let frameKeys: Set<String>?
     /// What keeps the node's display timeline running, so it can rest once every input stands still.
     let frameInputs: SkinFrameInputs
+    /// True when nothing in the node or below it reacts to being mounted or unmounted: no
+    /// watches and no appear or disappear actions. Such a subtree can leave the view tree while
+    /// it is hidden without changing what the scene does.
+    let mountQuiet: Bool
     /// True when every per-frame input stands still the moment playback pauses.
     var pausesWithPlayback: Bool { !frameInputs.always && !frameInputs.time && !frameInputs.follow }
 
@@ -172,6 +200,12 @@ final class SkinCompiledSceneNode: Identifiable {
         hidesWithoutTransition = properties["visible"] != nil && properties["transition"] == nil && !setsAnyProperty
             && !variants.contains { $0.properties["visible"] != nil || $0.properties["transition"] != nil }
         styleKeys = setsAnyProperty ? nil : variants.reduce(into: Set(properties.keys)) { $0.formUnion($1.properties.keys) }
+        var frameFields: Set<String>? = setsAnyProperty ? nil : []
+        for frame in [properties["frame"]] + variants.map({ $0.properties["frame"] }) {
+            guard let frame else { continue }
+            if case .object(let fields) = frame { frameFields?.formUnion(fields.keys) } else { frameFields = nil }
+        }
+        self.frameKeys = frameFields
         var frame = properties.filter { $0.key != "camera" }.values.reduce(into: Set<SkinDataDomain>()) { $0.formUnion($1.frameDomains) }
         for variant in variants {
             if variant.condition.tier == .frame { frame.formUnion(variant.condition.domains) }
@@ -186,6 +220,8 @@ final class SkinCompiledSceneNode: Identifiable {
             glyphClockFields.contains { source.contains($0) }
         } ?? false)
         frameInputs = SkinFrameInputs(frame: frame, always: properties["keyframes"] != nil || readsGlyphClock)
+        mountQuiet = watches.isEmpty && actions["appear"] == nil && actions["disappear"] == nil
+            && children.allSatisfy(\.mountQuiet) && (mask?.mountQuiet ?? true)
         nodeValues = evaluated
         camera = properties["camera"]
         cameraInputs = SkinFrameInputs(frame: camera?.frameDomains ?? [], always: false)
@@ -335,6 +371,8 @@ struct SkinSceneProgram {
     let events: [String: [SkinCompiledAction]]
     let nodeCount: Int
     var motion = SkinSceneMotion()
+    /// The package's `scripts/*.js`, shared by its scenes.
+    var scripts: SkinScripts?
     var domains: Set<SkinDataDomain> {
         var result = root.domains.union([.playback, .viewport, .host])
         if events["trackChange"] != nil { result.insert(.track) }

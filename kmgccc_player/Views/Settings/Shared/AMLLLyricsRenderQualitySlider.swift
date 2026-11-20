@@ -16,7 +16,7 @@ struct AMLLLyricsRenderQualitySlider: View {
     var body: some View {
         HStack(spacing: presentationStyle.scaled(12)) {
             VStack(alignment: .leading, spacing: presentationStyle.scaled(2)) {
-                Text("歌词渲染质量")
+                Text("歌词与皮肤渲染质量")
                     .font(presentationStyle.rowLabelFont)
                     .foregroundStyle(presentationStyle.settingsPrimaryTextColor(appColors: appColors))
                 Text(quality.resolutionDescription)

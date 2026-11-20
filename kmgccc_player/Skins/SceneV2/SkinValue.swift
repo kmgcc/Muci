@@ -1,5 +1,8 @@
 import AppKit
+import os
 import SwiftUI
+
+private let skinNamedColors = OSAllocatedUnfairLock(initialState: [String: OKLCHColor?]())
 
 /// Values of the scene language. Colours stay perceptual (OKLCH) until a view draws them,
 /// so mixing and lightness changes behave the same on every display.
@@ -66,7 +69,15 @@ enum SkinValue: Equatable {
     var colorValue: OKLCHColor? {
         switch self {
         case .color(let value): return value
-        case .text(let value): return OKLCHColor(named: value)
+        case .text(let value):
+            // Colour literals such as `#FFFFFF` are read every frame; each string is parsed once.
+            if let known = skinNamedColors.withLock({ $0[value] }) { return known }
+            let color = OKLCHColor(named: value)
+            skinNamedColors.withLock { cache in
+                if cache.count > 512 { cache.removeAll() }
+                cache[value] = .some(color)
+            }
+            return color
         default: return nil
         }
     }

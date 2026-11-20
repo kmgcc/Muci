@@ -95,6 +95,12 @@
       "items": {
         "type": "string"
       }
+    },
+    "let": {
+      "type": "object",
+      "description": "Named expressions, read as let.name from any expression.",
+      "propertyNames": { "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+      "additionalProperties": { "type": "string" }
     }
   },
   "$defs": {
@@ -322,6 +328,16 @@
         "curve": {
           "description": "particles with lifetime: turn added to the travel direction over time, in radians per second squared"
         },
+        "soft": {
+          "description": "particles without lifetime: points over which each dot's edge fades out, drawn per dot without a layer blur"
+        },
+        "resolution": {
+          "description": "any node: share of display resolution (0.25 to 1) its content is drawn at before scaling back up, multiplied by the render quality setting; for soft content such as backgrounds. The node's own filter and bloom run afterwards at the usual resolution"
+        },
+        "render": {
+          "enum": ["gpu"],
+          "description": "layer: draws its children into one Metal surface on its own display clock, resting while still. Children are shapes (rectangle, circle, ellipse and path, with stroke, trim, rotation and blur; a path may take an angular gradient mask), gradients, fog, particles (particles may carry motionBlur), comets and text, plus nested layers (with offsetX, offsetY) and repeats with layout free; text takes font, size, tracking, alignment, line limit, color, rotation, scale, offsets, blur, glow and glyphMotion and is drawn glyph by glyph from cached masks; the camera takes x, y, zoom, perspective, rotation, rotationX and rotationY; the layer filter is grain and fov, with distortion, chromatic aberration and edge blur drawn on the surface and grain added as it scales up; resolution sets the surface resolution"
+        },
         "outline": {
           "description": "text, lyricLine: a width, or {width, color, hollow}; hollow keeps only the ring"
         },
@@ -348,6 +364,18 @@
         },
         "warp": {
           "description": "fog: how strongly the noise folds into itself"
+        },
+        "scrollX": {
+          "description": "fog, particles: how far the field has slid sideways, in points"
+        },
+        "glow": {
+          "description": "text: glyph-hugging glow, {radius, color, core}; glyphMotion.glow sets each glyph's brightness"
+        },
+        "width": {
+          "description": "comet: line width of the head and trail, in points"
+        },
+        "scrollY": {
+          "description": "fog, particles: how far the field has slid down, in points"
         },
         "type": {
           "enum": [
@@ -413,6 +441,7 @@
             "control.previous", "control.next", "control.progress", "control.volume", "control.expandableVolume", "control.playbackMode",
             "control.like", "control.dislike", "control.outputDevice", "control.queue", "control.lyricsToggle", "control.fullscreen", "control.settings", "control.quickPanel",
             "control.actionButton", "control.glassButton", "control.glassTriplePill",
+            "control.progressLine", "control.actionStack", "control.playbackModeStack",
             "text.trackInfo", "text.trackDescription", "text.marquee", "transition.bokeh",
             "panel.queue", "panel.quickAppearance", "panel.trackDetail", "sheet.trackEdit", "sheet.externalInfo", "sheet.settings", "menu.trackContext", "menu.player",
             "behavior.autoHide", "behavior.lyricsEndAutoHide", "behavior.scrollVolume", "behavior.pointerOcclusion", "behavior.windowDrag",

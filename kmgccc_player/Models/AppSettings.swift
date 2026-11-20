@@ -923,6 +923,8 @@ public final class AppSettings {
     @ObservationIgnored
     @AppStorage("lyricsGlobalAdvanceMs") var lyricsGlobalAdvanceMs: Double = 0
 
+    /// Render quality for lyric surfaces and skin scenes: the share of display resolution their
+    /// glyph masks and offscreen effect surfaces render at (`renderScale`).
     enum AMLLLyricsRenderQuality: String, CaseIterable, Identifiable {
         case low
         case medium
@@ -1026,7 +1028,7 @@ public final class AppSettings {
         defaults.set(true, forKey: AMLLKeys.springDefaultsMigration)
     }
 
-    /// Shared render quality for user-facing AMLL lyric surfaces.
+    /// Shared render quality for user-facing AMLL lyric surfaces and skin scenes.
     var amllLyricsRenderQuality: AMLLLyricsRenderQuality {
         get {
             access(keyPath: \.amllLyricsRenderQuality)

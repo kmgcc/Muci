@@ -2691,6 +2691,19 @@ struct FullscreenPlayerView: View {
             displayHasTrack: currentDisplayContext.hasTrack,
             visualOffsetSeconds: 0
         )
+        if !motionFullscreenCoordinator.isActive,
+           lyricsCoordinator.evaluateAutoRestore(
+               snapshot,
+               delayAfterFinalLine: fullscreenLyricsAutoHideDelayAfterFinalLine
+           )
+        {
+            Log.debug(
+                "[FullscreenLyricsAutoHide] restoring lyrics after seeking back to \(String(format: "%.2f", currentTime))s track=\(lyricsCoordinator.autoHideTrackID?.uuidString.prefix(8) ?? "nil")",
+                category: .lyrics
+            )
+            handleLyricsButtonTap(isAutomatic: true)
+            return
+        }
         guard let event = lyricsCoordinator.evaluateAutoHide(
             snapshot,
             trailingGapThreshold: fullscreenLyricsAutoHideTrailingGap,

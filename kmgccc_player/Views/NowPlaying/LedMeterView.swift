@@ -816,8 +816,14 @@ private final class LiveLedMeterLayerHostView: NSView {
         }
 
         if !led.leds.isEmpty {
-            return (0..<configuration.ledCount).map { index in
-                let value = index < led.leds.count ? Double(led.leds[index]) : 0
+            // The shared meter is computed for the app's LED count; a meter with another count
+            // samples it across its own width, so its middle LED stays the middle.
+            let source = led.leds, count = configuration.ledCount
+            return (0..<count).map { index in
+                let position = count > 1 ? Double(index) * Double(source.count - 1) / Double(count - 1) : Double(source.count - 1) / 2
+                let lower = Int(position.rounded(.down)), upper = min(source.count - 1, lower + 1)
+                let fraction = position - Double(lower)
+                let value = Double(source[lower]) * (1 - fraction) + Double(source[upper]) * fraction
                 return brightnessState(for: value, levels: configuration.brightnessLevels)
             }
         }
