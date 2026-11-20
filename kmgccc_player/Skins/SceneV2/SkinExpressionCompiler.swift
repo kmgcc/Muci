@@ -505,21 +505,25 @@ private struct Compiler {
         }
     }
 
-    /// `follow(target, token)`: a MotionKit spring for this call site in each node instance (and
-    /// each glyph) that chases `target`, keeping its velocity when the target moves again.
+    /// `follow(target, token, ease)`: a spring for this call site in each node instance (and
+    /// each glyph) that chases `target`, keeping position and velocity when the target moves
+    /// again. `ease` (seconds) lets the pull build up gradually after a jump in the target.
     /// `followVelocity` reads the same spring's speed, in target units per second.
     private func follow(_ name: String, _ arguments: [CompiledNode]) throws -> CompiledNode {
-        guard (1...2).contains(arguments.count) else { throw typeError("\(name)() 需要 1 到 2 个参数，这里有 \(arguments.count) 个") }
+        guard (1...3).contains(arguments.count) else { throw typeError("\(name)() 需要 1 到 3 个参数，这里有 \(arguments.count) 个") }
         guard arguments[0].type.conforms(to: .number) else { throw typeError("\(name)() 的第 1 个参数需要数字") }
+        if arguments.count == 3, !arguments[2].type.conforms(to: .number) { throw typeError("\(name)() 的第 3 个参数需要数字") }
         let site = SkinFollowSites.next()
         let target = arguments[0].evaluate
-        let token = arguments.count == 2 ? arguments[1].evaluate : nil
+        let token = arguments.count >= 2 ? arguments[1].evaluate : nil
+        let ease = arguments.count == 3 ? arguments[2].evaluate : nil
         let readsVelocity = name == "followVelocity"
         let base = merge(arguments, type: .number) { context in
             let goal = target(context).number()
             guard let followers = context.followers else { return .number(readsVelocity ? 0 : goal) }
             let spec = context.motionSpec(token?(context) ?? .text(MotionToken.control.rawValue))
-            let state = followers.state(site: site &* 65_536 &+ context.followSlot, target: goal, spec: spec, now: context.now)
+            let seconds = max(0, ease?(context).number() ?? 0)
+            let state = followers.state(site: site &* 65_536 &+ context.followSlot, target: goal, spec: spec, ease: seconds, now: context.now)
             return .number(SkinFunctions.sanitized(readsVelocity ? state.velocity : state.value))
         }
         return CompiledNode(type: .number, tier: .frame, domains: base.domains.union([.follow]), capabilities: base.capabilities, evaluate: base.evaluate)
