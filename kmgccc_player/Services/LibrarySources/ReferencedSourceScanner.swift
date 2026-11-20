@@ -26,10 +26,30 @@ actor NCMScanReservationFilter {
             return true
         }
     }
+
+    /// Reads the journal once and returns a lookup for one scan. Take a new
+    /// one per scan: it never refreshes, so a conversion reserved after this
+    /// call is only seen by the next scan. If the journal cannot be read,
+    /// every file is conservatively treated as reserved.
+    func beginScan() async -> ReferencedSourceScanner.ReservationCheck {
+        do {
+            let snapshot = try await registry.reservationSnapshot()
+            return { url, identity in snapshot.isReserved(url: url, identity: identity) }
+        } catch {
+            Log.warning(
+                "[ReferencedSource] NCM reservation lookup failed; conservatively skipping every file in this scan",
+                category: .library
+            )
+            return { _, _ in true }
+        }
+    }
 }
 
 actor ReferencedSourceScanner {
     typealias ReservationCheck = @Sendable (URL, ReferencedFileIdentity?) async -> Bool
+    /// Called once at the start of each scan; the returned check answers every
+    /// file of that scan, so the reservation source is read once per scan.
+    typealias ReservationScanProvider = @Sendable () async -> ReservationCheck
     typealias IgnoreCheck = @Sendable (ReferencedFileFingerprint) async -> Bool
     typealias FingerprintProvider = @Sendable (URL) throws -> ReferencedFileFingerprint
 
@@ -38,6 +58,7 @@ actor ReferencedSourceScanner {
     private let fileManager: FileManager
     private let manifestStore: ReferencedSourceScanManifestStore
     private let isReserved: ReservationCheck
+    private let beginReservationScan: ReservationScanProvider?
     private let isIgnored: IgnoreCheck
     private let supportedExtensions: Set<String>
 
@@ -49,6 +70,7 @@ actor ReferencedSourceScanner {
         fileManager: FileManager = .default,
         supportedExtensions: Set<String> = AudioFormatSupport.importableExtensions,
         isReserved: @escaping ReservationCheck = { _, _ in false },
+        beginReservationScan: ReservationScanProvider? = nil,
         isIgnored: @escaping IgnoreCheck = { _ in false }
     ) {
         self.paths = paths
@@ -57,6 +79,7 @@ actor ReferencedSourceScanner {
         manifestStore = ReferencedSourceScanManifestStore(paths: paths)
         self.supportedExtensions = supportedExtensions
         self.isReserved = isReserved
+        self.beginReservationScan = beginReservationScan
         self.isIgnored = isIgnored
     }
 
@@ -82,15 +105,22 @@ actor ReferencedSourceScanner {
             throw ReferencedSourceScanError.manifestFromNewerBuild(version)
         }
         let generation = (previous?.generation ?? 0) &+ 1
+        let reserved: ReservationCheck
+        if let beginReservationScan {
+            reserved = await beginReservationScan()
+        } else {
+            reserved = isReserved
+        }
         let snapshot: (entries: [ReferencedSourceScanEntry], ignored: [ReferencedSourceIgnoredFile], failures: [ReferencedSourceScanFailure])
         if isDirectory.boolValue {
             snapshot = try await enumerate(
                 rootURL: rootURL,
                 generation: generation,
-                excludedRelativePaths: excludedRelativePaths
+                excludedRelativePaths: excludedRelativePaths,
+                isReserved: reserved
             )
         } else {
-            snapshot = try await enumerateSingleFile(rootURL: rootURL, generation: generation)
+            snapshot = try await enumerateSingleFile(rootURL: rootURL, generation: generation, isReserved: reserved)
         }
         try Task.checkCancellation()
         let (diff, entries) = buildDiff(
@@ -116,7 +146,11 @@ actor ReferencedSourceScanner {
 
     /// A file source roots at the audio file itself; the scan is a single
     /// entry keyed by the file name.
-    private func enumerateSingleFile(rootURL: URL, generation: UInt64) async throws -> (
+    private func enumerateSingleFile(
+        rootURL: URL,
+        generation: UInt64,
+        isReserved: ReservationCheck
+    ) async throws -> (
         entries: [ReferencedSourceScanEntry],
         ignored: [ReferencedSourceIgnoredFile],
         failures: [ReferencedSourceScanFailure]
@@ -145,22 +179,11 @@ actor ReferencedSourceScanner {
         }
     }
 
-    private func enumerate(rootURL: URL, generation: UInt64) async throws -> (
-        entries: [ReferencedSourceScanEntry],
-        ignored: [ReferencedSourceIgnoredFile],
-        failures: [ReferencedSourceScanFailure]
-    ) {
-        return try await enumerate(
-            rootURL: rootURL,
-            generation: generation,
-            excludedRelativePaths: []
-        )
-    }
-
     private func enumerate(
         rootURL: URL,
         generation: UInt64,
-        excludedRelativePaths: Set<String>
+        excludedRelativePaths: Set<String>,
+        isReserved: ReservationCheck
     ) async throws -> (
         entries: [ReferencedSourceScanEntry],
         ignored: [ReferencedSourceIgnoredFile],

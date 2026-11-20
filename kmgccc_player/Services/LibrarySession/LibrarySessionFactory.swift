@@ -266,6 +266,8 @@ final class LibrarySessionFactory: LibrarySessionBuilding {
             let ncmReservationFilter = NCMScanReservationFilter(registry: ncmRegistry)
             let scanner = ReferencedSourceScanner(paths: context.paths, isReserved: { url, identity in
                 await ncmReservationFilter.isReserved(url: url, identity: identity)
+            }, beginReservationScan: {
+                await ncmReservationFilter.beginScan()
             }, isIgnored: { fingerprint in
                 do {
                     return try await ignoredItemsStore.contains(fingerprint)
