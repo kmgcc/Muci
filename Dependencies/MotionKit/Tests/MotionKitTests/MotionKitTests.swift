@@ -419,4 +419,29 @@ final class MotionKitTests: XCTestCase {
         XCTAssertFalse(disabled.usesDynamicInitialVelocity)
     }
 
+    func testDepartureCrossesTheEdgeWhileStillMoving() {
+        let spec = MotionTokens.standard.phaseSpec(for: .navigation, duration: 1.0, bounce: 0)
+        let departure = MotionDeparture(spec: spec, from: 0, edge: -800, overshoot: 0.5)
+        let evaluator = MotionSpringEvaluator(spec: spec)
+
+        XCTAssertEqual(departure.target, -1200, accuracy: 0.0001)
+        XCTAssertLessThan(departure.duration, spec.visualCompletionDelay())
+
+        let crossing = evaluator.value(from: 0, to: departure.target, at: departure.duration)
+        XCTAssertEqual(crossing, -800, accuracy: 0.5)
+
+        let edgeSpeed = abs(evaluator.velocity(from: 0, to: departure.target, at: departure.duration))
+        let peakSpeed = stride(from: 0.0, through: departure.duration, by: 1.0 / 240.0)
+            .map { abs(evaluator.velocity(from: 0, to: departure.target, at: $0)) }
+            .max() ?? 0
+        XCTAssertGreaterThan(edgeSpeed, peakSpeed * 0.4)
+
+        XCTAssertLessThan(departure.time(atProgress: 0.5), departure.time(atProgress: 0.8))
+        XCTAssertLessThan(departure.time(atProgress: 0.8), departure.duration)
+
+        let animation = departure.coreAnimation(keyPath: "transform.translation.y")
+        XCTAssertEqual(animation.duration, departure.duration, accuracy: 0.0001)
+        XCTAssertEqual(animation.toValue as? Double, departure.target)
+    }
+
 }
