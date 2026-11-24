@@ -18,9 +18,20 @@ final class EmbeddedFullscreenTransition {
     private var lastLayoutFingerprint: Int?
     private var completion: (() -> Void)?
     private var onEntered: (() -> Void)?
-    private var spec: MotionSpec?
+    private var entrySpec: MotionSpec?
+    private var exitSpec: MotionSpec?
     private var spatial = true
     private var prepareToken: FirstUseHitchToken?
+
+    /// Moves the window mini player with the surface: `true` as the surface
+    /// starts rising, `false` once the leaving surface has nearly cleared the
+    /// mini player's place at the bottom of the window.
+    var onMiniPlayerRetractedChange: ((Bool) -> Void)?
+
+    /// Share of the exit travel after which the mini player springs back.
+    /// By then the surface's top edge is close to the window bottom, so the
+    /// mini player comes into view as it rises instead of behind the surface.
+    private static let miniPlayerReturnProgress = 0.82
 
     func isAttached(to window: NSWindow) -> Bool { self.window === window }
 
@@ -129,43 +140,81 @@ final class EmbeddedFullscreenTransition {
 
     private func configureMotion(tokens: MotionTokens, policy: MotionPolicy) {
         let resolved = policy.resolving(accessibilityReduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
-        spec = resolved.resolve(tokens.phaseSpec(for: .navigation, duration: 0.58, bounce: 0, blendDuration: 0.04))
+        // Entry settles at the top without overshoot. Exit runs the departure
+        // spring past the window bottom and ends while still moving.
+        entrySpec = resolved.resolve(tokens.phaseSpec(for: .navigation, duration: 0.46, bounce: 0, blendDuration: 0.04))
+        exitSpec = resolved.resolve(tokens.phaseSpec(for: .navigation, duration: 1.0, bounce: 0, blendDuration: 0.04))
         spatial = resolved == .full
     }
 
     private func animate(entering: Bool) {
         motionStarted = true
         let expected = generation
-        guard let container, let layer = container.layer, let spec else {
+        guard let container, let layer = container.layer,
+              let spec = entering ? entrySpec : exitSpec else {
             completeMotion(generation: expected)
             return
         }
+        let translationKey = "transform.translation.y"
         let travel = container.bounds.height
         let radius: CGFloat = 32
-        let startY = entering ? -travel : (layer.presentation()?.value(forKeyPath: "transform.translation.y") as? CGFloat ?? 0)
+        let presentedY = layer.presentation()?.value(forKeyPath: translationKey) as? CGFloat ?? 0
         let startRadius = entering ? radius : (layer.presentation()?.cornerRadius ?? layer.cornerRadius)
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         layer.masksToBounds = true
         layer.maskedCorners = [.layerMinXMaxYCorner, .layerMaxXMaxYCorner]
         layer.cornerRadius = entering ? 0 : radius
-        layer.setValue(spatial && !entering ? -travel : 0, forKeyPath: "transform.translation.y")
         layer.opacity = spatial || entering ? 1 : 0
         CATransaction.setCompletionBlock { [weak self] in self?.completeMotion(generation: expected) }
-        if spatial {
-            addSpring(spec, layer: layer, keyPath: "transform.translation.y", from: startY, to: entering ? 0 : -travel)
-            addSpring(spec, layer: layer, keyPath: "cornerRadius", from: startRadius, to: entering ? 0 : radius)
-        } else {
+        if !spatial {
+            layer.setValue(0, forKeyPath: translationKey)
             addSpring(spec, layer: layer, keyPath: "opacity", from: entering ? 0 : 1, to: entering ? 1 : 0)
+        } else if entering {
+            layer.setValue(0, forKeyPath: translationKey)
+            addSpring(spec, layer: layer, keyPath: translationKey, from: -travel, to: 0)
+            addSpring(spec, layer: layer, keyPath: "cornerRadius", from: startRadius, to: 0)
+            onMiniPlayerRetractedChange?(true)
+        } else {
+            let departure = MotionDeparture(spec: spec, from: Double(presentedY), edge: -Double(travel))
+            layer.setValue(departure.target, forKeyPath: translationKey)
+            layer.add(departure.coreAnimation(keyPath: translationKey), forKey: "embedded.\(translationKey)")
+            // The transaction completes with its longest animation, so the
+            // corner spring is cut at the same edge crossing.
+            addSpring(
+                entrySpec ?? spec, layer: layer, keyPath: "cornerRadius",
+                from: startRadius, to: radius, maximumDuration: departure.duration
+            )
+            scheduleMiniPlayerReturn(
+                after: departure.time(atProgress: Self.miniPlayerReturnProgress),
+                generation: expected
+            )
         }
         CATransaction.commit()
     }
 
-    private func addSpring(_ spec: MotionSpec, layer: CALayer, keyPath: String, from: CGFloat, to: CGFloat) {
+    private func addSpring(
+        _ spec: MotionSpec,
+        layer: CALayer,
+        keyPath: String,
+        from: CGFloat,
+        to: CGFloat,
+        maximumDuration: TimeInterval? = nil
+    ) {
         let animation = spec.coreAnimation(keyPath: keyPath)
         animation.fromValue = from
         animation.toValue = to
+        if let maximumDuration {
+            animation.duration = min(animation.duration, maximumDuration)
+        }
         layer.add(animation, forKey: "embedded.\(keyPath)")
+    }
+
+    private func scheduleMiniPlayerReturn(after delay: TimeInterval, generation expected: Int) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self, self.generation == expected, self.direction == .exiting else { return }
+            self.onMiniPlayerRetractedChange?(false)
+        }
     }
 
     private func completeMotion(generation expected: Int) {
@@ -179,6 +228,7 @@ final class EmbeddedFullscreenTransition {
             container = nil
             contentHost = nil
             window = nil
+            onMiniPlayerRetractedChange?(false)
         }
         direction = nil
         let done = completion
