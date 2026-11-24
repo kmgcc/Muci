@@ -201,18 +201,12 @@ struct MiniPlayerView: View {
         .onDisappear {
             isVolumeHovering = false
             isVolumeAdjusting = false
-            FeatureTipPresentationCoordinator.shared.cancelPending(
-                key: FeatureTipCatalog.PlaybackModeRetap.key
-            )
-            guard showPlaybackModeRetapTip else { return }
-            AppVersionGate.shared.markPlaybackModeRetapFeatureTipDismissed()
             showPlaybackModeRetapTip = false
-            finishPlaybackModeRetapTipPresentation()
+            AppPromptCoordinator.shared.finishTip(.playbackModeRetap)
         }
         .onChange(of: showPlaybackModeRetapTip) { wasPresented, isPresented in
             guard wasPresented, !isPresented else { return }
-            AppVersionGate.shared.markPlaybackModeRetapFeatureTipDismissed()
-            finishPlaybackModeRetapTipPresentation()
+            AppPromptCoordinator.shared.finishTip(.playbackModeRetap)
         }
     }
 
@@ -326,9 +320,12 @@ struct MiniPlayerView: View {
 
     @MainActor
     private func schedulePlaybackModeRetapTipIfNeeded() async {
-        guard playbackModeRetapTipTaskID(for: playbackCoordinator.presentation) != "inactive" else { return }
+        let tip = FeatureTip.playbackModeRetap
+        guard playbackModeRetapTipTaskID(for: playbackCoordinator.presentation) != "inactive",
+              FeatureTipStore.shared.isEligible(tip)
+        else { return }
         do {
-            try await Task.sleep(for: .seconds(FeatureTipCatalog.PlaybackModeRetap.playbackStartDelay))
+            try await Task.sleep(for: tip.presentationDelay)
         } catch {
             return
         }
@@ -337,37 +334,22 @@ struct MiniPlayerView: View {
               showPlaybackModeRetapTip == false
         else { return }
 
-        FeatureTipPresentationCoordinator.shared.requestPresentation(
-            key: FeatureTipCatalog.PlaybackModeRetap.key
-        ) { [self] in
-            presentPlaybackModeRetapTipNow()
+        AppPromptCoordinator.shared.requestTip(tip) { [self] in
+            guard playbackModeRetapTipTaskID(for: playbackCoordinator.presentation) != "inactive",
+                  showPlaybackModeRetapTip == false
+            else { return false }
+            withAnimation(layoutAnimation) {
+                showPlaybackModeRetapTip = true
+            }
+            return true
         }
-    }
-
-    private func presentPlaybackModeRetapTipNow() -> Bool {
-        guard playbackModeRetapTipTaskID(for: playbackCoordinator.presentation) != "inactive",
-              showPlaybackModeRetapTip == false,
-              AppVersionGate.shared.claimPlaybackModeRetapFeatureTipDisplay()
-        else { return false }
-
-        withAnimation(layoutAnimation) {
-            showPlaybackModeRetapTip = true
-        }
-        return true
-    }
-
-    private func finishPlaybackModeRetapTipPresentation() {
-        FeatureTipPresentationCoordinator.shared.endPresentation(
-            key: FeatureTipCatalog.PlaybackModeRetap.key
-        )
     }
 
     private func dismissPlaybackModeRetapTip() {
-        AppVersionGate.shared.markPlaybackModeRetapFeatureTipDismissed()
         withAnimation(layoutAnimation) {
             showPlaybackModeRetapTip = false
         }
-        finishPlaybackModeRetapTipPresentation()
+        AppPromptCoordinator.shared.finishTip(.playbackModeRetap)
     }
 
     private var progressBar: some View {

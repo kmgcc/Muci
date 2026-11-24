@@ -18,6 +18,8 @@
 //                                    full-window host below).
 //      4. fileDropOverlayHost      – visual-only import affordance; hit-test
 //                                    passthrough, drag handling lives on root.
+//      5. modalHost                – in-window modal cards; takes every hit
+//                                    while a card is up, none otherwise.
 //
 
 import AppKit
@@ -107,6 +109,11 @@ final class AppKitMainSplitWindowController: NSWindowController, NSWindowDelegat
     static func bringToFrontIfPossible() -> Bool {
         guard let controller = sharedController else { return false }
         return controller.bringToFrontIfPossible()
+    }
+
+    /// The main window, once it has been created.
+    static var mainWindow: NSWindow? {
+        sharedController?.window
     }
 
     static func toggleSidebar(appSession: AppSessionHost) {
@@ -490,6 +497,7 @@ private final class AppKitMainRootViewController: NSViewController {
     private let backgroundController: NSHostingController<AppKitMainWindowArtBackgroundLayer>
     private let homeFullWindowHost: PassthroughHostingView<HomeFullWindowRoot>
     private let fileDropOverlayHost: PassthroughHostingView<AppDialogDropImportOverlay>
+    private let modalHost = MainWindowModalHostingView()
     private var didApplyPaneGlassBlendingMode = false
     private var fileDropOverlayHideTask: Task<Void, Never>?
 
@@ -565,8 +573,11 @@ private final class AppKitMainRootViewController: NSViewController {
         fileDropOverlayHost.wantsLayer = true
         fileDropOverlayHost.layer?.backgroundColor = NSColor.clear.cgColor
         fileDropOverlayHost.isHidden = true
+        modalHost.translatesAutoresizingMaskIntoConstraints = true
+        modalHost.wantsLayer = true
+        modalHost.layer?.backgroundColor = NSColor.clear.cgColor
 
-        // Z-order: art background → full-window Home host → split view → drop overlay.
+        // Z-order: art background → full-window Home host → split view → drop overlay → modal.
         // The Home host sits BELOW the split view in subview order so that
         // sidebar / inspector glass (rendered inside the split view) blur
         // Home content beneath them.
@@ -582,10 +593,12 @@ private final class AppKitMainRootViewController: NSViewController {
         view.addSubview(homeFullWindowHost)
         view.addSubview(splitView)
         view.addSubview(fileDropOverlayHost)
+        view.addSubview(modalHost)
 
         if let routingRoot = view as? HomeRoutingRootView {
             routingRoot.splitViewRef = splitView
             routingRoot.homeHostRef = homeFullWindowHost
+            routingRoot.modalHostRef = modalHost
             routingRoot.onImportFileDragStateChange = { [weak self] isActive in
                 self?.setFileDropOverlayVisible(isActive)
             }
@@ -598,10 +611,12 @@ private final class AppKitMainRootViewController: NSViewController {
         homeFullWindowHost.frame = view.bounds
         splitView.frame = view.bounds
         fileDropOverlayHost.frame = view.bounds
+        modalHost.frame = view.bounds
         backgroundView.autoresizingMask = [.width, .height]
         homeFullWindowHost.autoresizingMask = [.width, .height]
         splitView.autoresizingMask = [.width, .height]
         fileDropOverlayHost.autoresizingMask = [.width, .height]
+        modalHost.autoresizingMask = [.width, .height]
     }
 
     override func viewDidLayout() {
@@ -610,6 +625,7 @@ private final class AppKitMainRootViewController: NSViewController {
         homeFullWindowHost.frame = view.bounds
         splitViewController.view.frame = view.bounds
         fileDropOverlayHost.frame = view.bounds
+        modalHost.frame = view.bounds
 
         splitViewController.publishHomeLayoutGeometry(windowSize: view.bounds.size)
 
@@ -846,6 +862,9 @@ final class PassthroughHostingController<Content: View>: NSHostingController<Con
 final class HomeRoutingRootView: NSView {
     weak var splitViewRef: NSView?
     weak var homeHostRef: NSView?
+    /// The in-window modal layer. While a card is up it owns every hit,
+    /// ahead of the Home diversion below.
+    weak var modalHostRef: NSView?
     var onImportFileDragStateChange: ((Bool) -> Void)?
     var onImportFileDrop: (([URL]) -> Void)?
 
@@ -868,6 +887,10 @@ final class HomeRoutingRootView: NSView {
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
+        if let modalHit = modalHostRef?.hitTest(point) {
+            return modalHit
+        }
+
         let layoutState = HomeWindowLayoutState.shared
         let allowsHomeInteraction = layoutState.allowsHomeInteraction
         let geometry = layoutState.geometry

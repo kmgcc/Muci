@@ -181,7 +181,7 @@ struct SkinSceneControlHost<Content: View>: View {
                 ).environmentObject(theme)
             }
             .sheet(isPresented: $showingSettings, onDismiss: {
-                FeatureTipPresentationCoordinator.shared.setSuspended(false, reason: .settingsSheet)
+                AppPromptCoordinator.shared.setObstruction(.settingsSheet, active: false)
             }) {
                 SettingsView(hasActiveLibrarySession: true).environmentObject(theme)
             }
@@ -286,7 +286,7 @@ struct SkinSceneControlHost<Content: View>: View {
     }
 
     private func presentSettings() {
-        FeatureTipPresentationCoordinator.shared.setSuspended(true, reason: .settingsSheet)
+        AppPromptCoordinator.shared.setObstruction(.settingsSheet, active: true)
         showingSettings = true
     }
 

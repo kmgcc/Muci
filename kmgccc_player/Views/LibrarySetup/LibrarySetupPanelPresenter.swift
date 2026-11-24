@@ -6,25 +6,40 @@ enum LibrarySetupPanelPresenter {
     private static var controller: LibrarySetupPanelController?
     private static var isPreparing = false
 
-    static func present(appSession: AppSessionHost, onChange: @escaping @MainActor () async -> Void = {}) {
+    /// `onClose` runs once, when the wizard closes or when it could not open.
+    static func present(
+        appSession: AppSessionHost,
+        onChange: @escaping @MainActor () async -> Void = {},
+        onClose: @escaping @MainActor () -> Void = {}
+    ) {
         if let controller {
             controller.bringToFront()
+            onClose()
             return
         }
-        guard !isPreparing else { return }
+        guard !isPreparing else {
+            onClose()
+            return
+        }
         isPreparing = true
         Task {
             defer { isPreparing = false }
             let registry = await appSession.musicLibraryRegistrySnapshot()
             guard appSession.librarySetupFlow.presentation != .none,
-                  self.controller == nil else { return }
+                  self.controller == nil else {
+                onClose()
+                return
+            }
             let controller = LibrarySetupPanelController(
                 appSession: appSession,
                 registry: registry,
                 onChange: onChange
             )
             self.controller = controller
-            controller.onClose = { self.controller = nil }
+            controller.onClose = {
+                self.controller = nil
+                onClose()
+            }
             controller.show()
         }
     }

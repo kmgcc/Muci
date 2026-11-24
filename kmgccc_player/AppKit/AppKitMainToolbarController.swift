@@ -627,21 +627,14 @@ final class AppKitMainToolbarController: NSObject,
     }
 
     private func showShiftRangeSelectionTipIfNeeded() {
-        let key = FeatureTipCatalog.ShiftRangeSelection.key
-        FeatureTipPresentationCoordinator.shared.requestPresentation(key: key) { [weak self] in
+        AppPromptCoordinator.shared.requestTip(.shiftRangeSelection) { [weak self] in
             self?.presentShiftRangeSelectionTipNow() ?? false
         }
     }
 
     private func presentShiftRangeSelectionTipNow() -> Bool {
-        let key = FeatureTipCatalog.ShiftRangeSelection.key
         guard featureTipPopover?.isShown != true else { return false }
         guard let anchor = multiselectTipAnchor() else { return false }
-        guard AppVersionGate.shared.claimFeatureTipDisplay(
-            featureKey: key,
-            introducedBuild: FeatureTipCatalog.ShiftRangeSelection.introducedBuild,
-            maxDisplayCount: FeatureTipCatalog.ShiftRangeSelection.maxDisplayCount
-        ) else { return false }
 
         let popover = NSPopover()
         popover.behavior = .semitransient
@@ -649,12 +642,10 @@ final class AppKitMainToolbarController: NSObject,
         popover.contentSize = NSSize(width: 320, height: 160)
         popover.contentViewController = NSHostingController(
             rootView: ShiftRangeSelectionTipView { [weak self] in
-                AppVersionGate.shared.markFeatureTipDismissed(
-                    featureKey: key
-                )
+                FeatureTipStore.shared.markDismissed(.shiftRangeSelection)
                 self?.featureTipPopover?.performClose(nil)
                 self?.featureTipPopover = nil
-                self?.finishShiftRangeSelectionTipPresentation()
+                AppPromptCoordinator.shared.finishTip(.shiftRangeSelection)
             }
         )
         popover.delegate = self
@@ -664,19 +655,10 @@ final class AppKitMainToolbarController: NSObject,
         return true
     }
 
-    private func finishShiftRangeSelectionTipPresentation() {
-        FeatureTipPresentationCoordinator.shared.endPresentation(
-            key: FeatureTipCatalog.ShiftRangeSelection.key
-        )
-    }
-
     private func closeFeatureTipPopover() {
-        FeatureTipPresentationCoordinator.shared.cancelPending(
-            key: FeatureTipCatalog.ShiftRangeSelection.key
-        )
         featureTipPopover?.close()
         featureTipPopover = nil
-        finishShiftRangeSelectionTipPresentation()
+        AppPromptCoordinator.shared.finishTip(.shiftRangeSelection)
     }
 
     func popoverDidClose(_ notification: Notification) {
@@ -684,7 +666,7 @@ final class AppKitMainToolbarController: NSObject,
               popover === featureTipPopover
         else { return }
         featureTipPopover = nil
-        finishShiftRangeSelectionTipPresentation()
+        AppPromptCoordinator.shared.finishTip(.shiftRangeSelection)
     }
 
     private func multiselectAnchorRect(in view: NSView) -> NSRect {

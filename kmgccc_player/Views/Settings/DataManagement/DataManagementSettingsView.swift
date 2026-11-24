@@ -169,7 +169,6 @@ private struct ResetSettingsView: View {
     }
 
     private func resetAppDataExceptMusicLibrary() {
-        AppVersionGate.shared.resetStoredState()
         guard let bundleIdentifier = Bundle.main.bundleIdentifier else { return }
         let preservedTelemetryState = PreservedAnonymousTelemetryState()
         UserDefaults.standard.removePersistentDomain(forName: bundleIdentifier)

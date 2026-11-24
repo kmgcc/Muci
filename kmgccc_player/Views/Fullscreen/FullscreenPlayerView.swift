@@ -544,21 +544,10 @@ struct FullscreenPlayerView: View {
     }
 
     private func handleFullscreenDisappear() {
-        FeatureTipPresentationCoordinator.shared.cancelPending(
-            key: FeatureTipCatalog.PlaybackModeRetap.key
-        )
-        if showPlaybackModeRetapTip {
-            AppVersionGate.shared.markPlaybackModeRetapFeatureTipDismissed()
-            showPlaybackModeRetapTip = false
-            finishPlaybackModeRetapTipPresentation()
-        }
-        FeatureTipPresentationCoordinator.shared.cancelPending(
-            key: FeatureTipCatalog.ScrollWheelVolume.key
-        )
-        if showScrollWheelVolumeTip {
-            showScrollWheelVolumeTip = false
-            finishScrollWheelVolumeTipPresentation()
-        }
+        showPlaybackModeRetapTip = false
+        finishPlaybackModeRetapTipPresentation()
+        showScrollWheelVolumeTip = false
+        finishScrollWheelVolumeTipPresentation()
         Log.info(
             "FullscreenPlayerView disappeared context=\(hostContext.rawValue)",
             category: .lyrics
@@ -1400,11 +1389,10 @@ struct FullscreenPlayerView: View {
     private func handlePanoramicArtworkVolumeAdjustment(_ adjustment: Double) {
         guard playbackCoordinator.presentation.isVolumeControlEnabled else { return }
 
-        FeatureTipPresentationCoordinator.shared.cancelPending(
-            key: FeatureTipCatalog.ScrollWheelVolume.key
-        )
         if showScrollWheelVolumeTip {
             dismissScrollWheelVolumeTip()
+        } else {
+            finishScrollWheelVolumeTipPresentation()
         }
 
         let currentVolume = playbackCoordinator.presentation.volume
@@ -2829,9 +2817,10 @@ struct FullscreenPlayerView: View {
 
     @MainActor
     private func schedulePlaybackModeRetapTipIfNeeded() async {
-        guard playbackModeRetapTipTaskID != "inactive" else { return }
+        let tip = FeatureTip.playbackModeRetap
+        guard playbackModeRetapTipTaskID != "inactive", FeatureTipStore.shared.isEligible(tip) else { return }
         do {
-            try await Task.sleep(for: .seconds(FeatureTipCatalog.PlaybackModeRetap.playbackStartDelay))
+            try await Task.sleep(for: tip.presentationDelay)
         } catch {
             return
         }
@@ -2840,33 +2829,20 @@ struct FullscreenPlayerView: View {
               showPlaybackModeRetapTip == false
         else { return }
 
-        FeatureTipPresentationCoordinator.shared.requestPresentation(
-            key: FeatureTipCatalog.PlaybackModeRetap.key
-        ) { [self] in
-            presentPlaybackModeRetapTipNow()
+        AppPromptCoordinator.shared.requestTip(tip) { [self] in
+            guard playbackModeRetapTipTaskID != "inactive", showPlaybackModeRetapTip == false else { return false }
+            withAnimation(bottomControlsAnimation) {
+                showPlaybackModeRetapTip = true
+            }
+            return true
         }
-    }
-
-    private func presentPlaybackModeRetapTipNow() -> Bool {
-        guard playbackModeRetapTipTaskID != "inactive",
-              showPlaybackModeRetapTip == false,
-              AppVersionGate.shared.claimPlaybackModeRetapFeatureTipDisplay()
-        else { return false }
-
-        withAnimation(bottomControlsAnimation) {
-            showPlaybackModeRetapTip = true
-        }
-        return true
     }
 
     private func finishPlaybackModeRetapTipPresentation() {
-        FeatureTipPresentationCoordinator.shared.endPresentation(
-            key: FeatureTipCatalog.PlaybackModeRetap.key
-        )
+        AppPromptCoordinator.shared.finishTip(.playbackModeRetap)
     }
 
     private func dismissPlaybackModeRetapTip() {
-        AppVersionGate.shared.markPlaybackModeRetapFeatureTipDismissed()
         withAnimation(bottomControlsAnimation) {
             showPlaybackModeRetapTip = false
         }
@@ -2885,11 +2861,10 @@ struct FullscreenPlayerView: View {
 
     @MainActor
     private func scheduleScrollWheelVolumeTipIfNeeded() async {
-        guard scrollWheelVolumeTipTaskID != "inactive" else { return }
+        let tip = FeatureTip.scrollWheelVolume
+        guard scrollWheelVolumeTipTaskID != "inactive", FeatureTipStore.shared.isEligible(tip) else { return }
         do {
-            try await Task.sleep(
-                for: .seconds(FeatureTipCatalog.ScrollWheelVolume.presentationDelay)
-            )
+            try await Task.sleep(for: tip.presentationDelay)
         } catch {
             return
         }
@@ -2898,35 +2873,20 @@ struct FullscreenPlayerView: View {
               showScrollWheelVolumeTip == false
         else { return }
 
-        FeatureTipPresentationCoordinator.shared.requestPresentation(
-            key: FeatureTipCatalog.ScrollWheelVolume.key
-        ) { [self] in
-            presentScrollWheelVolumeTipNow()
+        AppPromptCoordinator.shared.requestTip(tip) { [self] in
+            guard scrollWheelVolumeTipTaskID != "inactive",
+                  showScrollWheelVolumeTip == false,
+                  isArtworkVolumeControlEnabled
+            else { return false }
+            withAnimation(bottomControlsAnimation) {
+                showScrollWheelVolumeTip = true
+            }
+            return true
         }
-    }
-
-    private func presentScrollWheelVolumeTipNow() -> Bool {
-        let key = FeatureTipCatalog.ScrollWheelVolume.key
-        guard scrollWheelVolumeTipTaskID != "inactive",
-              showScrollWheelVolumeTip == false,
-              isArtworkVolumeControlEnabled,
-              AppVersionGate.shared.claimFeatureTipDisplay(
-                featureKey: key,
-                introducedBuild: FeatureTipCatalog.ScrollWheelVolume.introducedBuild,
-                maxDisplayCount: FeatureTipCatalog.ScrollWheelVolume.maxDisplayCount
-              )
-        else { return false }
-
-        withAnimation(bottomControlsAnimation) {
-            showScrollWheelVolumeTip = true
-        }
-        return true
     }
 
     private func finishScrollWheelVolumeTipPresentation() {
-        FeatureTipPresentationCoordinator.shared.endPresentation(
-            key: FeatureTipCatalog.ScrollWheelVolume.key
-        )
+        AppPromptCoordinator.shared.finishTip(.scrollWheelVolume)
     }
 
     private func dismissScrollWheelVolumeTip() {

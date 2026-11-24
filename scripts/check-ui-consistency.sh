@@ -118,6 +118,13 @@ report_matches() {
   # Keep the exemption tied to the existing shadow token and exact hairline;
   # other shadows, strokes and glows still fail the gate.
   case "$path" in
+    kmgccc_player/Views/Prompts/MainWindowModalPresenter.swift)
+      # Explicitly requested: the in-window modal has no scrim, so one diffuse
+      # shadow lifts the card off the window.
+      if [[ "$label" == "shadow or glow is not allowed on app-owned UI" ]]; then
+        matches="$(printf '%s\n' "$matches" | grep -vF '.shadow(color: .black.opacity(0.28), radius: 36, y: 14)' || true)"
+      fi
+      ;;
     kmgccc_player/Views/Settings/Appearance/SidebarSetBarEditorGeometry.swift)
       # Explicitly requested, transient drag/drop target; not permanent UI hierarchy.
       if [[ "$label" == "stroke is not a default hierarchy treatment" ]]; then
