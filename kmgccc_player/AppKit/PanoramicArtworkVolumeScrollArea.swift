@@ -9,6 +9,10 @@ struct PanoramicArtworkVolumeScrollArea: NSViewRepresentable {
     @Binding var volume: Double
     let isEnabled: Bool
     let onAdjustment: (Double) -> Void
+    /// The whole frame takes the wheel, rather than the centre of the cover.
+    var coversWholeArea = false
+    /// True when something else under the pointer should take this scroll.
+    var yields: (NSEvent) -> Bool = { _ in false }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(
@@ -30,6 +34,8 @@ struct PanoramicArtworkVolumeScrollArea: NSViewRepresentable {
             isEnabled: isEnabled,
             onAdjustment: onAdjustment
         )
+        context.coordinator.coversWholeArea = coversWholeArea
+        context.coordinator.yields = yields
     }
 
     static func dismantleNSView(_ nsView: PassthroughView, coordinator: Coordinator) {
@@ -56,6 +62,8 @@ struct PanoramicArtworkVolumeScrollArea: NSViewRepresentable {
         private var volume: Binding<Double>
         private var isEnabled: Bool
         private var onAdjustment: (Double) -> Void
+        var coversWholeArea = false
+        var yields: (NSEvent) -> Bool = { _ in false }
         private weak var monitoredView: PassthroughView?
         private var eventMonitor: Any?
         private var preciseAccumulator: CGFloat = 0
@@ -103,9 +111,11 @@ struct PanoramicArtworkVolumeScrollArea: NSViewRepresentable {
 
         private func handle(_ event: NSEvent, in view: PassthroughView) {
             let point = view.convert(event.locationInWindow, from: nil)
+            let area = coversWholeArea ? view.bounds : Self.centralInteractionRect(in: view.bounds)
             guard isEnabled,
                   event.window === view.window,
-                  Self.centralInteractionRect(in: view.bounds).contains(point)
+                  area.contains(point),
+                  !yields(event)
             else {
                 return
             }
