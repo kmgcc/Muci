@@ -149,15 +149,6 @@ private final class CassetteThemeImageSetBox: NSObject {
 private final class CassetteThemeAssetCache {
     static let shared = CassetteThemeAssetCache()
 
-    private enum Resource: String {
-        case light = "tape"
-        case dark = "tapedark"
-        case gray = "tapegray"
-        case paper = "tapepaper"
-        case outline = "tapeoutline"
-        case mask = "tapemask"
-    }
-
     private let cache = NSCache<NSString, CassetteThemeImageSetBox>()
     private let lock = NSLock()
     private var resolvedAspectRatio: CGFloat?
@@ -171,38 +162,69 @@ private final class CassetteThemeAssetCache {
         cache.totalCostLimit = 32 * 1024 * 1024
     }
 
-    func imageSet(
+    /// Decoded source art for one image set. Decoding runs off the main
+    /// thread; tinting and caching happen on the main actor.
+    nonisolated struct DecodedSources: @unchecked Sendable {
+        let shell: CGImage
+        let gray: CGImage
+        let paper: CGImage
+        let outline: CGImage
+        let mask: CGImage
+    }
+
+    func key(colorScheme: ColorScheme, cassetteTint: CassetteTintPalette, maxPixel: Int) -> String {
+        let tintSignature = colorScheme == .dark ? cassetteTint.signature : 0
+        return "\(colorScheme == .dark ? "dark" : "light")-\(maxPixel)-tint:\(tintSignature)"
+    }
+
+    func cachedImageSet(
         colorScheme: ColorScheme,
         cassetteTint: CassetteTintPalette,
         maxPixel: Int
     ) -> CassetteThemeImageSet? {
-        let tintSignature = colorScheme == .dark ? cassetteTint.signature : 0
-        let key = "\(colorScheme == .dark ? "dark" : "light")-\(maxPixel)-tint:\(tintSignature)" as NSString
-        if let cached = cache.object(forKey: key) {
-            return cached.value
-        }
+        let key = key(colorScheme: colorScheme, cassetteTint: cassetteTint, maxPixel: maxPixel)
+        return cache.object(forKey: key as NSString)?.value
+    }
 
+    nonisolated static func decodeSources(isDark: Bool, maxPixel: Int) -> DecodedSources? {
+        let loader = ArtAssetLoader.shared
+        let pixel = max(1, maxPixel)
+        func load(_ name: String) -> CGImage? {
+            loader.cgImage(logicalName: "XCAssets/\(name)", in: nil, maxPixel: pixel)
+        }
         guard
-            let shell = loadImage(
-                resource: colorScheme == .dark ? .dark : .light,
-                maxPixel: maxPixel,
-                tint: colorScheme == .dark ? cassetteTint : nil
-            ),
-            let gray = loadImage(resource: .gray, maxPixel: maxPixel),
-            let paper = loadImage(resource: .paper, maxPixel: maxPixel),
-            let outline = loadImage(resource: .outline, maxPixel: maxPixel),
-            let mask = loadImage(resource: .mask, maxPixel: maxPixel)
+            let shell = load(isDark ? "tapedark" : "tape"),
+            let gray = load("tapegray"),
+            let paper = load("tapepaper"),
+            let outline = load("tapeoutline"),
+            let mask = load("tapemask")
         else {
             return nil
         }
+        return DecodedSources(shell: shell, gray: gray, paper: paper, outline: outline, mask: mask)
+    }
 
+    func imageSet(
+        from sources: DecodedSources,
+        colorScheme: ColorScheme,
+        cassetteTint: CassetteTintPalette,
+        maxPixel: Int
+    ) -> CassetteThemeImageSet {
+        func image(_ cgImage: CGImage) -> NSImage {
+            NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+        }
+        let shellSource = image(sources.shell)
+        let shell = colorScheme == .dark
+            ? CassetteAssetToneMapper.colorized(shellSource, tint: cassetteTint) ?? shellSource
+            : shellSource
         let imageSet = CassetteThemeImageSet(
             shell: shell,
-            gray: gray,
-            paper: paper,
-            outline: outline,
-            mask: mask
+            gray: image(sources.gray),
+            paper: image(sources.paper),
+            outline: image(sources.outline),
+            mask: image(sources.mask)
         )
+        let key = key(colorScheme: colorScheme, cassetteTint: cassetteTint, maxPixel: maxPixel) as NSString
         cache.setObject(
             CassetteThemeImageSetBox(imageSet),
             forKey: key,
@@ -224,7 +246,7 @@ private final class CassetteThemeAssetCache {
         lock.unlock()
 
         let ratio: CGFloat
-        if let image = loadImage(resource: .light, maxPixel: 256), image.size.height > 0 {
+        if let image = ArtAssetLoader.shared.xcAssetImage(named: "tape", maxPixel: 256), image.size.height > 0 {
             ratio = image.size.width / image.size.height
         } else {
             ratio = 3149.0 / 2006.0
@@ -234,21 +256,6 @@ private final class CassetteThemeAssetCache {
         resolvedAspectRatio = ratio
         lock.unlock()
         return ratio
-    }
-
-    private func loadImage(
-        resource: Resource,
-        maxPixel: Int,
-        tint: CassetteTintPalette? = nil
-    ) -> NSImage? {
-        guard let image = ArtAssetLoader.shared.xcAssetImage(
-            named: resource.rawValue,
-            maxPixel: max(1, maxPixel)
-        ) else {
-            return nil
-        }
-        guard resource == .dark, let tint else { return image }
-        return CassetteAssetToneMapper.colorized(image, tint: tint) ?? image
     }
 
     private func estimatedCost(for imageSet: CassetteThemeImageSet) -> Int {
@@ -441,6 +448,8 @@ private struct CassetteArtwork: View, Equatable {
     @State private var renderKey: String = ""
     @State private var processingTask: Task<Void, Never>?
     @State private var processingGeneration: UInt64 = 0
+    @State private var loadedThemeImages: CassetteThemeImageSet?
+    @State private var loadedThemeImagesKey: String?
 
     @AppStorage("skin.kmgcccCassette.visualizerMode") private var normalVisualizerMode: String = "off"
     @AppStorage("skin.kmgcccCassette.fullscreen.visualizerMode") private var fullscreenVisualizerMode: String = "off"
@@ -480,7 +489,7 @@ private struct CassetteArtwork: View, Equatable {
 
         ZStack {
           if isolatedPart == nil || isolatedPart == "shell" {
-            cassetteThemeImage(themeImages?.shell, fallbackNamed: tapeAssetName)
+            cassetteThemeImage(themeImages?.shell)
                 .resizable()
                 .aspectRatio(contentMode: .fit)
                 .frame(width: size.width, height: size.height)
@@ -489,19 +498,19 @@ private struct CassetteArtwork: View, Equatable {
             maskedArtwork(size: size, maskImage: themeImages?.mask)
           }
           if isolatedPart == nil || isolatedPart == "shell" {
-            cassetteThemeImage(themeImages?.gray, fallbackNamed: "tapegray")
+            cassetteThemeImage(themeImages?.gray)
                 .resizable()
                 .aspectRatio(contentMode: .fit)
                 .frame(width: size.width, height: size.height)
 
-            cassetteThemeImage(themeImages?.paper, fallbackNamed: "tapepaper")
+            cassetteThemeImage(themeImages?.paper)
                 .resizable()
                 .aspectRatio(contentMode: .fit)
                 .frame(width: size.width, height: size.height)
                 .blendMode(.multiply)
                 .opacity(0.40)
 
-            cassetteThemeImage(themeImages?.outline, fallbackNamed: "tapeoutline")
+            cassetteThemeImage(themeImages?.outline)
                 .resizable()
                 .aspectRatio(contentMode: .fit)
                 .frame(width: size.width, height: size.height)
@@ -525,6 +534,7 @@ private struct CassetteArtwork: View, Equatable {
         }
         .overlay { if isolatedPart == nil || isolatedPart == "reels" { HolesOverlay(context: context, tint: tint) } }
         .overlay { if isolatedPart == nil || isolatedPart == "waveform" { WaveformCapsulesLayer(context: context).zIndex(999) } }
+        .opacity(themeImages == nil ? 0 : 1)
         .frame(width: size.width, height: size.height)
         .motionArtworkFullscreenSource(
             context: context,
@@ -534,6 +544,9 @@ private struct CassetteArtwork: View, Equatable {
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         .offset(x: horizontalOffset, y: centeredYOffset)
+        .task(id: themeImagesKey(for: size)) {
+            await loadThemeImages(for: size)
+        }
         .onAppear {
             if isolatedPart == nil || isolatedPart == "label" { scheduleAdjustedArtworkProcessing(targetSize: size) }
         }
@@ -559,7 +572,7 @@ private struct CassetteArtwork: View, Equatable {
         .scaleEffect(0.90)
         .clipped()
         .mask(
-            cassetteThemeImage(maskImage, fallbackNamed: "tapemask")
+            cassetteThemeImage(maskImage)
                 .resizable()
                 .aspectRatio(contentMode: .fit)
                 .frame(width: size.width, height: size.height)
@@ -589,10 +602,6 @@ private struct CassetteArtwork: View, Equatable {
             return Image(nsImage: image)
         }
         return Image(systemName: "music.note")
-    }
-
-    private var tapeAssetName: String {
-        context.theme.colorScheme == .dark ? "tapedark" : "tape"
     }
 
     private func kmgLookWidth(for size: CGSize) -> CGFloat {
@@ -820,25 +829,60 @@ private struct CassetteArtwork: View, Equatable {
         return min(960, max(640, target))
     }
 
-    private func cassetteThemeImages(for size: CGSize) -> CassetteThemeImageSet? {
-        CassetteThemeAssetCache.shared.imageSet(
+    private func themeImagesKey(for size: CGSize) -> String {
+        CassetteThemeAssetCache.shared.key(
             colorScheme: context.theme.colorScheme,
             cassetteTint: tint,
             maxPixel: themeMaxPixel(for: size)
         )
     }
 
-    private func cassetteThemeImage(_ image: NSImage?, fallbackNamed name: String) -> Image {
-        if let image {
-            return Image(nsImage: image)
+    /// Reads the decoded set without decoding; `loadThemeImages` fills it
+    /// off the main thread and the cassette fades in when it lands.
+    private func cassetteThemeImages(for size: CGSize) -> CassetteThemeImageSet? {
+        if let loadedThemeImages, loadedThemeImagesKey == themeImagesKey(for: size) {
+            return loadedThemeImages
         }
-        if let image = ArtAssetLoader.shared.xcAssetImage(named: name, maxPixel: 960) {
-            let rendered = context.theme.colorScheme == .dark && name == "tapedark"
-                ? CassetteAssetToneMapper.colorized(image, tint: tint) ?? image
-                : image
-            return Image(nsImage: rendered)
+        return CassetteThemeAssetCache.shared.cachedImageSet(
+            colorScheme: context.theme.colorScheme,
+            cassetteTint: tint,
+            maxPixel: themeMaxPixel(for: size)
+        )
+    }
+
+    private func loadThemeImages(for size: CGSize) async {
+        let key = themeImagesKey(for: size)
+        let colorScheme = context.theme.colorScheme
+        let tint = tint
+        let maxPixel = themeMaxPixel(for: size)
+        let cache = CassetteThemeAssetCache.shared
+
+        let imageSet: CassetteThemeImageSet
+        if let cached = cache.cachedImageSet(colorScheme: colorScheme, cassetteTint: tint, maxPixel: maxPixel) {
+            imageSet = cached
+        } else {
+            let isDark = colorScheme == .dark
+            let decode = Task.detached(priority: .userInitiated) {
+                CassetteThemeAssetCache.decodeSources(isDark: isDark, maxPixel: maxPixel)
+            }
+            let sources = await withTaskCancellationHandler {
+                await decode.value
+            } onCancel: {
+                decode.cancel()
+            }
+            guard !Task.isCancelled, let sources else { return }
+            imageSet = cache.imageSet(from: sources, colorScheme: colorScheme, cassetteTint: tint, maxPixel: maxPixel)
         }
-        return Image(systemName: "photo")
+
+        let reveal = loadedThemeImages == nil
+        withAnimation(reveal ? kmgLookTransitionAnimation : nil) {
+            loadedThemeImages = imageSet
+            loadedThemeImagesKey = key
+        }
+    }
+
+    private func cassetteThemeImage(_ image: NSImage?) -> Image {
+        Image(nsImage: image ?? NSImage())
     }
 
     private func clearAdjustedArtworkState(resetRenderKey: Bool) {

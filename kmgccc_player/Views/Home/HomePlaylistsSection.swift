@@ -641,12 +641,15 @@ private struct HomePlaylistCard: View {
             }
         }
         .task(id: headerArtworkIdentity) {
-            // Init seeded @State from HomePlaylistCardCoverStore. If the
-            // image is already populated we skip resolveImmediately (which
-            // does main-thread sidecar JSON + PNG reads) and the pipeline
-            // actor hop entirely — rematerialization of the playlist
-            // section now reuses cached covers instead of round-tripping.
+            // Init seeded @State from HomePlaylistCardCoverStore under the
+            // identity known before the environment exists. Rematerialized
+            // cards reuse the cover stored under the full identity before
+            // asking the pipeline.
             if coverImage != nil { return }
+            if let cached = HomePlaylistCardCoverStore.shared.cachedImage(for: headerArtworkIdentity) {
+                coverImage = cached
+                return
+            }
             await loadCover()
         }
     }
@@ -833,46 +836,33 @@ private struct HomePlaylistCard: View {
         Text("\(playlist.trackCount) 首")
     }
 
+    /// Decodes the cover through the pipeline, off the main thread. Only a
+    /// playlist with no persisted artwork yet goes through generation.
     private func loadCover() async {
         let identity = headerArtworkIdentity
-        let request = DetailHeaderArtworkRequest.playlist(
-            selectionIdentity: "playlist-\(playlist.id)",
-            playlistID: playlist.id,
-            tracks: playlist.tracks
-        )
-
-        let immediate = libraryVM.detailHeaderArtworkResolver.resolveImmediately(for: request)
-        if let image = await loadHeaderImage(from: immediate) {
-            coverImage = image
-            HomePlaylistCardCoverStore.shared.store(image, for: identity)
-            HomeArtworkMemoryStore.shared.store(
-                image,
-                for: HomeArtworkMemoryStore.playlistHeaderKey(identity: identity)
-            )
+        let selectionIdentity = "playlist-\(playlist.id)"
+        let resolver = libraryVM.detailHeaderArtworkResolver
+        var resolved = resolver.resolvePersistedFile(playlistID: playlist.id, selectionIdentity: selectionIdentity)
+        if resolved == nil {
+            resolved = await resolver.resolveDeferredArtwork(for: .playlist(
+                selectionIdentity: selectionIdentity,
+                playlistID: playlist.id,
+                tracks: playlist.tracks
+            ))
         }
-
-        let resolved = await libraryVM.detailHeaderArtworkResolver.resolveDeferredArtwork(for: request)
-        if let image = await loadHeaderImage(from: resolved ?? immediate) {
-            coverImage = image
-            HomePlaylistCardCoverStore.shared.store(image, for: identity)
-            HomeArtworkMemoryStore.shared.store(
-                image,
-                for: HomeArtworkMemoryStore.playlistHeaderKey(identity: identity)
-            )
-        }
+        guard let image = await loadCoverImage(from: resolved, identity: identity) else { return }
+        coverImage = image
+        HomePlaylistCardCoverStore.shared.store(image, for: identity)
     }
 
-    private func loadHeaderImage(from resolved: ResolvedHeaderArtwork?) async -> NSImage? {
+    private func loadCoverImage(from resolved: ResolvedHeaderArtwork?, identity: String) async -> NSImage? {
         guard let resolved else { return nil }
         if let image = resolved.image {
             return image
         }
-        let request = PlaylistArtworkPipeline.headerRequest(
-            artworkIdentity: headerArtworkIdentity,
-            artworkData: nil,
-            fileURL: resolved.fileURL
+        return await cacheServices.playlistArtworkPipeline.load(
+            PlaylistArtworkPipeline.coverRequest(artworkIdentity: identity, fileURL: resolved.fileURL)
         )
-        return await cacheServices.playlistArtworkPipeline.load(request)
     }
 
     private var headerArtworkIdentity: String {

@@ -384,8 +384,12 @@ private final class HomeArtworkPreheatJob {
             let key = HomeArtworkMemoryStore.playlistHeaderKey(identity: plan.identity)
             if HomeArtworkMemoryStore.shared.cachedImage(for: key) != nil { continue }
 
-            let immediate = artworkResolver.resolveImmediately(for: plan.request)
-            if let image = await loadPlaylistHeaderImage(from: immediate, identity: plan.identity) {
+            if case .playlist(let selectionIdentity, let playlistID, _) = plan.request,
+               let persisted = artworkResolver.resolvePersistedFile(
+                   playlistID: playlistID,
+                   selectionIdentity: selectionIdentity
+               ),
+               let image = await loadPlaylistHeaderImage(from: persisted, identity: plan.identity) {
                 HomeArtworkMemoryStore.shared.store(image, for: key)
                 continue
             }
@@ -406,12 +410,9 @@ private final class HomeArtworkPreheatJob {
         if let image = resolved.image {
             return image
         }
-        let request = PlaylistArtworkPipeline.headerRequest(
-            artworkIdentity: identity,
-            artworkData: nil,
-            fileURL: resolved.fileURL
+        return await pipeline.load(
+            PlaylistArtworkPipeline.coverRequest(artworkIdentity: identity, fileURL: resolved.fileURL)
         )
-        return await pipeline.load(request)
     }
 }
 

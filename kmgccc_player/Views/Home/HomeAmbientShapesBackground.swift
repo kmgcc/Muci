@@ -164,6 +164,9 @@ final class HomeAmbientRootView: NSView {
     private var layersByID: [Int: CALayer] = [:]
 
     private var hasLoadedShapes = false
+    /// Decodes the shape images off the main thread; a re-attach after
+    /// fullscreen or a page switch would otherwise stall the main thread.
+    private var shapeLoadTask: Task<Void, Never>?
     private let randomLayoutSeed: UInt64
     private let randomizedShapeCount: Int
 
@@ -242,6 +245,8 @@ final class HomeAmbientRootView: NSView {
             presentations = []
             removeAllShapeLayers()
             tintedShapeCache.removeAll(keepingCapacity: false)
+            shapeLoadTask?.cancel()
+            shapeLoadTask = nil
             shapeLoadResult = BKThemeAssets.ShapeLoadResult(images: [], scaleByIndex: [:], edgePinnedIndices: [])
             hasLoadedShapes = false
             lastLayoutSignature = nil
@@ -366,10 +371,24 @@ final class HomeAmbientRootView: NSView {
     // MARK: - Shape assets
 
     private func loadShapesIfNeeded() {
-        guard !hasLoadedShapes else { return }
-        hasLoadedShapes = true
-        shapeLoadResult = BKThemeAssets.shared.shapes(maxPixel: Self.shapeMaxPixel)
-        rebuildOrReposition(for: geometry, forceFullRebuild: true)
+        guard !hasLoadedShapes, shapeLoadTask == nil else { return }
+        let maxPixel = Self.shapeMaxPixel
+        let assets = BKThemeAssets.shared
+        shapeLoadTask = Task { [weak self] in
+            let decode = Task.detached(priority: .userInitiated) {
+                assets.shapes(maxPixel: maxPixel)
+            }
+            let result = await withTaskCancellationHandler {
+                await decode.value
+            } onCancel: {
+                decode.cancel()
+            }
+            guard let self, !Task.isCancelled else { return }
+            self.shapeLoadTask = nil
+            self.hasLoadedShapes = true
+            self.shapeLoadResult = result
+            self.rebuildOrReposition(for: self.geometry, forceFullRebuild: true)
+        }
     }
 
     // MARK: - Presentation building / repositioning

@@ -349,6 +349,23 @@ final class DetailHeaderArtworkResolver {
         self.paths = libraryService.paths
     }
 
+    /// Locates a playlist's persisted artwork without decoding it: `image`
+    /// is nil and `fileURL` points at the file. Grids of covers use this and
+    /// decode through `PlaylistArtworkPipeline`, off the main thread.
+    func resolvePersistedFile(playlistID: UUID, selectionIdentity: String) -> ResolvedHeaderArtwork? {
+        guard let file = libraryService.persistedPlaylistArtworkFile(playlistID: playlistID) else {
+            return nil
+        }
+        return ResolvedHeaderArtwork(
+            selectionIdentity: selectionIdentity,
+            selectionType: .playlist,
+            source: file.source == .custom ? .custom : .persistedGenerated,
+            image: nil,
+            fileURL: file.fileURL,
+            generationSignature: nil
+        )
+    }
+
     func resolveImmediately(for request: DetailHeaderArtworkRequest) -> ResolvedHeaderArtwork? {
         switch request {
         case .playlist(let selectionIdentity, let playlistID, _):
@@ -487,9 +504,10 @@ final class DetailHeaderArtworkResolver {
     ) async -> ResolvedHeaderArtwork? {
         switch request {
         case .playlist(let selectionIdentity, let playlistID, let tracks):
-            // If immediate resolved, use existing artwork (Rule: artwork is stable)
-            if let immediate = resolveImmediately(for: request) {
-                return immediate
+            // Existing artwork wins (Rule: artwork is stable). Return its file
+            // undecoded; callers already decode from fileURL off the main thread.
+            if let persisted = resolvePersistedFile(playlistID: playlistID, selectionIdentity: selectionIdentity) {
+                return persisted
             }
 
             // No artwork exists - generate for first-time initialization only

@@ -199,6 +199,11 @@ struct PersistedPlaylistArtwork {
     let fileURL: URL
 }
 
+struct PersistedPlaylistArtworkFile {
+    let source: PlaylistArtworkSource
+    let fileURL: URL
+}
+
 struct PersistedPlaylistArtworkRecord {
     let customArtwork: PersistedPlaylistArtwork?
     let generatedArtwork: PersistedPlaylistArtwork?
@@ -1575,6 +1580,28 @@ final class LocalLibraryService {
             generatedArtwork: generatedArtwork,
             generatedSignature: migratedSidecar?.generatedArtworkSignature
         )
+    }
+
+    /// The persisted artwork file for a playlist, custom before generated.
+    /// Reads only the sidecar; the image stays undecoded so callers can
+    /// decode it off the main thread.
+    func persistedPlaylistArtworkFile(playlistID: UUID) -> PersistedPlaylistArtworkFile? {
+        let sidecar = migrateLegacyPlaylistArtworkIfNeeded(
+            playlistID: playlistID,
+            sidecar: loadPlaylistSidecar(playlistID: playlistID)
+        )
+        let candidates: [(String?, PlaylistArtworkSource)] = [
+            (sidecar?.customHeaderArtworkFileName, .custom),
+            (sidecar?.generatedHeaderArtworkFileName, .generated),
+        ]
+        for (fileName, source) in candidates {
+            guard let fileName else { continue }
+            let fileURL = paths.playlistsRootURL.appendingPathComponent(fileName)
+            if fileManager.fileExists(atPath: fileURL.path) {
+                return PersistedPlaylistArtworkFile(source: source, fileURL: fileURL)
+            }
+        }
+        return nil
     }
 
     func playlistArtworkRevision(playlistID: UUID) -> String? {

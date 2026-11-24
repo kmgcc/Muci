@@ -447,34 +447,32 @@ private struct PlaylistListRow: View {
         return "\(selectionIdentity)-unresolved-\(signature)"
     }
 
+    /// Decodes the cover through the pipeline, off the main thread. Only a
+    /// playlist with no persisted artwork yet goes through generation.
     private func loadArtwork() async {
-        let request = DetailHeaderArtworkRequest.playlist(
-            selectionIdentity: "playlist-\(playlist.id.uuidString)",
-            playlistID: playlist.id,
-            tracks: playlist.tracks
-        )
-        let immediate = libraryVM.detailHeaderArtworkResolver.resolveImmediately(for: request)
-        if let image = await loadHeaderImage(from: immediate) {
-            self.image = image
+        let selectionIdentity = "playlist-\(playlist.id.uuidString)"
+        let resolver = libraryVM.detailHeaderArtworkResolver
+        var resolved = resolver.resolvePersistedFile(playlistID: playlist.id, selectionIdentity: selectionIdentity)
+        if resolved == nil {
+            resolved = await resolver.resolveDeferredArtwork(for: .playlist(
+                selectionIdentity: selectionIdentity,
+                playlistID: playlist.id,
+                tracks: playlist.tracks
+            ))
         }
-
-        let resolved = await libraryVM.detailHeaderArtworkResolver.resolveDeferredArtwork(for: request)
-        if let image = await loadHeaderImage(from: resolved ?? immediate) {
+        if let image = await loadCoverImage(from: resolved) {
             self.image = image
         }
     }
 
-    private func loadHeaderImage(from resolved: ResolvedHeaderArtwork?) async -> NSImage? {
+    private func loadCoverImage(from resolved: ResolvedHeaderArtwork?) async -> NSImage? {
         guard let resolved else { return nil }
         if let image = resolved.image {
             return image
         }
-        let request = PlaylistArtworkPipeline.headerRequest(
-            artworkIdentity: artworkIdentity,
-            artworkData: nil,
-            fileURL: resolved.fileURL
+        return await cacheServices.playlistArtworkPipeline.load(
+            PlaylistArtworkPipeline.coverRequest(artworkIdentity: artworkIdentity, fileURL: resolved.fileURL)
         )
-        return await cacheServices.playlistArtworkPipeline.load(request)
     }
 
     private func formattedDuration(_ seconds: Double) -> String {

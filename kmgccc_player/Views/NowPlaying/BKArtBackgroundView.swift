@@ -11,6 +11,7 @@
 import AppKit
 import Combine
 import CoreImage
+import MotionKit
 import QuartzCore
 import SwiftUI
 
@@ -845,6 +846,9 @@ private final class BKArtBackgroundLayerView: NSView {
         } else {
             startObservingWindowActivity()
             updateAnimationActivity()
+            if fromContainer == nil {
+                ensureBaseContainer(seed: rebuildSeed)
+            }
         }
     }
 
@@ -1143,6 +1147,7 @@ private final class BKArtBackgroundLayerView: NSView {
         guard fromContainer == nil, !bounds.isEmpty else { return }
         ensureRootLayerIfNeeded()
         syncLoadedAssetsIfNeeded()
+        guard hasLoadedInitialAssets else { return }
         let container = buildContainer(seed: seed)
         fromContainer = container
         commitStyleHistory(container.style)
@@ -1233,6 +1238,11 @@ private final class BKArtBackgroundLayerView: NSView {
 
     private func rebuildImmediatelyForCurrentBounds() {
         guard !bounds.isEmpty else { return }
+        guard hasLoadedInitialAssets else {
+            // The initial snapshot builds the base container when it lands.
+            syncLoadedAssetsIfNeeded()
+            return
+        }
         pendingBoundsRebuild = false
         stopTransitionTimer()
         transitionMaskLayer?.contents = nil
@@ -2238,11 +2248,15 @@ private final class BKArtBackgroundLayerView: NSView {
                     if resumePendingTransition, self.pendingTransitionSeed != nil {
                         self.startTransitionAssetWarmupIfNeeded()
                     }
+                    if self.fromContainer == nil {
+                        self.startInitialAssetLoadIfNeeded()
+                    }
                     return
                 }
 
                 self.applyAssetSnapshot(snapshot)
                 self.applyCurrentBackgroundPhase()
+                self.revealBaseContainerAfterInitialLoad()
 
                 guard resumePendingTransition, let pendingSeed = self.pendingTransitionSeed else { return }
                 let result = self.triggerTransition(seed: pendingSeed)
@@ -3367,6 +3381,14 @@ private final class BKArtBackgroundLayerView: NSView {
     private func syncLoadedAssetsIfNeeded(allowMaskWarmup: Bool) {
         guard assetSnapshotTask == nil else { return }
 
+        // The first load decodes every background and shape; doing it here
+        // stalls the main thread while a skin mounts. Load it off-main and
+        // build the base container when the snapshot lands.
+        guard hasLoadedInitialAssets else {
+            startInitialAssetLoadIfNeeded()
+            return
+        }
+
         let budget = currentAssetBudget()
         let targetBackgroundIndices = desiredBackgroundSourceIndices()
         let backgroundBudgetChanged = budget.background != loadedBudget.background
@@ -3423,6 +3445,36 @@ private final class BKArtBackgroundLayerView: NSView {
         if allowMaskWarmup {
             startMaskWarmupIfNeeded(maskBudget: budget.mask)
         }
+    }
+
+    private var hasLoadedInitialAssets: Bool {
+        loadedBudget.background > 0 || loadedBudget.shape > 0
+    }
+
+    private func startInitialAssetLoadIfNeeded() {
+        guard window != nil, !bounds.isEmpty else { return }
+        startAssetSnapshotLoadIfNeeded(
+            budget: currentAssetBudget(),
+            backgroundSourceIndices: desiredBackgroundSourceIndices(),
+            includeMasks: false,
+            applyBackgroundAssetMode: nil,
+            resumePendingTransition: false
+        )
+    }
+
+    private func revealBaseContainerAfterInitialLoad() {
+        guard fromContainer == nil else { return }
+        ensureBaseContainer(seed: rebuildSeed)
+        guard let containerLayer = fromContainer?.layer else { return }
+        MotionLayerAnimator.animate(
+            layer: containerLayer,
+            keyPath: "opacity",
+            fromValue: Float(0),
+            toValue: Float(1),
+            spec: MotionTokens.standard.contentReplacement,
+            policy: .system(accessibilityReduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion),
+            animationKey: "bkArtBackground.initialReveal"
+        )
     }
 
     private func resolvedMaskFrames() -> [CGImage] {
