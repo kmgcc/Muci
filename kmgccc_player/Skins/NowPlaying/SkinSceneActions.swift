@@ -21,6 +21,7 @@ struct SkinSceneActions {
     var stop: () -> Void = {}
     var playQueueIndex: (Int) -> Void = { _ in }
     var openTrackDetail: () -> Void = {}
+    var closeTrackDetail: () -> Void = {}
     var openTrackEdit: () -> Void = {}
     var openExternalInfo: () -> Void = {}
     var setParameter: (String, SkinParameterValue) -> Void = { _, _ in }
@@ -40,7 +41,30 @@ struct SkinSceneActions {
     var selectOutput: (String?) -> Void = { _ in }
 }
 
+/// Host overlays a scene reads as `host.*`: the Quick Panel, and a track detail the scene draws.
+struct SkinSceneHostOverlays: Equatable {
+    var quickPanelVisible = false
+    /// Set only for a skin with `presentation.trackDetail: scene`.
+    var detailVisible = false
+    var detail: [String: String] = [:]
+
+    init() {}
+
+    init(quickPanelVisible: Bool, track: Track?, detail: TrackDetailContent?) {
+        self.quickPanelVisible = quickPanelVisible
+        guard let track, let detail else { return }
+        detailVisible = true
+        self.detail = [
+            "title": track.title, "artist": track.artist, "album": track.album,
+            "heading": detail.subtitle, "note": detail.attributionNote ?? "", "text": detail.text,
+        ]
+    }
+
+    var detailValue: SkinValue { .record(detail.mapValues(SkinValue.text)) }
+}
+
 extension EnvironmentValues {
+    @Entry var skinSceneHostOverlays = SkinSceneHostOverlays()
     @Entry var skinSceneActions = SkinSceneActions()
     @Entry var skinSceneSurface = SkinSurface.window
     @Entry var skinSceneFullscreenHost = SkinContext.FullscreenHostMode.none

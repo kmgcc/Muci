@@ -46,6 +46,7 @@ struct SkinSceneSwitchTransition: ViewModifier {
 struct SkinSceneQueuePanel: View {
     @Environment(\.skinScenePresentation) private var presentation
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(UIStateViewModel.self) private var uiState
     @EnvironmentObject private var themeStore: ThemeStore
 
     var body: some View {
@@ -56,6 +57,7 @@ struct SkinSceneQueuePanel: View {
         )
         WindowPlaybackQueuePanelView(foreground: foreground)
             .environment(\.colorScheme, foreground?.colorScheme ?? colorScheme)
+            .background { if uiState.isWindowPlaybackQueueVisible { SkinScrollYieldRegion() } }
     }
 }
 
@@ -100,7 +102,10 @@ struct SkinSceneHost: View {
         SkinSceneControlHost(
             surface: viewport.surface, lyricsVisible: viewport.surface == .fullscreen ? lyricsVisible : uiState.skinSceneLyricsVisible,
             onExit: exit, onRestore: onRestore, onReload: reload,
-            onToggleLyrics: toggleLyrics, controlForeground: skin.descriptor.presentation.controlForeground
+            onToggleLyrics: toggleLyrics, controlForeground: skin.descriptor.presentation.controlForeground,
+            panelPlacement: skin.descriptor.presentation.panelPlacement,
+            trackDetailPresentation: skin.descriptor.presentation.trackDetail,
+            scrollVolume: skin.descriptor.presentation.scrollVolume
         ) {
           ZStack(alignment: .topLeading) {
             if isActive {
@@ -132,6 +137,24 @@ struct SkinSceneHost: View {
                     .skinControlRegion()
             }
           }
+          // Inside the control host, so the items reach its sheets and the scene's actions.
+          .contentShape(Rectangle())
+          .contextMenuWithVisibleIcons {
+              SkinSceneTrackMenuItems()
+              if let videoFullscreenAction {
+                  Divider()
+                  Button("全屏播放", action: videoFullscreenAction)
+              }
+              if viewport.surface == .fullscreen {
+                  Divider()
+                  SkinSceneQuickAppearanceMenuItem()
+              }
+              if SkinRegistry.customizationEnabled {
+                  Divider()
+                  Button("刷新皮肤", action: reload)
+                  Button("恢复默认皮肤", action: onRestore)
+              }
+          }
         }
         .environment(\.skinSceneSurface, viewport.surface)
         .environment(\.skinScenePresentation, skin.descriptor.presentation)
@@ -145,16 +168,6 @@ struct SkinSceneHost: View {
         .environment(\.skinPackageFonts, (skin as? PackagedSkin)?.manifest.fonts ?? [])
         .onPreferenceChange(SkinLyricsSlotKey.self) { configuration in
             lyricsConfiguration = configuration
-        }
-        .contentShape(Rectangle())
-        .contextMenuWithVisibleIcons {
-            if let videoFullscreenAction {
-                Button("全屏播放", action: videoFullscreenAction)
-            }
-            if SkinRegistry.customizationEnabled {
-                Button("刷新皮肤", action: reload)
-                Button("恢复外观", action: onRestore)
-            }
         }
         .alert("皮肤包", isPresented: Binding(get: { reloadError != nil }, set: { if !$0 { reloadError = nil } })) {
             Button("好", role: .cancel) { reloadError = nil }
@@ -214,6 +227,15 @@ struct SkinSceneHost: View {
         case .systemFullscreenSpace: fullscreen.closeFullscreenWindow()
         case .embeddedInWindow: fullscreen.closeFullscreenPlayerInWindow()
         case .none: break
+        }
+    }
+}
+
+private struct SkinSceneQuickAppearanceMenuItem: View {
+    @Environment(\.skinSceneActions) private var actions
+    var body: some View {
+        Button(action: actions.openQuickPanel) {
+            Label("快速外观", systemImage: "slider.horizontal.3")
         }
     }
 }
