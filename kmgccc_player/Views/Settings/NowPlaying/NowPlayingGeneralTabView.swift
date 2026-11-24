@@ -29,16 +29,12 @@ struct NowPlayingGeneralTabView: View {
         let showsArtBackgroundOption = selectedSkin.scene == nil || selectedSkin.sceneComponents.contains("background.host")
         VStack(alignment: .leading, spacing: presentationStyle.sectionSpacing) {
             SettingsSection("settings.now_playing.select_skin") {
-                VStack(alignment: .leading, spacing: presentationStyle.groupSpacing) {
-                    if SkinRegistry.customizationEnabled {
-                        SkinPackageSettingsActions(skin: SkinRegistry.skin(for: nowPlayingSkin))
-                    }
-                    SkinSelectorRow(
-                        skins: SkinRegistry.nowPlayingOptions,
-                        selectedSkinID: $nowPlayingSkin,
-                        showsScrollButtons: true
-                    )
-                }
+                SkinSelectorRow(
+                    skins: SkinRegistry.nowPlayingOptions,
+                    selectedSkinID: $nowPlayingSkin,
+                    showsScrollButtons: true,
+                    managesPackages: SkinRegistry.customizationEnabled
+                )
             }
             .settingsSearchAnchor("skin.select")
 
@@ -54,7 +50,8 @@ struct NowPlayingGeneralTabView: View {
                         if let optionsView = selectedSkin.settingsView { optionsView }
                         if SkinRegistry.customizationEnabled {
                             SkinParameterSettingsView(skinID: selectedSkin.id, surface: .window,
-                                                      definitions: selectedSkin.parameterDefinitions, store: SkinRegistry.catalog.parameters)
+                                                      definitions: selectedSkin.parameterDefinitions, store: SkinRegistry.catalog.parameters,
+                                                      showsRenderQuality: selectedSkin.scene != nil)
                         }
                     }
                 }
@@ -81,7 +78,8 @@ struct NowPlayingGeneralTabView: View {
                                 playerVM.refreshLedMeterStateFromSettings()
                             }
                         ),
-                        showsLEDCount: false
+                        showsLEDCount: false,
+                        showsSpectrumCount: false
                     )
                 }
                 .settingsSearchAnchor("skin.miniplayer")

@@ -39,24 +39,38 @@ struct FullscreenLyricsTabView: View {
         ("settings.lyrics.weight_black", 900),
     ]
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: presentationStyle.sectionSpacing) {
-            appearanceSection
-                .settingsSearchAnchor("lyrics.appearance")
-            springSection
-                .settingsSearchAnchor("lyrics.spring")
-            fontsSection
-                .settingsSearchAnchor("lyrics.fonts")
+    /// The settings the selected fullscreen skin reads; the rest stay out of the way.
+    private var skinUse: SkinLyricsSettingsUse {
+        SkinRegistry.fullscreenSkin(for: settings.fullscreen.skinID).lyricsSettingsUse(on: .fullscreen)
+    }
 
-            if !presentationStyle.usesMaterialSectionCards {
+    var body: some View {
+        let use = skinUse
+        VStack(alignment: .leading, spacing: presentationStyle.sectionSpacing) {
+            if use.renderQuality || use.highlight {
+                appearanceSection(use)
+                    .settingsSearchAnchor("lyrics.appearance")
+            }
+            if use.spring {
+                springSection
+                    .settingsSearchAnchor("lyrics.spring")
+            }
+            if use.fonts {
+                fontsSection
+                    .settingsSearchAnchor("lyrics.fonts")
+            }
+
+            if use.preview && !presentationStyle.usesMaterialSectionCards {
                 previewSection
                     .settingsSearchAnchor("lyrics.preview")
             }
 
-            LyricsTimingConfigSection()
-                .environment(settings)
-                .environment(lyricsVM)
-                .settingsSearchAnchor("lyrics.timing")
+            if use.timing {
+                LyricsTimingConfigSection(showsLineSwitchTiming: use.lineSwitchTiming)
+                    .environment(settings)
+                    .environment(lyricsVM)
+                    .settingsSearchAnchor("lyrics.timing")
+            }
         }
         .onAppear {
             syncStateFromSettings()
@@ -80,18 +94,22 @@ struct FullscreenLyricsTabView: View {
         }
     }
 
-    private var appearanceSection: some View {
+    private func appearanceSection(_ use: SkinLyricsSettingsUse) -> some View {
         SettingsSection("外观") {
             VStack(alignment: .leading, spacing: presentationStyle.groupSpacing) {
-                AMLLLyricsRenderQualitySlider(quality: $amllLyricsRenderQuality)
+                if use.renderQuality {
+                    AMLLLyricsRenderQualitySlider(quality: $amllLyricsRenderQuality)
+                }
 
-                SettingsSwitchRow(
-                    title: "减弱高亮",
-                    isOn: $amllDiscreteWordHighlightEnabled,
-                    titleFont: presentationStyle.rowLabelFont,
-                    titleColor: presentationStyle.settingsPrimaryTextColor(appColors: appColors),
-                    info: "开启后歌词逐字亮起。"
-                )
+                if use.highlight {
+                    SettingsSwitchRow(
+                        title: "减弱高亮",
+                        isOn: $amllDiscreteWordHighlightEnabled,
+                        titleFont: presentationStyle.rowLabelFont,
+                        titleColor: presentationStyle.settingsPrimaryTextColor(appColors: appColors),
+                        info: "开启后歌词逐字亮起。"
+                    )
+                }
             }
         }
     }

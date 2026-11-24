@@ -14,9 +14,7 @@ struct LEDMeterSettingsView: View {
 
     @Environment(AppSettings.self) private var settings
     @Environment(LEDMeterServiceProvider.self) private var ledMeterProvider
-    @EnvironmentObject private var themeStore: ThemeStore
     @Environment(\.fullscreenSettingsPresentationStyle) private var presentationStyle
-    @Environment(\.settingsAppForegroundColors) private var appColors
 
     @State private var ledCount: Int = AppSettings.shared.ledCount
     @State private var brightnessLevels: Int = AppSettings.shared.ledBrightnessLevels
@@ -42,41 +40,11 @@ struct LEDMeterSettingsView: View {
                 .settingsRowLabelStyle()
                 .padding(.leading, labelIndent)
             Spacer()
-            SlidingSelector(
-                segments: [9, 11, 13, 15],
+            SettingsCapsuleSelector(
+                options: [9, 11, 13, 15],
                 selection: $ledCount,
-                hSpacing: 0,
-                background: {
-                    Color.clear
-                },
-                knob: {
-                    Capsule()
-                        .fill(selectorKnobColor.opacity(0.18))
-                },
-                content: { count, isSelected in
-                    Text("\(count)")
-                        .font(.system(
-                            size: presentationStyle.scaled(11),
-                            weight: isSelected ? .medium : .regular
-                        ))
-                        .padding(.horizontal, presentationStyle.scaled(10))
-                        .padding(.vertical, presentationStyle.scaled(4))
-                        .foregroundStyle(
-                            isSelected
-                                ? presentationStyle.settingsSelectedTextColor(
-                                    accentColor: themeStore.accentColor,
-                                    appColors: appColors
-                                )
-                                : presentationStyle.settingsSecondaryTextColor(appColors: appColors)
-                        )
-                }
+                title: { $0.formatted() }
             )
-            .padding(presentationStyle.scaled(3))
-            .background(
-                Capsule()
-                    .fill(presentationStyle.settingsSegmentedTrackColor(appColors: appColors))
-            )
-            .fixedSize(horizontal: true, vertical: false)
         }
     }
 
@@ -86,48 +54,12 @@ struct LEDMeterSettingsView: View {
                 .settingsRowLabelStyle()
                 .padding(.leading, labelIndent)
             Spacer()
-            SlidingSelector(
-                segments: [3, 5, 7],
+            SettingsCapsuleSelector(
+                options: [3, 5, 7],
                 selection: $brightnessLevels,
-                hSpacing: 0,
-                background: {
-                    Color.clear
-                },
-                knob: {
-                    Capsule()
-                        .fill(selectorKnobColor.opacity(0.18))
-                },
-                content: { level, isSelected in
-                    Text("\(level)")
-                        .font(.system(
-                            size: presentationStyle.scaled(11),
-                            weight: isSelected ? .medium : .regular
-                        ))
-                        .padding(.horizontal, presentationStyle.scaled(10))
-                        .padding(.vertical, presentationStyle.scaled(4))
-                        .foregroundStyle(
-                            isSelected
-                                ? presentationStyle.settingsSelectedTextColor(
-                                    accentColor: themeStore.accentColor,
-                                    appColors: appColors
-                                )
-                                : presentationStyle.settingsSecondaryTextColor(appColors: appColors)
-                        )
-                }
+                title: { $0.formatted() }
             )
-            .padding(presentationStyle.scaled(3))
-            .background(
-                Capsule()
-                    .fill(presentationStyle.settingsSegmentedTrackColor(appColors: appColors))
-            )
-            .fixedSize(horizontal: true, vertical: false)
         }
-    }
-
-    private var selectorKnobColor: Color {
-        presentationStyle.usesMaterialSectionCards
-            ? presentationStyle.settingsPrimaryTextColor(appColors: appColors)
-            : themeStore.accentColor
     }
 
     /// Labels sit one step in from the selector they belong to. The tracks

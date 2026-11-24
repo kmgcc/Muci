@@ -20,6 +20,7 @@ struct AudioDSPNativeEffectEditor: View, Equatable {
 
     @EnvironmentObject private var themeStore: ThemeStore
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.fullscreenSettingsPresentationStyle) private var presentationStyle
     @Environment(\.settingsAppForegroundColors) private var appColors
     @State private var isImportingImpulseResponse = false
     @State private var isReadingImpulseResponse = false
@@ -535,7 +536,12 @@ struct AudioDSPNativeEffectEditor: View, Equatable {
     }
 
     private func compressorSpeedPicker(index: Int, band: DSPCompressorBand) -> some View {
-        VStack(spacing: 2) {
+        let style = SettingsCapsuleStyle(
+            presentation: presentationStyle,
+            appColors: appColors,
+            accentColor: themeStore.accentColor
+        )
+        return VStack(spacing: 2) {
             Text("速度")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
@@ -548,13 +554,13 @@ struct AudioDSPNativeEffectEditor: View, Equatable {
                             setCompressorSpeed(speed, index: index)
                         } label: {
                             Text(compressorSpeedTitle(speed))
-                                .font(.system(size: 11, weight: isSelected ? .medium : .regular))
-                                .foregroundStyle(isSelected ? themeStore.accentColor : (appColors?.secondary ?? .secondary))
+                                .font(style.labelFont)
+                                .foregroundStyle(isSelected ? style.selectedColor : style.unselectedColor)
                                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                                 .contentShape(Rectangle())
                                 .background {
                                     if isSelected {
-                                        Capsule().fill(themeStore.accentColor.opacity(0.18))
+                                        Capsule().fill(style.knobColor)
                                     }
                                 }
                         }
@@ -562,19 +568,19 @@ struct AudioDSPNativeEffectEditor: View, Equatable {
                         .accessibilityLabel("\(compressorSpeedTitle(speed))速")
                     }
                 }
-                .padding(3)
-                .background(Capsule().fill((appColors?.secondary ?? .secondary).opacity(0.08)))
+                .padding(style.trackInset)
+                .background(Capsule().fill(style.trackColor))
                 .contentShape(Capsule())
                 .simultaneousGesture(
                     DragGesture(minimumDistance: 4)
                         .onEnded { value in
-                            let segmentWidth = max(1, (proxy.size.width - 6) / 3)
-                            let selectedIndex = min(2, max(0, Int((value.location.x - 3) / segmentWidth)))
+                            let segmentWidth = max(1, (proxy.size.width - style.trackInset * 2) / 3)
+                            let selectedIndex = min(2, max(0, Int((value.location.x - style.trackInset) / segmentWidth)))
                             setCompressorSpeed(DSPCompressorSpeed.allCases[selectedIndex], index: index)
                         }
                 )
             }
-            .frame(height: 27)
+            .frame(height: style.segmentHeight + style.trackInset * 2)
         }
         .frame(maxWidth: .infinity)
         // Custom timings dim the selector without disabling taps or dragging.
