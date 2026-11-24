@@ -459,8 +459,10 @@ final class LibraryOpenService {
     private func resolveLibraryRoot(_ selectedURL: URL) async throws -> URL {
         let selected = selectedURL.standardizedFileURL
         if await fileOperator.itemExists(at: LibraryPaths(rootURL: selected).manifestURL) { return selected }
-        let child = selected.appendingPathComponent(LibraryPaths.rootDirectoryName, isDirectory: true)
-        if await fileOperator.itemExists(at: LibraryPaths(rootURL: child).manifestURL) { return child }
+        for name in [LibraryPaths.legacyRootDirectoryName, LibraryPaths.rootDirectoryName] {
+            let child = selected.appendingPathComponent(name, isDirectory: true)
+            if await fileOperator.itemExists(at: LibraryPaths(rootURL: child).manifestURL) { return child }
+        }
         throw LibraryOpenError.libraryNotFound
     }
 }

@@ -46,7 +46,7 @@ struct GeneralSettingsView: View {
             SettingsSection("数据共享") {
                 VStack(alignment: .leading, spacing: 16) {
                     SettingsSwitchRow(
-                        title: "帮助改进 kmgccc_player",
+                        title: "帮助改进 Muci",
                         isOn: telemetryEnabledBinding,
                         detail: "发送匿名使用统计，如用户数量、播放来源、皮肤使用与性能指标；统计中不含播放记录、本地文件路径等敏感数据。"
                     )

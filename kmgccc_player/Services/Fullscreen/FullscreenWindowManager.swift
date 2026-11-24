@@ -228,7 +228,7 @@ final class FullscreenWindowManager: NSObject, NSWindowDelegate, ObservableObjec
             defer: false
         )
 
-        window.title = "kmgccc_player - Fullscreen"
+        window.title = "\(Constants.appName) - Fullscreen"
         ColorRenderingAdapter.configureNativeWindowForDisplayP3(window)
         window.isRestorable = false
         window.backgroundColor = .black

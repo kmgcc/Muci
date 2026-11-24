@@ -14,7 +14,7 @@ enum WhatsNewConfiguration {
 
     /// First-install onboarding overview for new users.
     static let welcome = WhatsNew(
-        title: "欢迎使用 kmgccc_player",
+        title: "欢迎使用 Muci",
         features: [
             WhatsNew.Feature(
                 image: .init(systemName: "square.stack.3d.up.fill", foregroundColor: .indigo),

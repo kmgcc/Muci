@@ -429,10 +429,10 @@ final class AppSessionHost: ObservableObject {
         guard let libraryOpenService else { throw LibraryOpenError.libraryNotFound }
         let previousSession = activeLibraryBinding.activeSession
         let selectedURL = url.standardizedFileURL
-        let defaultRoot = LibraryLocationStore.defaultLibraryRootURL.standardizedFileURL
-        let isDefaultLibrarySelection = selectedURL == defaultRoot
-            || selectedURL.appendingPathComponent(LibraryPaths.rootDirectoryName, isDirectory: true)
-                .standardizedFileURL == defaultRoot
+        let isDefaultLibrarySelection = LibraryLocationStore.factoryDefaultRootURLs.contains { root in
+            let defaultRoot = root.standardizedFileURL
+            return selectedURL.path == defaultRoot.path || selectedURL.path == defaultRoot.deletingLastPathComponent().path
+        }
         let opened = try await libraryOpenService.open(
             selectedURL: selectedURL,
             expectedContext: expectedContext,
@@ -1980,12 +1980,16 @@ final class AppSessionHost: ObservableObject {
             return activeLibraryBinding.context
         }
         let defaultRoot = LibraryLocationStore.defaultLibraryRootURL
-        if FileManager.default.fileExists(atPath: defaultRoot.path) {
+        let replacementPath = registry.activeLibraryID.flatMap { registry.library(id: $0)?.lastKnownPath }
+        let defaultCandidates = LibraryLocationStore.factoryDefaultRootURLs.filter { root in
+            preferRegisteredLibraries || root == defaultRoot || root.path == replacementPath
+        }
+        if let existingRoot = LibraryLocationStore.existingFactoryDefaultRoot(in: defaultCandidates) {
             if registry.pendingFactoryDefaultReplacement == true {
-                guard let manifest = try? MusicLibraryManifest.read(from: LibraryPaths(rootURL: defaultRoot).manifestURL),
+                guard let manifest = try? MusicLibraryManifest.read(from: LibraryPaths(rootURL: existingRoot).manifestURL),
                       let descriptor = registry.library(id: manifest.libraryID),
                       descriptor.modeProjection == manifest.mode,
-                      descriptor.lastKnownPath == defaultRoot.path else {
+                      descriptor.lastKnownPath == existingRoot.path else {
                     Log.warning("[LibrarySession] replacement default path is occupied; waiting for recovery", category: .library)
                     return nil
                 }
@@ -1995,13 +1999,15 @@ final class AppSessionHost: ObservableObject {
                 // the default path for a different library identifier. The
                 // physical library is never removed by this recovery path.
                 let context = try await libraryOpenService.open(
-                    selectedURL: defaultRoot,
+                    selectedURL: existingRoot,
                     allowStalePathConflictRepair: true
                 ).context
                 await completeFactoryDefaultReplacementIfPossible(libraryID: context.id)
                 return context
             } catch {
-                guard LibraryStartupFailurePolicy.permitsFactoryDefaultFallback(after: error) else {
+                guard existingRoot == defaultRoot,
+                      LibraryStartupFailurePolicy.permitsFactoryDefaultFallback(after: error) else {
+                    libraryStartupFailureMessage = LibraryOpenFailure.message(for: error)
                     Log.warning(
                         "[LibrarySession] default library activation deferred; alternate creation suppressed: \(error)",
                         category: .library

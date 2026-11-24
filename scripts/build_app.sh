@@ -36,8 +36,8 @@ esac
 
 DERIVED_DATA_PATH="${DERIVED_DATA_PATH:-${TMPDIR:-/tmp}/kmgccc-player-$CONFIGURATION}"
 PROJECT="$REPO_ROOT/kmgccc_player.xcodeproj"
-APP="$DERIVED_DATA_PATH/Build/Products/$CONFIGURATION/kmgccc_player.app"
-DSYM="$DERIVED_DATA_PATH/Build/Products/$CONFIGURATION/kmgccc_player.app.dSYM"
+APP="$DERIVED_DATA_PATH/Build/Products/$CONFIGURATION/Muci.app"
+DSYM="$DERIVED_DATA_PATH/Build/Products/$CONFIGURATION/Muci.app.dSYM"
 BUILD_LOG="${KMGCCC_BUILD_LOG:-$REPO_ROOT/build/logs/build_app-$(date +%Y%m%d-%H%M%S)-$$.log}"
 
 "$SCRIPT_DIR/check-melismakit-dependency.sh" "$MELISMAKIT_DEPENDENCY_FLAG"
@@ -104,8 +104,8 @@ fi
 
 if [[ -n "$OUTPUT_DIR" ]]; then
   mkdir -p "$OUTPUT_DIR"
-  rm -rf "$OUTPUT_DIR/kmgccc_player.app"
-  COPYFILE_DISABLE=1 /usr/bin/ditto "$APP" "$OUTPUT_DIR/kmgccc_player.app"
-  APP="$OUTPUT_DIR/kmgccc_player.app"
+  rm -rf "$OUTPUT_DIR/Muci.app"
+  COPYFILE_DISABLE=1 /usr/bin/ditto "$APP" "$OUTPUT_DIR/Muci.app"
+  APP="$OUTPUT_DIR/Muci.app"
 fi
 printf '%s\n' "$APP"

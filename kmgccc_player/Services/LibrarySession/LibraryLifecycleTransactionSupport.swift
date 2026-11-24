@@ -89,15 +89,16 @@ nonisolated enum LibraryRootLocationPolicy {
 
     static func isFactoryDefaultRegistration(
         _ descriptor: MusicLibraryBookmark,
-        defaultRootURL: URL = LibraryLocationStore.defaultLibraryRootURL
+        defaultRootURL: URL? = nil
     ) -> Bool {
         let recordedRoot = URL(fileURLWithPath: descriptor.lastKnownPath).standardizedFileURL
-        if recordedRoot.path == defaultRootURL.standardizedFileURL.path { return true }
-        // Earlier builds persisted a bookmark's Trash destination. The bare
-        // legacy root name identifies that controlled default root; current
-        // user-created libraries always have a named directory suffix.
+        let defaultRoots = defaultRootURL.map { [$0] } ?? LibraryLocationStore.factoryDefaultRootURLs
+        if defaultRoots.contains(where: { $0.standardizedFileURL.path == recordedRoot.path }) { return true }
+        // Earlier builds recorded the bookmark's destination in the Trash.
+        // Both exact factory directory names can appear there.
         return isInTrash(recordedRoot)
-            && recordedRoot.lastPathComponent == LibraryPaths.rootDirectoryName
+            && [LibraryPaths.legacyRootDirectoryName, LibraryPaths.rootDirectoryName]
+                .contains(recordedRoot.lastPathComponent)
     }
 
     static func canFlush(_ context: LibraryContext) throws -> Bool {

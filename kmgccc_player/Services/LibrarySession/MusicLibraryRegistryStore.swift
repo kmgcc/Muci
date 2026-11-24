@@ -400,14 +400,16 @@ actor MusicLibraryRegistryStore {
 
     func completeFactoryDefaultReplacement(
         libraryID: UUID,
-        defaultRootURL: URL = LibraryLocationStore.defaultLibraryRootURL
+        defaultRootURL: URL? = nil
     ) throws {
+        let roots = defaultRootURL.map { [$0] } ?? LibraryLocationStore.factoryDefaultRootURLs
+        let defaultPaths = roots.map { $0.standardizedFileURL.path }
         try commit { updated in
             guard updated.pendingFactoryDefaultReplacement == true,
                   updated.activeLibraryID == libraryID,
                   let descriptor = updated.library(id: libraryID),
-                  URL(fileURLWithPath: descriptor.lastKnownPath).standardizedFileURL.path
-                    == defaultRootURL.standardizedFileURL.path else { return }
+                  defaultPaths.contains(URL(fileURLWithPath: descriptor.lastKnownPath).standardizedFileURL.path)
+            else { return }
             updated.pendingFactoryDefaultReplacement = nil
         }
     }

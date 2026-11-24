@@ -3,7 +3,6 @@
 */
 
 // MARK: - Common
-"common.app_name" = "kmgccc_player";
 "menu.settings" = "设置…";
 "menu.about_app" = "关于 %@";
 "menu.about_window_title" = "关于";

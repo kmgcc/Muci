@@ -2,7 +2,7 @@
 set -euo pipefail
 
 usage() {
-  echo "Usage: ./scripts/check-app-bundle.sh /path/to/kmgccc_player.app"
+  echo "Usage: ./scripts/check-app-bundle.sh /path/to/Muci.app"
 }
 
 fail() {
@@ -37,8 +37,10 @@ CONTENTS="$APP/Contents"
 RESOURCES="$CONTENTS/Resources"
 
 require_directory "$APP" "App bundle"
-require_executable "$CONTENTS/MacOS/kmgccc_player" "App executable"
 require_file "$CONTENTS/Info.plist" "App Info.plist"
+EXECUTABLE="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$CONTENTS/Info.plist")"
+[[ -n "$EXECUTABLE" && "$EXECUTABLE" != */* ]] || fail "Invalid CFBundleExecutable"
+require_executable "$CONTENTS/MacOS/$EXECUTABLE" "App executable"
 require_file "$RESOURCES/Assets.car" "Asset catalog"
 
 require_file "$RESOURCES/AMLL/background.html" "AMLL background page"

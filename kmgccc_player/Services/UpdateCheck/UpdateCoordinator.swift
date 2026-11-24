@@ -683,7 +683,7 @@ final class UpdateCoordinator: NSObject, ObservableObject {
         let alert = NSAlert()
         alert.alertStyle = .informational
         alert.messageText = "发现新版本 \(item.displayVersionString)"
-        alert.informativeText = "下载完成后重启，即可更新到最新版本的 kmgccc_player，体验新功能或问题修复。"
+        alert.informativeText = "下载完成后重启，即可更新到最新版 Muci。"
         alert.addButton(withTitle: "下载更新")
         alert.addButton(withTitle: "稍后")
         NSApp.activate(ignoringOtherApps: true)

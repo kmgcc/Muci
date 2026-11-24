@@ -277,7 +277,7 @@ final class AppKitMainSplitWindowController: NSWindowController, NSWindowDelegat
 
         super.init(window: window)
 
-        window.title = "kmgccc_player"
+        window.title = Constants.appName
         if !AppSettings.shared.followSystemAppearance {
             let appearanceName: NSAppearance.Name = AppSettings.shared.manualAppearance == .dark ? .darkAqua : .aqua
             window.appearance = NSAppearance(named: appearanceName)
