@@ -130,7 +130,7 @@ final class LibraryLifecycleTransactionTests: XCTestCase {
         XCTAssertEqual(reopened.context.id, legacy.libraryID)
         XCTAssertEqual(reopened.context.rootURL.path, legacyRoot.standardizedFileURL.path)
         let registry = await fixture.registry.snapshot()
-        XCTAssertEqual(registry.libraries.count, 3)
+        XCTAssertEqual(registry.libraries.count, 4)
     }
 
     func testFirstRunCreationCanReuseDefaultParentAndNameInEitherMode() async throws {

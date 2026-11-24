@@ -519,6 +519,7 @@
 				93D91A122FA5000000010001 /* Copy QQMusic helper */,
 				93D91A132FA5000000010002 /* Copy SACAD helper */,
 				93D91A152FA5000000010004 /* Build and embed Player Automation CLI */,
+				B34E6A21C21D400AA1000011 /* Build install name migration helper */,
 				93D91A162FA5000000010005 /* Copy Agent Skill */,
 				93D91A142FA5000000010003 /* Run Optional Build Hook */,
 			);
@@ -822,6 +823,23 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/bash;
 			shellScript = "set -euo pipefail\nSRC=\"${PROJECT_DIR}/docs/skills/kmgccc-player-automation\"\nDST=\"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/Skills/kmgccc-player-automation\"\nif [ ! -f \"${SRC}/SKILL.md\" ]; then\n  echo \"error: Missing Agent skill at ${SRC}.\"\n  exit 1\nfi\nrm -rf \"${DST}\"\nmkdir -p \"$(dirname \"${DST}\")\"\nCOPYFILE_DISABLE=1 /usr/bin/ditto \"${SRC}\" \"${DST}\"\n/usr/bin/xattr -cr \"${DST}\" 2>/dev/null || true\n";
+		};
+		B34E6A21C21D400AA1000011 /* Build install name migration helper */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = ();
+			inputPaths = (
+				"$(PROJECT_DIR)/Tools/MuciInstallMigration/main.m",
+				"$(PROJECT_DIR)/Tools/MuciInstallMigration/BundleRename.h",
+				"$(PROJECT_DIR)/scripts/build-install-migration-helper.sh",
+			);
+			name = "Build install name migration helper";
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/Helpers/muci-install-migration",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "/bin/bash \"$(PROJECT_DIR)/scripts/build-install-migration-helper.sh\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 

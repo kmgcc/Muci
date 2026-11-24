@@ -97,6 +97,9 @@ struct KmgcccPlayerApp: App {
     let initialLibraryContext: LibraryContext?
 
     init() {
+        if !Self.isRunningTests, InstallNameMigration.handOffIfNeeded() {
+            exit(EXIT_SUCCESS)
+        }
         // Capture failures in preference migration and font registration too.
         CrashReporterBootstrap.shared.enable()
         CrashBreadcrumbRecorder.shared.record(.appLaunchStarted)
