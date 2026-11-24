@@ -153,11 +153,6 @@ struct AboutSettingsView: View {
                     license: "AGPL-3.0"
                 )
                 complianceItem(
-                    name: "apple-audio-visualization",
-                    url: "https://github.com/taterboom/apple-audio-visualization",
-                    license: nil
-                )
-                complianceItem(
                     name: "LDDC",
                     url: "https://github.com/chenmozhijin/LDDC",
                     license: "GPL-3.0"
@@ -206,6 +201,28 @@ struct AboutSettingsView: View {
                 Link("音频组件许可证", destination: licenses)
                     .settingsRowLabelStyle()
             }
+
+            VStack(alignment: .leading, spacing: 12) {
+                Text(NSLocalizedString("settings.about.inspiration", comment: ""))
+                    .settingsRowLabelStyle()
+
+                Text("settings.about.inspiration_desc")
+                    .settingsDescriptionStyle()
+
+                VStack(alignment: .leading, spacing: 16) {
+                    inspirationItem(
+                        name: "Folia",
+                        url: "https://github.com/chthollyphile/folia-major",
+                        badge: NSLocalizedString("settings.about.inspiration.design", comment: "")
+                    )
+                    inspirationItem(
+                        name: "apple-audio-visualization",
+                        url: "https://github.com/taterboom/apple-audio-visualization",
+                        badge: NSLocalizedString("settings.about.inspiration.algorithm", comment: "")
+                    )
+                }
+            }
+            .padding(.top, 6)
 
             VStack(alignment: .leading, spacing: 6) {
                 Text("settings.about.source_code")
@@ -368,6 +385,31 @@ struct AboutSettingsView: View {
                 )
                 .foregroundStyle(licenseColor(for: license))
             }
+        }
+    }
+
+    private func inspirationItem(name: String, url: String, badge: String) -> some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(name)
+                    .settingsRowLabelStyle()
+                Link(url, destination: URL(string: url)!)
+                    .font(.system(size: SettingsStyleTokens.descriptionFontSize))
+            }
+            Spacer()
+            HStack(spacing: 4) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 10))
+                Text(badge)
+                    .font(.system(size: 10, weight: .medium))
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(
+                Capsule()
+                    .fill(themeStore.accentColor.opacity(0.15))
+            )
+            .foregroundStyle(themeStore.accentColor)
         }
     }
 
