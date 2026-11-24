@@ -802,7 +802,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/bash;
-			shellScript = "set -euo pipefail\nPACKAGE_ROOT=\"${PROJECT_DIR}/Dependencies/PlayerAutomation\"\nSCRATCH_PATH=\"${DERIVED_FILE_DIR}/PlayerAutomation\"\nCONFIGURATION_LOWER=$(printf '%s' \"${CONFIGURATION}\" | tr '[:upper:]' '[:lower:]')\n/usr/bin/xcrun swift build --package-path \"${PACKAGE_ROOT}\" --scratch-path \"${SCRATCH_PATH}\" --configuration \"${CONFIGURATION_LOWER}\" --product player-automation\nBIN_DIR=$(/usr/bin/xcrun swift build --package-path \"${PACKAGE_ROOT}\" --scratch-path \"${SCRATCH_PATH}\" --configuration \"${CONFIGURATION_LOWER}\" --show-bin-path)\nSRC=\"${BIN_DIR}/player-automation\"\nDST_DIR=\"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/Tools\"\nDST=\"${DST_DIR}/player-automation\"\nif [ ! -x \"${SRC}\" ]; then\n  echo \"error: Missing Player Automation CLI build product at ${SRC}.\"\n  exit 1\nfi\nmkdir -p \"${DST_DIR}\"\nCOPYFILE_DISABLE=1 /bin/cp -f \"${SRC}\" \"${DST}\"\n/usr/bin/xattr -cr \"${DST}\" 2>/dev/null || true\nchmod 755 \"${DST}\"\nif [ \"${CODE_SIGNING_ALLOWED:-NO}\" = \"YES\" ] && [ -n \"${EXPANDED_CODE_SIGN_IDENTITY:-}\" ] && [ \"${EXPANDED_CODE_SIGN_IDENTITY}\" != \"-\" ]; then\n  /usr/bin/codesign --force --sign \"${EXPANDED_CODE_SIGN_IDENTITY}\" --timestamp=none \"${DST}\"\nfi\n";
+			shellScript = "set -euo pipefail\nPACKAGE_ROOT=\"${PROJECT_DIR}/Dependencies/PlayerAutomation\"\nSCRATCH_PATH=\"${DERIVED_FILE_DIR}/PlayerAutomation\"\nCONFIGURATION_LOWER=$(printf '%s' \"${CONFIGURATION}\" | tr '[:upper:]' '[:lower:]')\n/usr/bin/xcrun swift build --package-path \"${PACKAGE_ROOT}\" --scratch-path \"${SCRATCH_PATH}\" --configuration \"${CONFIGURATION_LOWER}\" --product player-automation\nBIN_DIR=$(/usr/bin/xcrun swift build --package-path \"${PACKAGE_ROOT}\" --scratch-path \"${SCRATCH_PATH}\" --configuration \"${CONFIGURATION_LOWER}\" --show-bin-path)\nSRC=\"${BIN_DIR}/player-automation\"\nDST_DIR=\"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/Tools\"\nDST=\"${DST_DIR}/player-automation\"\nif [ ! -x \"${SRC}\" ]; then\n  echo \"error: Missing Player Automation CLI build product at ${SRC}.\"\n  exit 1\nfi\nmkdir -p \"${DST_DIR}\"\nCOPYFILE_DISABLE=1 /bin/cp -f \"${SRC}\" \"${DST}\"\n/usr/bin/xattr -cr \"${DST}\" 2>/dev/null || true\nchmod 755 \"${DST}\"\n/bin/ln -sfn player-automation \"$DST_DIR/muci-automation\"\nif [ \"${CODE_SIGNING_ALLOWED:-NO}\" = \"YES\" ] && [ -n \"${EXPANDED_CODE_SIGN_IDENTITY:-}\" ] && [ \"${EXPANDED_CODE_SIGN_IDENTITY}\" != \"-\" ]; then\n  /usr/bin/codesign --force --sign \"${EXPANDED_CODE_SIGN_IDENTITY}\" --timestamp=none \"${DST}\"\nfi\n";
 		};
 		93D91A162FA5000000010005 /* Copy Agent Skill */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -814,6 +814,7 @@
 			);
 			inputPaths = (
 				"$(PROJECT_DIR)/docs/skills/kmgccc-player-automation",
+				"$(PROJECT_DIR)/docs/skills/muci-automation",
 			);
 			name = "Copy Agent Skill";
 			outputFileListPaths = (
@@ -822,7 +823,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/bash;
-			shellScript = "set -euo pipefail\nSRC=\"${PROJECT_DIR}/docs/skills/kmgccc-player-automation\"\nDST=\"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/Skills/kmgccc-player-automation\"\nif [ ! -f \"${SRC}/SKILL.md\" ]; then\n  echo \"error: Missing Agent skill at ${SRC}.\"\n  exit 1\nfi\nrm -rf \"${DST}\"\nmkdir -p \"$(dirname \"${DST}\")\"\nCOPYFILE_DISABLE=1 /usr/bin/ditto \"${SRC}\" \"${DST}\"\n/usr/bin/xattr -cr \"${DST}\" 2>/dev/null || true\n";
+			shellScript = "set -euo pipefail\nfor skill in muci-automation kmgccc-player-automation; do\n  SRC=\"$PROJECT_DIR/docs/skills/$skill\"\n  DST=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/Skills/$skill\"\n  test -f \"$SRC/SKILL.md\"\n  rm -rf \"$DST\"\n  mkdir -p \"$(dirname \"$DST\")\"\n  COPYFILE_DISABLE=1 /usr/bin/ditto \"$SRC\" \"$DST\"\n  /usr/bin/xattr -cr \"$DST\" 2>/dev/null || true\ndone\n";
 		};
 		B34E6A21C21D400AA1000011 /* Build install name migration helper */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -839,7 +840,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/bash;
-			shellScript = "/bin/bash \"$(PROJECT_DIR)/scripts/build-install-migration-helper.sh\"\n";
+			shellScript = "/bin/bash \"$PROJECT_DIR/scripts/build-install-migration-helper.sh\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 

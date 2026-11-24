@@ -41,12 +41,12 @@ MCP modern 请求如声明 Tasks 扩展，会获得绑定 Library 与 Job 的 Ta
 
 ## 主 App 启动与实测前置
 
-kmgccc_player 的资料库是独占资源。所有主 App 实测都必须先完成进程状态检查：
+Muci 的资料库是独占资源。所有主 App 实测都必须先完成进程状态检查：
 
 1. 运行 ./scripts/check-app-process-state.sh，列出当前 kmgccc_player 的 PID、启动时间和实际二进制路径。
 2. 检查到已有进程时，运行入口可以自动处理精确匹配的 kmgccc_player 进程：先记录 PID、启动时间和实际路径，再优雅结束，必要时强制结束。该授权只覆盖主 App 进程，不覆盖其他应用或辅助进程。
 3. 进程清理完成并复查为空后，才允许继续构建；启动前立即再检查一次，防止构建期间出现竞争实例。
-4. 主 App 的目标是 kmgccc_player。Demo、示例、临时 bundle 和其他测试实例不能作为主 App 的运行验收。
+4. 主 App 的目标是 Muci。Demo、示例、临时 bundle 和其他测试实例不能作为主 App 的运行验收。
 5. 构建成功、LaunchServices 返回成功或窗口曾经出现，都不能单独证明运行成功；交付时至少保留 PID、实际二进制路径和相应的真实界面或功能证据。
 
 scripts/build_and_run.sh 使用运行锁，把这项检查放在构建前和启动前，并在启动后确认只存在一个主进程。不应通过其他命令绕过。

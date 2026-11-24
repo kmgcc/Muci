@@ -42,6 +42,11 @@ EXECUTABLE="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$CONTENTS/
 [[ -n "$EXECUTABLE" && "$EXECUTABLE" != */* ]] || fail "Invalid CFBundleExecutable"
 require_executable "$CONTENTS/MacOS/$EXECUTABLE" "App executable"
 require_file "$RESOURCES/Assets.car" "Asset catalog"
+require_executable "$CONTENTS/Helpers/muci-install-migration" "Install name migration helper"
+require_executable "$RESOURCES/Tools/muci-automation" "Muci automation CLI"
+require_executable "$RESOURCES/Tools/player-automation" "Compatible automation CLI"
+require_file "$RESOURCES/Skills/muci-automation/SKILL.md" "Muci Automation Skill"
+require_file "$RESOURCES/Skills/kmgccc-player-automation/SKILL.md" "Compatible Automation Skill"
 
 require_file "$RESOURCES/AMLL/background.html" "AMLL background page"
 require_file "$RESOURCES/AMLL/amll-background.js" "AMLL background runtime"

@@ -382,10 +382,10 @@ python3 scripts/check-skin-package.py --all-examples
 结构检查不解析表达式。App 已运行且 Automation 获准时，使用现有 CLI 的通用调用：
 
 ```sh
-player-automation automation call skin.capabilities
-player-automation automation call skin.check --params-json '{"directory":"/absolute/author/directory"}'
-player-automation automation call skin.reload --params-json '{"skinID":"example.vinyl"}'
-player-automation automation call skin.runtime
+muci-automation automation call skin.capabilities
+muci-automation automation call skin.check --params-json '{"directory":"/absolute/author/directory"}'
+muci-automation automation call skin.reload --params-json '{"skinID":"example.vinyl"}'
+muci-automation automation call skin.runtime
 ```
 
 skin.check 的 `frameNodes` 按重建子节点数从多到少列出进入时间线的节点及其逐帧属性，据此把逐帧的值移到叶子节点上。skin.runtime 返回活动节点、帧求值次数与音频读取者计数；CPU、内存和帧时间仍需性能工具测量。

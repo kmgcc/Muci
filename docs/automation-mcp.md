@@ -4,12 +4,22 @@
 
 ```sh
 cd Dependencies/PlayerAutomation
-swift run player-automation mcp-stdio
+swift run muci-automation mcp-stdio
 ```
 
 它通过本用户 AF_UNIX socket 连接已经运行或由 LaunchServices 启动的
-`kmgccc_player`，不 shell out 到 CLI，也不复制 Library business logic。stdio stdout 只
+`Muci`，不 shell out 到 CLI，也不复制 Library business logic。stdio stdout 只
 能出现 newline-delimited JSON-RPC message，诊断走 stderr。
+
+## 已有配置
+
+在「设置 › 自动化」获取固定路径的 MCP 配置。如果原配置的 command 指向旧 App 内部，
+将 command 改为下方命令的绝对路径，沿用原 server key、参数和授权。
+
+    ~/Library/Application Support/kmgccc.player/Automation/bin/muci-automation
+
+已导出的 `player-automation` 命令继续可用。
+`serverInfo.name` 沿用 `kmgccc_player`，显示标题为 Muci。已有 `kmgccc://` 资源地址继续使用。
 
 ## Protocol lifecycle
 

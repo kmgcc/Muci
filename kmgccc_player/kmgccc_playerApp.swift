@@ -8,6 +8,7 @@
 import AppKit
 import SwiftData
 import SwiftUI
+import PlayerAutomationProtocol
 
 // MARK: - Playback Order Menu Content
 
@@ -97,9 +98,15 @@ struct KmgcccPlayerApp: App {
     let initialLibraryContext: LibraryContext?
 
     init() {
-        if !Self.isRunningTests, InstallNameMigration.handOffIfNeeded() {
-            exit(EXIT_SUCCESS)
+        #if !DEBUG
+        if !Self.isRunningTests {
+            do { try AutomationSkillInstaller.refreshExistingExecutableExport() }
+            catch { Log.warning("Could not refresh the exported automation command", category: .ui) }
+            if InstallNameMigration.handOffIfNeeded() {
+                exit(EXIT_SUCCESS)
+            }
         }
+        #endif
         // Capture failures in preference migration and font registration too.
         CrashReporterBootstrap.shared.enable()
         CrashBreadcrumbRecorder.shared.record(.appLaunchStarted)

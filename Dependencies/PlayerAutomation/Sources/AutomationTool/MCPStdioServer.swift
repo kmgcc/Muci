@@ -1809,6 +1809,7 @@ Follow this structured workflow to ensure lyrics quality:
     private var serverInfoValue: AutomationJSONValue {
         .object([
             "name": .string("kmgccc_player"),
+            "title": .string("Muci"),
             "version": .string(
                 ProcessInfo.processInfo.environment["KMGCCC_PLAYER_APP_VERSION"]
                     ?? "development"
@@ -1844,7 +1845,7 @@ Follow this structured workflow to ensure lyrics quality:
                     socketPath: options.socketPath,
                     configuration: configuration,
                     clientIDHint: "player-automation-mcp-stdio",
-                    displayName: "kmgccc_player MCP stdio"
+                    displayName: "Muci MCP stdio"
                 )
             }
             Thread.sleep(forTimeInterval: min(0.1, max(0, deadline.timeIntervalSinceNow)))
@@ -2091,7 +2092,7 @@ Follow this structured workflow to ensure lyrics quality:
                     "retryable": .boolean(notSent),
                     "action": .string(
                         notSent
-                            ? "Start or reopen kmgccc_player, then retry."
+                            ? "Start or reopen Muci, then retry."
                             : "Check the relevant job or state before retrying; do not repeat a mutation until its outcome is known."
                     )
                 ])
@@ -2105,7 +2106,7 @@ Follow this structured workflow to ensure lyrics quality:
                 details: .object([
                     "delivery": .string("notSent"),
                     "retryable": .boolean(true),
-                    "action": .string("Start or reopen kmgccc_player, then retry.")
+                    "action": .string("Start or reopen Muci, then retry.")
                 ])
             )
         }
@@ -2147,15 +2148,10 @@ Follow this structured workflow to ensure lyrics quality:
     }
 
     private func launchAppIfNeeded() {
-        let appName = ProcessInfo.processInfo.environment["KMGCCC_PLAYER_APP"]
-            ?? "kmgccc_player"
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-        process.arguments = ["-a", appName]
         do {
-            try process.run()
+            try AutomationAppLauncher.launch()
         } catch {
-            let diagnostic = "could not launch \(appName): \(error.localizedDescription)\n"
+            let diagnostic = "could not launch Muci: \(error.localizedDescription)\n"
             FileHandle.standardError.write(Data(diagnostic.utf8))
         }
     }

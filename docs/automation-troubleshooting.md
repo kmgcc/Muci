@@ -2,7 +2,7 @@
 
 ## App 或 endpoint 不可用
 
-1. 运行 `player-automation system ping --json`。
+1. 运行 `muci-automation system ping --json`。
 2. 检查 `~/Library/Application Support/kmgccc.player/Automation/automation.sock` 和同目录
    `automation.secret` 是否由当前 App 创建。
 3. 不要复制 secret 到别的用户或远程主机；AF_UNIX peer 和 shared secret 都属于本机边界。

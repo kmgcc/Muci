@@ -19,6 +19,10 @@ let package = Package(
         .executable(
             name: "player-automation",
             targets: ["AutomationTool"]
+        ),
+        .executable(
+            name: "muci-automation",
+            targets: ["AutomationTool"]
         )
     ],
     targets: [

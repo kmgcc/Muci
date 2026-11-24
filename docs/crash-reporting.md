@@ -160,8 +160,8 @@ CRASH_SYMBOL_BACKUP_DIR='<另一份可靠备份目录>' \
 
 ```bash
 ./scripts/package-crash-symbols.sh \
-  --app '<path>/kmgccc_player.app' \
-  --dsym '<path>/kmgccc_player.app.dSYM' \
+  --app '<path>/Muci.app' \
+  --dsym '<path>/Muci.app.dSYM' \
   --manifest '<path>/symbols-manifest.json' \
   --archive-dir '<主归档目录>' \
   --backup-dir '<备份目录>'
@@ -190,7 +190,7 @@ DESTINATION='<本地符号目录>'
 mkdir -p "$DESTINATION"
 unzip "$SYMBOLS" -d "$DESTINATION"
 
-DSYM="$DESTINATION/kmgccc_player.app.dSYM"
+DSYM="$(/usr/bin/find "$DESTINATION" -name '*.app.dSYM' -print -quit)"
 /usr/bin/dwarfdump --uuid \
   "$DSYM/Contents/Resources/DWARF/kmgccc_player"
 ```
@@ -203,7 +203,7 @@ DSYM="$DESTINATION/kmgccc_player.app.dSYM"
 
 ```bash
 REPORT='<下载的 report-id.crash-report.json>'
-DSYM='<path>/kmgccc_player.app.dSYM'
+DSYM='<path>/Muci.app.dSYM'
 DWARF="$DSYM/Contents/Resources/DWARF/kmgccc_player"
 
 REPORT_UUID="$(jq -r '.app.executableUUID' "$REPORT" \
@@ -343,8 +343,8 @@ xcodebuild \
   DEBUG_INFORMATION_FORMAT=dwarf-with-dsym \
   build
 
-APP="$DERIVED/Build/Products/Debug/kmgccc_player.app"
-DSYM="$DERIVED/Build/Products/Debug/kmgccc_player.app.dSYM"
+APP="$DERIVED/Build/Products/Debug/Muci.app"
+DSYM="$DERIVED/Build/Products/Debug/Muci.app.dSYM"
 ```
 
 验证 UUID 后，用 `scripts/package-crash-symbols.sh` 归档这份测试 dSYM。随后从终端直接运行 App，不要使用 Xcode Command-R：

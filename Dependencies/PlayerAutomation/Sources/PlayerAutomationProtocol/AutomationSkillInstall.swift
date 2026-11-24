@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 /// Exports the Agent skill that ships inside the App bundle.
@@ -6,7 +7,9 @@ import Foundation
 /// skill directory by hand, and `installPrompt` gives Agents a ready-made
 /// instruction for doing the same.
 public enum AutomationSkillInstaller {
-    public static let skillName = "kmgccc-player-automation"
+    public static let skillName = "muci-automation"
+    private static let legacySkillName = "kmgccc-player-automation"
+    private static let legacyExecutableName = "player-automation"
     public static let fallbackBundleIdentifier = "kmgccc.player"
 
     public enum InstallError: Error, LocalizedError {
@@ -45,31 +48,51 @@ public enum AutomationSkillInstaller {
            let identifier = Bundle(url: bundleURL)?.bundleIdentifier {
             return identifier
         }
+        if let executable = Bundle.main.executableURL,
+           let identifier = exportedBundleIdentifier(executableURL: executable, supportRoot: applicationSupportRoot) {
+            return identifier
+        }
         return Bundle.main.bundleIdentifier ?? fallbackBundleIdentifier
     }
 
-    public static func supportDirectory() -> URL {
-        let base = FileManager.default.urls(
+    private static var applicationSupportRoot: URL {
+        FileManager.default.urls(
             for: .applicationSupportDirectory,
             in: .userDomainMask
         ).first ?? URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
-        return base
+    }
+
+    public static func supportDirectory() -> URL {
+        applicationSupportRoot
             .appendingPathComponent(bundleIdentifier, isDirectory: true)
             .appendingPathComponent("Automation", isDirectory: true)
+    }
+
+    static func exportedBundleIdentifier(executableURL: URL, supportRoot: URL) -> String? {
+        let bin = executableURL.deletingLastPathComponent()
+        let automation = bin.deletingLastPathComponent()
+        let namespace = automation.deletingLastPathComponent()
+        guard bin.lastPathComponent == "bin", automation.lastPathComponent == "Automation",
+              namespace.deletingLastPathComponent().resolvingSymlinksInPath().path
+                == supportRoot.resolvingSymlinksInPath().path
+        else { return nil }
+        return namespace.lastPathComponent
     }
 
     /// Stable directory users and Agents copy from. It survives App moves and
     /// is refreshed from the bundle by `syncExport`.
     public static func exportDirectory() -> URL {
-        supportDirectory().appendingPathComponent("skill", isDirectory: true)
+        supportDirectory()
+            .appendingPathComponent("skills", isDirectory: true)
+            .appendingPathComponent(skillName, isDirectory: true)
     }
 
-    /// CLI entry point the skill refers to. It is a symlink so the App can
-    /// move without breaking the documented path.
+    private static var executableDirectory: URL {
+        supportDirectory().appendingPathComponent("bin", isDirectory: true)
+    }
+
     public static func exportExecutableURL() -> URL {
-        supportDirectory()
-            .appendingPathComponent("bin", isDirectory: true)
-            .appendingPathComponent("player-automation", isDirectory: false)
+        executableDirectory.appendingPathComponent("muci-automation")
     }
 
     public static var automationExecutableURL: URL? {
@@ -86,6 +109,10 @@ public enum AutomationSkillInstaller {
     }
 
     public static func bundledSkillRoot() -> URL? {
+        bundledSkillRoot(named: skillName)
+    }
+
+    private static func bundledSkillRoot(named skillName: String) -> URL? {
         var candidates: [URL] = []
         if let resources = Bundle.main.resourceURL {
             candidates.append(
@@ -110,27 +137,47 @@ public enum AutomationSkillInstaller {
     /// Refresh the stable export directory from the App bundle.
     @discardableResult
     public static func syncExport(executableURL: URL) throws -> URL {
-        guard let source = bundledSkillRoot() else {
+        guard let source = bundledSkillRoot(),
+              let legacySource = bundledSkillRoot(named: legacySkillName) else {
             throw InstallError.bundledSkillMissing
         }
         let destination = exportDirectory()
-        try replaceDirectory(at: destination, with: source)
-        try linkExecutable(at: exportExecutableURL(), to: executableURL)
+        let legacyDestination = supportDirectory().appendingPathComponent("skill", isDirectory: true)
+        try syncExecutableExport(executableURL: executableURL)
+        try publish(at: destination) { try FileManager.default.copyItem(at: source, to: $0) }
+        try publish(at: legacyDestination) { try FileManager.default.copyItem(at: legacySource, to: $0) }
         return destination
     }
 
-    private static func linkExecutable(at link: URL, to executable: URL) throws {
+    /// Refresh an already configured CLI before this App may change locations.
+    public static func refreshExistingExecutableExport() throws {
+        let legacy = executableDirectory.appendingPathComponent(legacyExecutableName)
+        guard let executableURL = automationExecutableURL,
+              FileManager.default.fileExists(atPath: legacy.path)
+                || (try? FileManager.default.destinationOfSymbolicLink(atPath: legacy.path)) != nil
+        else { return }
+        try syncExecutableExport(executableURL: executableURL)
+    }
+
+    public static func syncExecutableExport(executableURL: URL) throws {
+        try syncExecutableExport(executableURL: executableURL, in: executableDirectory)
+    }
+
+    static func syncExecutableExport(executableURL: URL, in directory: URL) throws {
         let manager = FileManager.default
-        try manager.createDirectory(
-            at: link.deletingLastPathComponent(),
-            withIntermediateDirectories: true
-        )
-        if let existing = try? manager.destinationOfSymbolicLink(atPath: link.path),
-           existing == executable.path {
-            return
+        let installed = directory.appendingPathComponent(legacyExecutableName)
+        let alias = directory.appendingPathComponent("muci-automation")
+        // Earlier versions exported an absolute symlink into the bundle.
+        // Publish the CLI itself so existing launch commands survive App moves.
+        if (try? manager.destinationOfSymbolicLink(atPath: installed.path)) != nil
+            || !manager.contentsEqual(atPath: installed.path, andPath: executableURL.path) {
+            try publish(at: installed) { try manager.copyItem(at: executableURL, to: $0) }
         }
-        try? manager.removeItem(at: link)
-        try manager.createSymbolicLink(at: link, withDestinationURL: executable)
+        if (try? manager.destinationOfSymbolicLink(atPath: alias.path)) != legacyExecutableName {
+            try publish(at: alias) { temporary in
+                try manager.createSymbolicLink(atPath: temporary.path, withDestinationPath: legacyExecutableName)
+            }
+        }
     }
 
     // MARK: - Prompt
@@ -140,10 +187,10 @@ public enum AutomationSkillInstaller {
     /// own tool decides where skills live.
     public static func installPrompt() -> String {
         """
-        这是 kmgccc_player 的技能包，源目录保持原样，不要移动或改动：
+        这是 Muci 的技能包，源目录保持原样，不要移动或改动：
         \(exportDirectory().path)
 
-        装的时候按你所用工具的规则来：不同 Agent 的技能目录不一样，放到你的工具能加载的位置。优先建软链接而不是复制，播放器更新技能后会自动同步；一个工具只装一处，装完确认技能列表里出现 kmgccc-player-automation。
+        装的时候按你所用工具的规则来：不同 Agent 的技能目录不一样，放到你的工具能加载的位置。优先建软链接而不是复制，播放器更新技能后会自动同步；一个工具只装一处，装完确认技能列表里出现 muci-automation。
 
         之后用 \(exportExecutableURL().path) 操作播放器。命令走本机自动化接口，播放器没在运行时会自动启动，超时重试一次即可；automation tools 不依赖播放器，可以先跑它确认通路。
         """
@@ -151,19 +198,15 @@ public enum AutomationSkillInstaller {
 
     // MARK: - Files
 
-    private static func replaceDirectory(at destination: URL, with source: URL) throws {
+    private static func publish(at destination: URL, prepare: (URL) throws -> Void) throws {
         let manager = FileManager.default
-        if manager.fileExists(atPath: destination.path) {
-            try manager.removeItem(at: destination)
-        }
-        try manager.createDirectory(
-            at: destination.deletingLastPathComponent(),
-            withIntermediateDirectories: true
-        )
-        do {
-            try manager.copyItem(at: source, to: destination)
-        } catch {
-            throw InstallError.copyFailed(destination.path)
-        }
+        let parent = destination.deletingLastPathComponent()
+        try manager.createDirectory(at: parent, withIntermediateDirectories: true)
+        let temporary = parent.appendingPathComponent(".export-\(UUID().uuidString)")
+        defer { try? manager.removeItem(at: temporary) }
+        try prepare(temporary)
+        guard renamex_np(temporary.path, destination.path, UInt32(RENAME_EXCL)) == 0
+            || (errno == EEXIST && renamex_np(temporary.path, destination.path, UInt32(RENAME_SWAP)) == 0)
+        else { throw InstallError.copyFailed(destination.path) }
     }
 }

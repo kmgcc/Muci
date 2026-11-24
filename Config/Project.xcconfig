@@ -12,7 +12,7 @@ SWIFT_OPTIMIZATION_LEVEL[config=Debug] = -O
 // Production is the compatibility default. Local test builds must override the
 // complete group below; UpdateEnvironment rejects missing or malformed values.
 UPDATE_RELEASE_CHANNEL = production
-UPDATE_PRIMARY_FEED_URL = https:/$()/player.kmgccc.cn/api/v1/updates/appcast.xml
+UPDATE_PRIMARY_FEED_URL = https:/$()/player.kmgccc.cn/api/v1/updates/muci/appcast.xml
 UPDATE_FALLBACK_FEED_URL = https:/$()/kmgcc.github.io/kmgccc_player/appcast.xml
 PRODUCTION_UPDATE_PUBLIC_ED_KEY = +cu8qqhgtPnFd0DUYj5PLW0kuhT1qGpi6JUOxEgdqNg=
 UPDATE_PUBLIC_ED_KEY = $(PRODUCTION_UPDATE_PUBLIC_ED_KEY)

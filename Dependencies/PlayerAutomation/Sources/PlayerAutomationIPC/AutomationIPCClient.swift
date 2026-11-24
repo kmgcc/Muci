@@ -23,7 +23,7 @@ public enum AutomationIPCRequestError: Error, Equatable, LocalizedError, Sendabl
     public var errorDescription: String? {
         switch self {
         case .notSent(let error):
-            return "The player App did not receive the automation request. \(error.localizedDescription) Start or reopen kmgccc_player, then retry."
+            return "The player App did not receive the automation request. \(error.localizedDescription) Start or reopen Muci, then retry."
         case .outcomeUnknown(let error):
             return "The player App may have received the automation request, but no response arrived. \(error.localizedDescription) Check the relevant job or state before retrying; repeating a mutation may duplicate work."
         }
@@ -112,7 +112,7 @@ public final class AutomationIPCClient: @unchecked Sendable {
         socketPath: String,
         configuration: AutomationIPCConfiguration? = nil,
         clientIDHint: String = "player-automation-cli",
-        displayName: String = "kmgccc_player automation CLI"
+        displayName: String = "Muci automation CLI"
     ) throws {
         try AutomationSocketAddress.validate(path: socketPath)
         self.socketPath = socketPath

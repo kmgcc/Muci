@@ -94,7 +94,7 @@ struct AutomationSettingsView: View {
 
                             commandBlock(
                                 title: "命令行",
-                                command: "player-automation cli --help",
+                                command: cliHelpCommand,
                                 buttonTitle: didCopyCLICommand ? "已复制" : "复制命令",
                                 buttonSystemImage: didCopyCLICommand ? "checkmark" : "doc.on.doc",
                                 action: copyCLICommand
@@ -209,20 +209,15 @@ struct AutomationSettingsView: View {
             .background(Color.primary.opacity(0.055), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
     }
 
-    private var bundledAutomationExecutableURL: URL {
-        Bundle.main.url(
-            forResource: "player-automation",
-            withExtension: nil,
-            subdirectory: "Tools"
-        ) ?? Bundle.main.bundleURL
-            .appendingPathComponent("Contents/Resources/Tools/player-automation")
+    private var cliHelpCommand: String {
+        "\"$HOME/Library/Application Support/\(AutomationSkillInstaller.bundleIdentifier)/Automation/bin/muci-automation\" cli --help"
     }
 
     private var mcpConfigurationJSON: String {
         let configuration = MCPConfiguration(
             mcpServers: [
-                "kmgccc_player": MCPServerConfiguration(
-                    command: bundledAutomationExecutableURL.path,
+                "muci": MCPServerConfiguration(
+                    command: AutomationSkillInstaller.exportExecutableURL().path,
                     args: ["mcp-stdio", "--profile", "core"]
                 )
             ]
@@ -238,14 +233,26 @@ struct AutomationSettingsView: View {
 
     private func copyMCPConfiguration() {
         let json = mcpConfigurationJSON
-        guard !json.isEmpty else { return }
+        guard !json.isEmpty, prepareExportedCommand() else { return }
         copyToPasteboard(json)
         didCopyMCPConfiguration = true
     }
 
     private func copyCLICommand() {
-        copyToPasteboard("player-automation cli --help")
+        guard prepareExportedCommand() else { return }
+        copyToPasteboard(cliHelpCommand)
         didCopyCLICommand = true
+    }
+
+    private func prepareExportedCommand() -> Bool {
+        guard let executable = AutomationSkillInstaller.automationExecutableURL else { return false }
+        do {
+            try AutomationSkillInstaller.syncExecutableExport(executableURL: executable)
+            return true
+        } catch {
+            Log.warning("Could not export the automation command", category: .ui)
+            return false
+        }
     }
 
     private func copyToPasteboard(_ value: String) {
