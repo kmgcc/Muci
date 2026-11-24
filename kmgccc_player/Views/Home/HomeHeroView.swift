@@ -122,10 +122,10 @@ struct HomeHeroView: View {
         self.containerWidth = containerWidth
         self.mode = mode
         self.onSwitchTrack = onSwitchTrack
+        // Runs on every parent update; keep it free of file-system probes.
+        // `loadCoverImage` resolves the current key when the track changes.
         _coverImage = State(
-            initialValue: HomeArtworkMemoryStore.shared.cachedImage(
-                for: HomeArtworkMemoryStore.heroCoverKey(for: track)
-            )
+            initialValue: HomeArtworkMemoryStore.shared.lastKnownHeroCover(for: track.id)
         )
     }
 

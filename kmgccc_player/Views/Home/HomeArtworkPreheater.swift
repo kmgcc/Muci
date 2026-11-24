@@ -27,10 +27,26 @@ final class HomeArtworkMemoryStore {
 
     func clearMemory() {
         cache.removeAll()
+        lastHeroCoverKeyByTrackID.removeAll()
+    }
+
+    /// The hero cover key needs a file-system probe. View initializers run on
+    /// every parent update, so they look up the last key computed for the
+    /// track instead; `HomeHeroView`'s load task still revalidates the file.
+    private var lastHeroCoverKeyByTrackID: [UUID: String] = [:]
+
+    func lastKnownHeroCover(for trackID: UUID) -> NSImage? {
+        guard let key = lastHeroCoverKeyByTrackID[trackID] else { return nil }
+        return cache.value(forKey: key)
     }
 
     static func heroCoverKey(for track: Track) -> String {
-        trackKey(prefix: "hero-cover", track: track, pixelSide: 480)
+        let key = trackKey(prefix: "hero-cover", track: track, pixelSide: 480)
+        if shared.lastHeroCoverKeyByTrackID.count > 64 {
+            shared.lastHeroCoverKeyByTrackID.removeAll(keepingCapacity: true)
+        }
+        shared.lastHeroCoverKeyByTrackID[track.id] = key
+        return key
     }
 
     static func albumKey(for album: AlbumEntry, pixelSide: Int) -> String {
@@ -59,14 +75,13 @@ final class HomeArtworkMemoryStore {
 
     private static func trackKey(prefix: String, track: Track, pixelSide: Int) -> String {
         let artworkIdentity: String
-        if let artworkURL = track.existingArtworkURL(),
-           let values = try? artworkURL.resourceValues(
-                forKeys: [.fileSizeKey, .contentModificationDateKey]
-           ) {
+        // The file snapshot already carries size and mtime; a second
+        // resource-values query doubled the file-system work for every key.
+        if let snapshot = track.existingArtworkFileSnapshot() {
             artworkIdentity = [
-                artworkURL.standardizedFileURL.path,
-                String(values.fileSize ?? 0),
-                String(values.contentModificationDate?.timeIntervalSince1970 ?? 0)
+                snapshot.url.standardizedFileURL.path,
+                String(snapshot.fileSize),
+                String(snapshot.modificationTimeNanoseconds)
             ].joined(separator: "|")
         } else {
             artworkIdentity = "\(track.artworkFileName ?? "embedded")|\(ArtworkDataFingerprint.sampledString(for: track.artworkData))"

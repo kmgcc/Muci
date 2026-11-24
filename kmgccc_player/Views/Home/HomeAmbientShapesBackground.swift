@@ -172,6 +172,9 @@ final class HomeAmbientRootView: NSView {
         let rgba: UInt32
     }
     private var tintedShapeCache: [TintedShapeKey: CGImage] = [:]
+    /// Bumped on every rebuild or teardown so an off-main tint batch that
+    /// finishes late never overwrites newer presentations.
+    private var tintGeneration = 0
     private static weak var currentInstance: HomeAmbientRootView?
 
     private static let shapeMaxPixel = 256
@@ -235,6 +238,7 @@ final class HomeAmbientRootView: NSView {
             geometrySubscription = nil
             motionSubscription = nil
             occlusionSubscription = nil
+            tintGeneration &+= 1
             presentations = []
             removeAllShapeLayers()
             tintedShapeCache.removeAll(keepingCapacity: false)
@@ -379,6 +383,7 @@ final class HomeAmbientRootView: NSView {
             return
         }
         guard geometry.hasValidLayout, !shapeLoadResult.images.isEmpty else {
+            tintGeneration &+= 1
             presentations = []
             lastLayoutSignature = nil
             removeAllShapeLayers()
@@ -517,9 +522,7 @@ final class HomeAmbientRootView: NSView {
             )
         }
 
-        presentations = built
-        syncShapeLayers()
-        applyLayerTransforms()
+        commitPresentationsWhenTinted(built)
     }
 
     private func repositionPresentations(for geometry: HomeWindowLayoutState.Geometry) {
@@ -693,44 +696,28 @@ final class HomeAmbientRootView: NSView {
         CATransaction.commit()
     }
 
-    private func tintedShapeImage(
-        for shapeImage: CGImage,
-        color: NSColor,
-        assetIndex: Int
-    ) -> CGImage? {
-        guard let rgb = color.usingColorSpace(.deviceRGB) else { return shapeImage }
+    private func tintedShapeKey(color: NSColor, assetIndex: Int) -> TintedShapeKey? {
+        guard let rgb = color.usingColorSpace(.deviceRGB) else { return nil }
         let r = UInt32(min(max(rgb.redComponent, 0), 1) * 255)
         let g = UInt32(min(max(rgb.greenComponent, 0), 1) * 255)
         let b = UInt32(min(max(rgb.blueComponent, 0), 1) * 255)
         let a = UInt32(min(max(rgb.alphaComponent, 0), 1) * 255)
         let rgba = (r << 24) | (g << 16) | (b << 8) | a
-        let key = TintedShapeKey(assetIndex: assetIndex, rgba: rgba)
+        return TintedShapeKey(assetIndex: assetIndex, rgba: rgba)
+    }
+
+    private func tintedShapeImage(
+        for shapeImage: CGImage,
+        color: NSColor,
+        assetIndex: Int
+    ) -> CGImage? {
+        guard let key = tintedShapeKey(color: color, assetIndex: assetIndex) else { return shapeImage }
         if let cached = tintedShapeCache[key] {
             return cached
         }
 
-        let width = shapeImage.width
-        let height = shapeImage.height
-        guard width > 0, height > 0,
-              let context = CGContext(
-                data: nil,
-                width: width,
-                height: height,
-                bitsPerComponent: 8,
-                bytesPerRow: 0,
-                space: CGColorSpaceCreateDeviceRGB(),
-                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-              ) else {
-            return shapeImage
-        }
-
-        let rect = CGRect(x: 0, y: 0, width: width, height: height)
-        context.draw(shapeImage, in: rect)
-        context.setBlendMode(.sourceIn)
-        context.setFillColor(color.homeAmbientCGColor)
-        context.fill(rect)
-
-        if let tinted = context.makeImage() {
+        let job = HomeAmbientTintJob(image: shapeImage, color: color.homeAmbientCGColor)
+        if let tinted = job.render() {
             if tintedShapeCache.count > 32 {
                 tintedShapeCache.removeAll(keepingCapacity: true)
             }
@@ -738,6 +725,59 @@ final class HomeAmbientRootView: NSView {
             return tinted
         }
         return shapeImage
+    }
+
+    /// Tinting is CPU rasterization of every distinct shape/colour pair. A
+    /// palette change arrives right after a track switch, so render the
+    /// missing tints off the main thread and keep the current layers until
+    /// they are ready. The first build has nothing on screen yet and stays
+    /// synchronous.
+    private func commitPresentationsWhenTinted(_ built: [Presentation]) {
+        tintGeneration &+= 1
+        var pendingKeys: [TintedShapeKey] = []
+        var jobs: [HomeAmbientTintJob] = []
+        var seen = Set<TintedShapeKey>()
+        for presentation in built {
+            guard let image = presentation.shapeImage,
+                  let key = tintedShapeKey(color: presentation.color, assetIndex: presentation.assetIndex),
+                  tintedShapeCache[key] == nil,
+                  seen.insert(key).inserted else { continue }
+            pendingKeys.append(key)
+            jobs.append(HomeAmbientTintJob(image: image, color: presentation.color.homeAmbientCGColor))
+        }
+
+        guard !jobs.isEmpty, !presentations.isEmpty else {
+            commitPresentations(built)
+            return
+        }
+
+        let generation = tintGeneration
+        let keys = pendingKeys
+        let renderJobs = jobs
+        Task { @MainActor [weak self] in
+            let batch = await Task.detached(priority: .userInitiated) {
+                HomeAmbientTintBatch(images: renderJobs.map { $0.render() })
+            }.value
+            guard let self, self.tintGeneration == generation, self.window != nil else { return }
+            for (key, image) in zip(keys, batch.images) {
+                if let image { self.tintedShapeCache[key] = image }
+            }
+            // Geometry may have moved within the same layout bucket while
+            // the tints were rendering.
+            self.commitPresentations(built, repositionFor: self.geometry)
+        }
+    }
+
+    private func commitPresentations(
+        _ built: [Presentation],
+        repositionFor currentGeometry: HomeWindowLayoutState.Geometry? = nil
+    ) {
+        presentations = built
+        if let currentGeometry {
+            repositionPresentations(for: currentGeometry)
+        }
+        syncShapeLayers()
+        applyLayerTransforms()
     }
 
     private func shapeLayer(
@@ -1257,6 +1297,43 @@ private extension NSColor {
 
 private func lerp(_ a: CGFloat, _ b: CGFloat, _ t: CGFloat) -> CGFloat {
     a + (b - a) * clamp(t, min: 0, max: 1)
+}
+
+// MARK: - Shape tinting
+
+/// One shape bitmap filled with one palette colour. Immutable CoreGraphics
+/// inputs, so it can be rendered on any thread.
+private nonisolated struct HomeAmbientTintJob: @unchecked Sendable {
+    let image: CGImage
+    let color: CGColor
+
+    func render() -> CGImage? {
+        let width = image.width
+        let height = image.height
+        guard width > 0, height > 0,
+              let context = CGContext(
+                data: nil,
+                width: width,
+                height: height,
+                bitsPerComponent: 8,
+                bytesPerRow: 0,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+              ) else {
+            return nil
+        }
+
+        let rect = CGRect(x: 0, y: 0, width: width, height: height)
+        context.draw(image, in: rect)
+        context.setBlendMode(.sourceIn)
+        context.setFillColor(color)
+        context.fill(rect)
+        return context.makeImage()
+    }
+}
+
+private nonisolated struct HomeAmbientTintBatch: @unchecked Sendable {
+    let images: [CGImage?]
 }
 
 // MARK: - Spec generation

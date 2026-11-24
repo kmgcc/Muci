@@ -96,11 +96,15 @@ struct MotionArtworkView<Poster: View>: View {
     }
 
     var body: some View {
+        let showsPoster = activeResource == nil && !shouldHideStationaryVisual
         poster
             // A valid motion resource owns the picture from the start. Keep
             // layout, but never expose the new static poster while it prepares.
-            .opacity((activeResource == nil && !shouldHideStationaryVisual) ? 1 : 0)
-            .transaction { $0.animation = nil }
+            .opacity(showsPoster ? 1 : 0)
+            // Only the poster swap skips animation. A blanket nil animation
+            // also froze the poster's position, so it jumped to its new place
+            // while the surrounding clip shape slid there.
+            .transaction(value: showsPoster) { $0.animation = nil }
             .overlay {
                 if let resource = activeResource {
                     MotionArtworkFrameSurface(

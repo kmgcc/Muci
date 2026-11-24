@@ -719,6 +719,8 @@ private struct MiniPlayerLeftSection: View, Equatable {
     let onToggleNowPlaying: () -> Void
 
     @Environment(PlaybackCoordinator.self) private var playbackCoordinator
+    @Environment(PlayerViewModel.self) private var playerVM
+    @Environment(LibraryViewModel.self) private var libraryVM
 
     @State private var isArtworkHovering = false
 
