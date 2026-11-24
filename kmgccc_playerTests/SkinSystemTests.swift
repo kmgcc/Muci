@@ -291,6 +291,34 @@ final class SkinSystemTests: XCTestCase {
 
         XCTAssertNoThrow(try node(#"{"type":"text","text":"a","filter":[{"type":"chromatic","amount":2},{"type":"glitch"}],"bloom":12,"outline":{"width":2,"hollow":true}}"#))
         XCTAssertNoThrow(try node(#"{"type":"text","text":"a","filter":[{"type":"fov","distortion":0.25,"chromatic":1.5,"blur":4,"start":0.55}]}"#))
+        // `bokeh` belongs to GPU layers; its focus hunt is seeded, bounded and ends sharp.
+        XCTAssertNoThrow(try node(#"{"type":"layer","render":"gpu","filter":[{"type":"grain"},{"type":"bokeh","at":12.5,"seed":3,"radius":20}],"children":[{"type":"shape"}]}"#))
+        XCTAssertThrowsError(try node(#"{"type":"text","text":"a","filter":{"type":"bokeh","at":1}}"#))
+        for wave in -1...3 {
+            for seed in [0.0, 17, 523] {
+                let duration = SkinFocusHunt.duration(seed: seed, wave: wave)
+                XCTAssertGreaterThan(duration, 0.4)
+                XCTAssertLessThan(duration, 4.5)
+                XCTAssertEqual(SkinFocusHunt.value(age: 0, seed: seed, wave: wave), 0)
+                XCTAssertEqual(SkinFocusHunt.value(age: duration + 0.01, seed: seed, wave: wave), 0)
+                let peak = stride(from: 0.0, through: duration, by: 0.005).map { SkinFocusHunt.value(age: $0, seed: seed, wave: wave) }.max() ?? 0
+                XCTAssertGreaterThan(peak, 0.6)
+                XCTAssertLessThanOrEqual(peak, 1)
+                // Between the first throw and the final landing the lens comes back nearly sharp,
+                // never all the way.
+                let keys = SkinFocusHunt.keys(seed: seed, wave: SkinFocusHunt.resolved(wave, seed: seed))
+                let middle = stride(from: keys[1].time, through: keys[keys.count - 2].time, by: 0.005)
+                    .map { SkinFocusHunt.value(age: $0, seed: seed, wave: wave) }.min() ?? 0
+                XCTAssertGreaterThanOrEqual(middle, 0.03)
+                XCTAssertLessThan(middle, 0.2)
+                // One to three pulses past the middle, never a long run of them.
+                let peaks = (1..<keys.count - 1).filter { keys[$0].value > keys[$0 - 1].value && keys[$0].value > keys[$0 + 1].value }
+                XCTAssertTrue((1...3).contains(peaks.count), "wave \(wave) seed \(seed): \(peaks.count) peaks")
+                XCTAssertEqual(SkinFocusHunt.value(age: 0.2, seed: seed, wave: wave), SkinFocusHunt.value(age: 0.2, seed: seed, wave: wave))
+            }
+        }
+        XCTAssertEqual(SkinFocusHunt.waveIndex(.nan), -1)
+        XCTAssertEqual(SkinFocusHunt.waveIndex(9), -1)
         XCTAssertThrowsError(try node(#"{"type":"text","text":"a","filter":{"type":"chromatc"}}"#)) { error in
             XCTAssertTrue(error.localizedDescription.contains("chromatic"))
         }
@@ -420,6 +448,16 @@ final class SkinSystemTests: XCTestCase {
         XCTAssertGreaterThan(try evaluate("springTo(0.45, 0.8, 0.5)"), 1)
         XCTAssertLessThanOrEqual(try evaluate("springTo(0.45, 0.8, 0)"), 1.0001)
         XCTAssertEqual(try evaluate("springTo(0.05, 0.8, 0.3)", still), 1)
+        // textHeight: one line unbroken, more lines when wrapped, line spacing added between lines.
+        let oneLine = try evaluate(#"textHeight("一二三四五六七八", 20)"#)
+        XCTAssertGreaterThan(oneLine, 0)
+        let wrapped = try evaluate(#"textHeight("一二三四五六七八", 20, 50)"#)
+        XCTAssertGreaterThan(wrapped, oneLine * 2)
+        let spaced = try evaluate(#"textHeight("一二三四五六七八", 20, 50, "regular", "", 10)"#) - wrapped
+        XCTAssertEqual(spaced.truncatingRemainder(dividingBy: 10), 0, accuracy: 0.01)
+        XCTAssertGreaterThanOrEqual(spaced, 10)
+        XCTAssertEqual(try evaluate(#"textHeight("一二三四五六七八", 20, 50, "regular", "", 0, 1)"#), oneLine, accuracy: 0.01)
+        XCTAssertEqual(try evaluate(#"textHeight("", 20)"#), 0)
 
         // A follow spring starts on its target, chases a new one and lands.
         let followers = SkinFollowers()
@@ -730,5 +768,43 @@ final class SkinSystemTests: XCTestCase {
         process.waitUntilExit()
         XCTAssertEqual(process.terminationStatus, 0)
         return archive
+    }
+}
+
+final class SkinColorLUTTests: XCTestCase {
+    private func write(_ text: String) throws -> URL {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".cube")
+        try text.write(to: url, atomically: true, encoding: .utf8)
+        return url
+    }
+
+    func testCubeIdentityParsesAndSamples() throws {
+        var lines = ["# identity", "TITLE \"id\"", "LUT_3D_SIZE 2", "DOMAIN_MIN 0 0 0", "DOMAIN_MAX 1 1 1"]
+        for b in 0..<2 { for g in 0..<2 { for r in 0..<2 { lines.append("\(r).0 \(g).000000 \(b)") } } }
+        let url = try write(lines.joined(separator: "\r\n") + "\n")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let lut = try SkinCubeLUT(contentsOf: url)
+        XCTAssertEqual(lut.size, 2)
+        XCTAssertTrue(lut.is3D)
+        let sampled = lut.sample(SIMD3(0.25, 0.5, 0.75))
+        XCTAssertEqual(sampled.x, 0.25, accuracy: 1e-5)
+        XCTAssertEqual(sampled.y, 0.5, accuracy: 1e-5)
+        XCTAssertEqual(sampled.z, 0.75, accuracy: 1e-5)
+        let baked = try lut.baked(device: nil)
+        XCTAssertEqual(baked.size, 17)
+        XCTAssertEqual(baked.strip.width, 17 * 17)
+        XCTAssertEqual(baked.strip.height, 17)
+    }
+
+    func testCubeOneDimensionalAndWrongCount() throws {
+        let oneD = try write("LUT_1D_SIZE 2\n0 0 0\n0.5 1 1\n")
+        defer { try? FileManager.default.removeItem(at: oneD) }
+        let lut = try SkinCubeLUT(contentsOf: oneD)
+        XCTAssertFalse(lut.is3D)
+        XCTAssertEqual(lut.sample(SIMD3(1, 1, 1)).x, 0.5, accuracy: 1e-5)
+
+        let short = try write("LUT_3D_SIZE 2\n0 0 0\n")
+        defer { try? FileManager.default.removeItem(at: short) }
+        XCTAssertThrowsError(try SkinCubeLUT(contentsOf: short))
     }
 }

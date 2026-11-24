@@ -103,6 +103,12 @@ is_allowlisted() {
         return 0
       fi
       ;;
+    kmgccc_player/Views/Controls/AnimatedMediaControlButtons.swift)
+      if [[ "$text" == *'CAKeyframeAnimation'* ]]; then
+        printf 'skip relay keyframes sampled from the MotionKit emphasis spring, played by the render server across the track switch'
+        return 0
+      fi
+      ;;
     kmgccc_player/Views/NowPlaying/LedMeterView.swift)
       if [[ "$text" == *'TimelineView(.animation'* ]]; then
         printf 'TimelineView cadence for meter rendering'
@@ -160,6 +166,12 @@ is_allowlisted() {
     kmgccc_player/Skins/SceneV2/SkinSceneComet.swift)
       if [[ "$text" == *SkinCometPath.smooth* ]]; then
         printf 'continuous comet flight arc and trail fade along the drawn path'
+        return 0
+      fi
+      ;;
+    kmgccc_player/Skins/SceneV2/SkinGPULayer.swift)
+      if [[ "$text" == *SkinCometPath.smooth* ]]; then
+        printf 'continuous comet flight arc and trail fade along the drawn path, as the Canvas renderer draws it'
         return 0
       fi
       ;;

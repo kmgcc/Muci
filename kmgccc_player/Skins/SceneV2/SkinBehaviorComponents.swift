@@ -26,7 +26,7 @@ struct SkinBehaviorComponent: View {
                 .transformPreference(SkinSceneControlsKey.self) { if !coordinator.isVisible { $0 = [] } }
                 .onAppear { schedule() }.onDisappear { coordinator.cancelAllScheduledWork() }
         case "scrollVolume":
-            content.background { SkinSceneScrollRegion { _, y in
+            content.background { SkinSceneScrollRegion { _, y, _ in
                 guard data?.playback["playback.canSetVolume"]?.isTruthy == true else { return }
                 let current = data?.playback["playback.volume"]?.number() ?? 0
                 actions.setVolume((current + y * configuration.number("step", fallback: 0.0025)).clamped01)
@@ -80,15 +80,21 @@ struct SkinTrackMenuComponent: View {
     @Environment(AppSettings.self) private var settings
     @Environment(UIStateViewModel.self) private var uiState
     @Environment(LibraryViewModel.self) private var library
+    @Environment(PlayerViewModel.self) private var player
 
     var body: some View {
         let items = SkinPlayerMenuItems(
             sections: Set(configuration.values["include"]?.arrayValue?.compactMap(\.stringValue) ?? defaultSections),
+            showsLike: configuration.boolean("showsLike", fallback: true),
             showsDislike: configuration.boolean("showsDislike", fallback: true),
+            showsQuickPanel: configuration.boolean("showsQuickPanel", fallback: true),
+            showsQueue: configuration.boolean("showsQueue", fallback: true),
+            showsLyricsToggle: configuration.boolean("showsLyricsToggle", fallback: true),
+            showsFullscreen: configuration.boolean("showsFullscreen", fallback: true),
             surface: surface, lyricsVisible: lyricsVisible, actions: actions
         )
         .labelStyle(.titleAndIcon)
-        .environment(playback).environment(settings).environment(uiState).environment(library)
+        .environment(playback).environment(settings).environment(uiState).environment(library).environment(player)
         content.overlay {
             SkinMenuAnchor(opensOnClick: configuration.text("trigger", fallback: "secondaryClick") == "click") {
                 NSHostingMenu(rootView: items)
@@ -144,7 +150,12 @@ struct SkinMenuAnchor: NSViewRepresentable {
 
 private struct SkinPlayerMenuItems: View {
     let sections: Set<String>
+    let showsLike: Bool
     let showsDislike: Bool
+    var showsQuickPanel: Bool = true
+    var showsQueue: Bool = true
+    var showsLyricsToggle: Bool = true
+    var showsFullscreen: Bool = true
     let surface: SkinSurface
     let lyricsVisible: Bool
     let actions: SkinSceneActions
@@ -157,13 +168,10 @@ private struct SkinPlayerMenuItems: View {
         if sections.contains("info"), presentation.musicEnrichment != nil {
             Button(action: actions.openMusicInfo) { Label("音乐资料", systemImage: "text.book.closed") }
         }
-        if sections.contains("track"), let track = presentation.localTrack {
-            TrackActionMenuContent(
-                track: track, onPlay: {}, onEditTrack: { _ in actions.openTrackEdit() },
-                onDeleteFromLibraryRequest: { _ in actions.deleteTrack() }, onShowDetails: { _ in actions.openTrackDetail() },
-                showsPlay: false, showsNavigation: surface == .window,
-                showsDislike: showsDislike, diagnosticSurface: "SkinTrackMenu"
-            )
+        if sections.contains("track") {
+            SkinSceneTrackMenuItems(showsLike: showsLike, showsDislike: showsDislike)
+                .environment(\.skinSceneActions, actions)
+                .environment(\.skinSceneSurface, surface)
         }
         if sections.contains("external"), presentation.source.isExternal, presentation.externalStableKey != nil {
             Button(action: actions.openExternalInfo) { Label("编辑外部播放覆盖信息", systemImage: "slider.horizontal.3") }
@@ -172,21 +180,35 @@ private struct SkinPlayerMenuItems: View {
             Divider()
             orderPicker(presentation)
         }
+        if (sections.contains("quickPanel") || sections.contains("appearance")) && !sections.contains("view") {
+            if showsQuickPanel {
+                Divider()
+                Button(action: actions.openQuickPanel) { Label("快速外观", systemImage: "slider.horizontal.3") }
+            }
+        }
         if sections.contains("view") {
             Divider()
-            if presentation.source == .local {
+            if presentation.source == .local, showsQueue {
                 Button(action: actions.toggleQueue) {
                     Label(uiState.isWindowPlaybackQueueVisible ? "隐藏播放队列" : "显示播放队列", systemImage: "list.bullet")
                 }
             }
-            Button(action: actions.toggleLyrics) {
-                Label(lyricsVisible ? "隐藏歌词" : "显示歌词", systemImage: "quote.bubble")
+            if showsLyricsToggle {
+                Button(action: actions.toggleLyrics) {
+                    Label(lyricsVisible ? "隐藏歌词" : "显示歌词", systemImage: "quote.bubble")
+                }
             }
-            if surface == .fullscreen {
-                Button(action: actions.openQuickPanel) { Label("快速外观", systemImage: "slider.horizontal.3") }
-                Button(action: actions.exit) { Label("退出全屏", systemImage: "arrow.down.right.and.arrow.up.left") }
-            } else {
-                Button(action: actions.enterFullscreen) { Label("全屏播放", systemImage: "arrow.up.left.and.arrow.down.right") }
+            if showsQuickPanel {
+                if surface == .fullscreen {
+                    Button(action: actions.openQuickPanel) { Label("快速外观", systemImage: "slider.horizontal.3") }
+                }
+            }
+            if showsFullscreen {
+                if surface == .fullscreen {
+                    Button(action: actions.exit) { Label("退出全屏", systemImage: "arrow.down.right.and.arrow.up.left") }
+                } else {
+                    Button(action: actions.enterFullscreen) { Label("全屏播放", systemImage: "arrow.up.left.and.arrow.down.right") }
+                }
             }
         }
         if sections.contains("output"), let route = AudioDSPDeviceController.current, !route.devices.isEmpty {

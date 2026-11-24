@@ -40,7 +40,7 @@ enum SkinComponentContract {
         "mixBlendMode", "motion", "nearSwitchGapMs", "obscenity", "palette", "preserveCompletedHighlight",
         "romanizationLanguage", "showRomanization", "showRuby", "showTranslation", "springBounce", "springDuration",
         "surface", "textColor", "translationFontSize", "translationFontWeight", "translationLanguage", "wordFadeWidth",
-        "wordHighlightMode",
+        "wordHighlightMode", "topFadeRange", "bottomFadeRange", "topEdgeOpacity", "bottomEdgeOpacity", "maximumWidth",
         // Author-level shorthands, resolved by the mapper on every App update.
         "highlight", "hierarchy", "activeColor", "inactiveLevel", "translationLevel", "hierarchyBase", "userSettings",
     ]

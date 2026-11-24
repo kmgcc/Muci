@@ -86,10 +86,35 @@ static float skinFbm(float2 p) {
     return color * half(1.0 - intensity * line);
 }
 
-/// Film grain of `amount`, renewed every frame.
+/// Film grain of `amount`, held by the caller's tick, as a GPU layer draws it: one grain per
+/// point from three uniform draws (close to a Gaussian), no clumps; highlights keep about half.
 [[stitchable]] half4 skinFxGrain(float2 position, half4 color, float time, float amount) {
-    float grain = skinHash(floor(position) + fract(time * 13.7) * 431.0) - 0.5;
-    return half4(clamp(color.rgb + half(grain * amount) * color.a, half3(0), half3(1)), color.a);
+    float2 point = floor(position);
+    float seed = fract(time * 13.7) * 431.0;
+    float grain = (skinHash(point + seed) + skinHash(point.yx * 1.31 + seed * 0.71)
+                   + skinHash(point + float2(17.3, 5.9) + seed * 1.37) - 1.5) * 0.55;
+    float alpha = float(color.a);
+    float luma = clamp(dot(float3(color.rgb), float3(0.299, 0.587, 0.114)) / max(alpha, 0.001), 0.0, 1.0);
+    float weight = mix(1.0, 0.5, smoothstep(0.35, 1.0, luma));
+    return half4(clamp(color.rgb + half(grain * amount * weight) * color.a, half3(0), half3(color.a)), color.a);
+}
+
+/// The `lut` filter: a 3D colour grade stored as a strip of blue slices (`n` slices of `n` × `n`,
+/// red across, green down), read with two bilinear taps and a blend between slices, mixed in by
+/// `amount`. Colours are unpremultiplied for the lookup.
+[[stitchable]] half4 skinFxLUT(float2 position, half4 color, texture2d<half> lut, float amount) {
+    float alpha = float(color.a);
+    if (alpha <= 0.0005) { return color; }
+    constexpr sampler strip(filter::linear, address::clamp_to_edge);
+    float3 rgb = clamp(float3(color.rgb) / alpha, float3(0), float3(1));
+    float n = float(lut.get_height());
+    float blue = rgb.b * (n - 1.0);
+    float b0 = floor(blue), b1 = min(b0 + 1.0, n - 1.0);
+    float x = rgb.r * (n - 1.0) + 0.5, y = (rgb.g * (n - 1.0) + 0.5) / n;
+    float3 low = float3(lut.sample(strip, float2((x + b0 * n) / (n * n), y)).rgb);
+    float3 high = float3(lut.sample(strip, float2((x + b1 * n) / (n * n), y)).rgb);
+    float3 graded = mix(low, high, blue - b0);
+    return half4(half3(mix(rgb, graded, amount) * alpha), color.a);
 }
 
 /// A slow liquid sway of `amplitude` points.
@@ -108,4 +133,22 @@ static float skinFbm(float2 p) {
     float n = skinFbm(p + warp * q + float2(t * 0.25, -t * 0.15));
     n = clamp((n - 0.5) * gain + 0.5, 0.0, 1.0);
     return mix(low, high, half(n)) * color.a;
+}
+
+/// The `light` gradient, as a GPU layer draws it: inverse-square falloff softened inside `core`
+/// (a share of the half size), encoded for the display, windowed to zero at the frame's edge,
+/// whitened at the core and dithered so the long ramp never bands. `light` is premultiplied.
+[[stitchable]] half4 skinFxLight(float2 position, half4 color, float2 size, half4 light, float core, float2 centre) {
+    float2 q = (position / max(size, float2(1)) - centre) * 2.0;
+    float d = length(q);
+    if (d >= 1.0) { return half4(0); }
+    float k = max(core, 1e-3);
+    float intensity = 1.0 / (1.0 + (d / k) * (d / k));
+    float encoded = intensity <= 0.0031308 ? intensity * 12.92 : 1.055 * pow(intensity, 1.0 / 2.4) - 0.055;
+    float window = 1.0 - d * d * d * d;
+    float4 lit = float4(light) * encoded * window * window;
+    lit.rgb = mix(lit.rgb, float3(lit.a), 0.5 * intensity * intensity * intensity * intensity);
+    float dither = (skinHash(position + 0.37) + skinHash(position.yx + 11.3) - 1.0) / 255.0;
+    lit.rgb += dither * lit.a;
+    return half4(lit * float(color.a));
 }

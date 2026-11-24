@@ -3,12 +3,12 @@ import MotionKit
 
 enum SkinSceneCompiler {
     static let nodeTypes: Set<String> = ["layer", "row", "column", "stack", "grid", "scroll", "repeat", "switch", "use", "component", "glassGroup", "lyrics", "spacer", "text", "lyricLine", "image", "artwork", "video", "shape", "gradient", "symbol", "spectrum", "waveform", "meter", "shader", "particles", "fog", "comet"]
-    static let actionNames: Set<String> = ["playPause", "play", "pause", "stop", "next", "previous", "seek", "seekBy", "seekAndResume", "seekToLyric", "setVolume", "setOrderMode", "setAppleMusicMode", "toggleLike", "toggleDislike", "setLike", "playlist.add", "playlist.new", "track.delete", "musicInfo.open", "artist.show", "album.show", "output.select", "queue.toggle", "queue.show", "queue.hide", "queue.play", "lyrics.toggle", "lyrics.show", "lyrics.hide","fullscreen.toggle", "fullscreen.enter", "fullscreen.exit", "quickPanel.open", "settings.open", "trackDetail.open", "trackEdit.open", "externalInfo.open", "skin.reload", "skin.restore", "state.set", "state.toggle", "state.reset", "params.set"]
-    static let filterNames: Set<String> = ["chromatic", "glitch", "motionBlur", "scanlines", "wave", "grain", "fov", "custom"]
+    static let actionNames: Set<String> = ["playPause", "play", "pause", "stop", "next", "previous", "seek", "seekBy", "seekAndResume", "seekToLyric", "setVolume", "setOrderMode", "setAppleMusicMode", "toggleLike", "toggleDislike", "setLike", "playlist.add", "playlist.new", "track.delete", "musicInfo.open", "artist.show", "album.show", "output.select", "queue.toggle", "queue.show", "queue.hide", "queue.play", "lyrics.toggle", "lyrics.show", "lyrics.hide","fullscreen.toggle", "fullscreen.enter", "fullscreen.exit", "quickPanel.open", "settings.open", "trackDetail.open", "trackDetail.close", "trackEdit.open", "externalInfo.open", "skin.reload", "skin.restore", "state.set", "state.toggle", "state.reset", "params.set"]
+    static let filterNames: Set<String> = ["chromatic", "glitch", "motionBlur", "scanlines", "wave", "grain", "fov", "bokeh", "lut", "custom"]
     static let effectNames: Set<String> = ["blur", "brightness", "contrast", "saturation", "grayscale", "hueRotation", "invert", "blendMode"]
-    static let propertyNames: Set<String> = ["frame", "visible", "opacity", "rotation", "scale", "scaleX", "scaleY", "offsetX", "offsetY", "zIndex", "blur", "brightness", "contrast", "saturation", "grayscale", "hueRotation", "invert", "blendMode", "cornerRadius", "clip", "background", "material", "glass", "appGlass", "border", "shadow", "animation", "keyframes", "hitTesting", "controls", "cursor", "help", "text", "fontSize", "font", "weight", "color", "lineLimit", "alignment", "spacing", "columns", "items", "layout", "when", "props", "name", "path", "fit", "shape", "points", "colors", "start", "end", "count", "gain", "lineWidth", "function", "speed", "size", "lifetime", "seed", "loop", "muted", "poster", "mode", "index", "watch", "contextMenu", "effects", "limit", "scrollTo", "adaptive", "highlightColor", "highlightStyle", "measure", "transition", "stops", "radius", "tracking", "lineSpacing", "design", "italic", "minScale", "key", "track", "motion", "enter", "group", "glyphMotion", "outline", "glow", "filter", "bloom", "camera", "depth", "stroke", "trimStart", "trimEnd", "warp", "extrude", "angle", "spread", "trail", "turbulence", "wander", "curve", "width", "orbit", "sweep", "progress", "subpixel", "scrollX", "scrollY", "soft", "resolution", "render", "args", "images", "spectrum", "waveform", "feedback"]
+    static let propertyNames: Set<String> = ["frame", "visible", "opacity", "rotation", "scale", "scaleX", "scaleY", "offsetX", "offsetY", "zIndex", "blur", "brightness", "contrast", "saturation", "grayscale", "hueRotation", "invert", "blendMode", "cornerRadius", "clip", "background", "material", "glass", "appGlass", "border", "shadow", "animation", "keyframes", "hitTesting", "controls", "cursor", "help", "text", "fontSize", "font", "weight", "color", "lineLimit", "alignment", "spacing", "columns", "items", "layout", "when", "props", "name", "path", "fit", "shape", "points", "colors", "start", "end", "count", "gain", "lineWidth", "function", "speed", "size", "lifetime", "seed", "loop", "muted", "poster", "mode", "index", "watch", "contextMenu", "effects", "limit", "scrollTo", "adaptive", "highlightColor", "highlightStyle", "measure", "transition", "stops", "radius", "tracking", "lineSpacing", "design", "italic", "minScale", "key", "track", "motion", "enter", "group", "glyphMotion", "outline", "glow", "filter", "bloom", "camera", "motionBlur", "depth", "stroke", "trimStart", "trimEnd", "warp", "extrude", "angle", "spread", "trail", "turbulence", "wander", "curve", "width", "orbit", "sweep", "progress", "subpixel", "scrollX", "scrollY", "soft", "resolution", "render", "args", "images", "spectrum", "waveform", "feedback", "brush", "zones"]
     static let sceneEvents: Set<String> = ["trackChange", "artworkChange", "motionArtworkReady", "playbackStart", "playbackPause", "seek", "volumeChange", "orderChange", "lyricsChange", "lyricLineChange", "interludeStart", "interludeEnd", "themeChange", "viewportChange", "visibilityChange", "fullscreenHostChange", "lyricsVisibilityChange", "audioAvailabilityChange"]
-    static let nodeEvents: Set<String> = ["tap", "doubleTap", "longPress", "hoverStart", "hoverEnd", "appear", "disappear", "scroll", "dragStart", "drag", "dragEnd"]
+    static let nodeEvents: Set<String> = ["tap", "doubleTap", "longPress", "hoverStart", "hoverEnd", "appear", "disappear", "scroll", "magnify", "dragStart", "drag", "dragEnd"]
     private static let structuralKeys: Set<String> = ["type", "id", "children", "template", "cases", "default", "component", "variants", "on", "mask"]
 
     static func compile(_ document: SkinSceneV2Document, parameters: [SkinParameterDefinition] = [], requires: [String] = [], file: String = "skin.json",
@@ -164,6 +164,9 @@ enum SkinSceneCompiler {
                     guard let name = entry.objectValue?["type"]?.stringValue, SkinSceneCompiler.filterNames.contains(name) else {
                         throw error(path + ".filter", "滤镜需要 type" + skinSuggestion(entry.objectValue?["type"]?.stringValue ?? "", in: SkinSceneCompiler.filterNames))
                     }
+                    if name == "bokeh", fields["render"]?.stringValue != "gpu" {
+                        throw error(path + ".filter", "bokeh 只用于 render: gpu 的图层")
+                    }
                     if name == "custom" {
                         guard let library = entry.objectValue?["library"]?.stringValue, library.hasSuffix(".metallib"), !library.hasPrefix("=") else {
                             throw error(path + ".filter.library", "custom 滤镜需要包内常量 .metallib 路径")
@@ -200,9 +203,12 @@ enum SkinSceneCompiler {
                 guard type == "layer", render.stringValue == "gpu" else { throw error(path + ".render", "render 只用于 layer，取值 gpu") }
                 try SkinGPULayer.validate(children, camera: fields["camera"]?.objectValue) { error(path + $0, $1) }
                 let filters = fields["filter"].map { $0.arrayValue ?? [$0] } ?? []
-                guard fields["bloom"] == nil, filters.allSatisfy({ ["grain", "fov"].contains($0.objectValue?["type"]?.stringValue ?? "") }) else {
-                    throw error(path + ".filter", "render: gpu 的图层滤镜限于 grain、fov")
+                guard fields["bloom"] == nil, filters.allSatisfy({ ["grain", "fov", "bokeh", "lut"].contains($0.objectValue?["type"]?.stringValue ?? "") }) else {
+                    throw error(path + ".filter", "render: gpu 的图层滤镜限于 grain、fov、bokeh、lut")
                 }
+            }
+            if fields["motionBlur"] != nil, fields["render"]?.stringValue != "gpu" {
+                throw error(path + ".motionBlur", "motionBlur 只用于 render: gpu 的图层")
             }
             let mask = try fields["mask"].map { try node($0, path: path + ".mask", environment: environment, depth: depth + 1, templates: templates) }
             var properties: [String: SkinCompiledProperty] = [:]

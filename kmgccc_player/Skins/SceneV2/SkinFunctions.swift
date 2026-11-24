@@ -99,6 +99,11 @@ enum SkinFunctions {
             let t = min(1, max(0, arguments[0])) - 1, s = arguments.count == 2 ? arguments[1] : 1.70158
             return 1 + (s + 1) * t * t * t + s * t * t
         }
+        // `focusHunt(t, seed, wave)`: the `bokeh` filter's focus hunt, 0 to 1, `t` seconds in;
+        // lets other values (a camera push, an exposure dip) move with the defocus.
+        number("focusHunt", 2...3) { arguments in
+            SkinFocusHunt.value(age: arguments[0], seed: arguments[1], wave: arguments.count == 3 ? SkinFocusHunt.waveIndex(arguments[2]) : -1)
+        }
         // `spring(token, t)`: the MotionKit spring of a token (or a retuning record, or one of the
         // skin's own tokens) from 0 to 1 over `t` seconds, at the user's motion speed, overshoot
         // included; `springVelocity` is its rate per second. Reduced motion lands at 1 at once.
@@ -327,6 +332,18 @@ enum SkinFunctions {
         table["measureText"] = SkinFunction(arity: 2...4, argumentTypes: [.any], result: { _ in .number }, tier: .change) { arguments, _ in
             .number(SkinTextMeasure.width(arguments[0].textValue, size: arguments[1].number(), weight: arguments.count > 2 ? arguments[2].textValue : "",
                                           font: arguments.count > 3 ? arguments[3].textValue : ""))
+        }
+        // `textHeight(text, size, width, weight, font, lineSpacing, lineLimit)`: the height of the
+        // text broken to `width` (0 for one unbroken line), as a GPU text lays it out.
+        table["textHeight"] = SkinFunction(arity: 2...7, argumentTypes: [.any], result: { _ in .number }, tier: .change) { arguments, _ in
+            func argument(_ index: Int) -> SkinValue? { arguments.count > index ? arguments[index] : nil }
+            let width = argument(2)?.number(0) ?? 0
+            let limit = argument(6)?.number(0) ?? 0
+            let layout = SkinGPUTextLayouts.layout(arguments[0].textValue, font: argument(4)?.textValue ?? "", weight: argument(3)?.textValue ?? "regular",
+                                                   size: max(0.5, arguments[1].number()), width: width > 0 ? width : nil,
+                                                   lineLimit: limit >= 1 ? Int(limit) : nil, alignment: "leading", tracking: 0,
+                                                   lineSpacing: argument(5)?.number(0) ?? 0)
+            return .number(arguments[0].textValue.isEmpty ? 0 : Double(layout.size.height))
         }
         // One width per item; items are texts or records with `text`.
         table["measureEach"] = SkinFunction(arity: 2...4, argumentTypes: [.any], result: { _ in .list }, tier: .change) { arguments, _ in

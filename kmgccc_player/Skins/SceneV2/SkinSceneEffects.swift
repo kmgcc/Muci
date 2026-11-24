@@ -6,7 +6,8 @@ import SwiftUI
 /// presets, or `custom` functions from a precompiled `.metallib` in the package.
 /// The node is padded by each filter's reach first, so offsets and glows are not cut at its frame.
 /// Moving presets keep their own display timeline around the effect only, so the subtree is not
-/// rebuilt per frame. Reduced motion drops glitch and wave; a dormant node keeps its effects off.
+/// rebuilt per frame; `grain` holds each pattern for `1 / rate` seconds. Reduced motion drops
+/// glitch and wave; a dormant node keeps its effects off.
 /// A chain with a sampling pass runs on a surface of `skinRenderScale` times the subtree's
 /// resolution, its point radii scaled to match; package `custom` shaders keep full resolution.
 struct SkinSceneFilters: ViewModifier {
@@ -31,12 +32,25 @@ struct SkinSceneFilters: ViewModifier {
             }
         }
         let scale = Self.reduces(filters) ? SkinRenderScale.factor(renderScale) : 1
-        TimelineView(.animation(minimumInterval: nil, paused: !animated || !active || dormant || frozen)) { timeline in
+        // Read here, in the body, so a grade that finishes loading redraws the node.
+        let luts = Self.luts(filters, root: root)
+        TimelineView(.animation(minimumInterval: Self.interval(filters), paused: !animated || !active || dormant || frozen)) { timeline in
             SkinRenderScale.reduced(AnyView(content), scale: scale) { surface in
                 Self.apply(surface, filters: filters, time: timeline.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 3600),
-                           moves: moves, enabled: !dormant, root: root, scale: scale)
+                           moves: moves, enabled: !dormant, root: root, scale: scale, luts: luts)
             }
         }
+    }
+
+    /// Each `lut` filter's loaded grade, by its place in the chain.
+    private static func luts(_ filters: [SkinValue], root: URL?) -> [Int: (amount: Double, lut: SkinColorLUT)] {
+        var result: [Int: (amount: Double, lut: SkinColorLUT)] = [:]
+        for (index, filter) in filters.enumerated() where filter[member: "type"].textValue == "lut" {
+            guard let grade = SkinColorLUTFilter(filter, root: root),
+                  let lut = SkinColorLUTLibrary.shared.lut(for: grade.resource) else { continue }
+            result[index] = (grade.amount, lut)
+        }
+        return result
     }
 
     /// Colour-only chains read one pixel each, so a smaller surface saves little and coarsens the
@@ -53,12 +67,33 @@ struct SkinSceneFilters: ViewModifier {
         return samples
     }
 
+    /// A chain of nothing but grain redraws on the grain's tick instead of every display frame.
+    /// Any other preset may change with the scene between ticks, so it keeps the full rate.
+    private static func interval(_ filters: [SkinValue]) -> Double? {
+        var rate = 0.0
+        for filter in filters {
+            // A grade holds still; it never asks for a redraw of its own.
+            if filter[member: "type"].textValue == "lut" { continue }
+            guard filter[member: "type"].textValue == "grain" else { return nil }
+            let grainRate = filter[member: "rate"].number(SkinGrain.defaultRate)
+            guard grainRate > 0 else { return nil }
+            rate = max(rate, grainRate)
+        }
+        return rate > 0 ? 1 / rate : nil
+    }
+
     /// `scale` is the surface's share of the subtree's resolution; point values are multiplied by it.
-    private static func apply(_ content: AnyView, filters: [SkinValue], time: Double, moves: Bool, enabled: Bool, root: URL?, scale: Double) -> AnyView {
+    private static func apply(_ content: AnyView, filters: [SkinValue], time: Double, moves: Bool, enabled: Bool, root: URL?, scale: Double,
+                              luts: [Int: (amount: Double, lut: SkinColorLUT)]) -> AnyView {
         var view = content
         let library = ShaderLibrary.default
-        for filter in filters {
+        for (index, filter) in filters.enumerated() {
             switch filter[member: "type"].textValue {
+            case "lut":
+                // The effect stays in place while no grade is loaded, so the subtree keeps its identity.
+                let grade = luts[index]
+                let shader = library.skinFxLUT(.image(grade?.lut.image ?? SkinColorLUT.placeholder), .float(grade?.amount ?? 0))
+                view = AnyView(view.colorEffect(shader, isEnabled: enabled && grade != nil))
             case "chromatic":
                 let amount = filter[member: "amount"].number(2) * scale
                 let shader = library.skinFxChromatic(.float(amount), .float(filter[member: "angle"].number() * .pi / 180))
@@ -78,7 +113,8 @@ struct SkinSceneFilters: ViewModifier {
                                                      .float(filter[member: "intensity"].number(0.25).clamped01), .float(moves ? filter[member: "speed"].number() * scale : 0))
                 view = AnyView(view.colorEffect(shader, isEnabled: enabled))
             case "grain":
-                view = AnyView(view.colorEffect(library.skinFxGrain(.float(moves ? time : 0), .float(filter[member: "amount"].number(0.08))), isEnabled: enabled))
+                let clock = moves ? SkinGrain.clock(time, rate: filter[member: "rate"].number(SkinGrain.defaultRate)) : 0
+                view = AnyView(view.colorEffect(library.skinFxGrain(.float(clock), .float(filter[member: "amount"].number(0.08))), isEnabled: enabled))
             case "wave" where moves:
                 let amplitude = filter[member: "amplitude"].number(4) * scale
                 let shader = library.skinFxWave(.float(time), .float(amplitude), .float(filter[member: "wavelength"].number(180) * scale), .float(filter[member: "speed"].number(1.5)))
@@ -128,6 +164,16 @@ struct SkinSceneFilters: ViewModifier {
     static func padded(_ view: AnyView, reach: Double, effect: (AnyView) -> some View) -> AnyView {
         let reach = ceil(max(0, reach))
         return AnyView(effect(AnyView(view.padding(reach))).padding(-reach))
+    }
+}
+
+/// The `grain` beat: the pattern holds for `1 / rate` seconds and changes on a tick, like a film
+/// frame, instead of shimmering at the display's refresh rate. `rate` 0 renews it every frame.
+nonisolated enum SkinGrain {
+    static let defaultRate = 8.0
+
+    static func clock(_ time: Double, rate: Double) -> Double {
+        rate > 0 ? (time * rate).rounded(.down) / rate : time
     }
 }
 
@@ -257,6 +303,27 @@ struct SkinSceneFog: View {
                                                              .float2(scroll.x / reduction, scroll.y / reduction)))
                 .scaleEffect(reduction, anchor: .topLeading)
                 .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
+        }
+        .allowsHitTesting(false)
+    }
+}
+
+/// A `light` gradient: a point of light in haze, falling off with the inverse square of the
+/// distance. `radius` is its core, a share of the frame's half size; the light fades to nothing
+/// at the frame's edge, so a wide frame makes a flare streak. Its colour is the first stop's.
+enum SkinLightGradient {
+    static let core = 0.08
+}
+
+struct SkinSceneLight: View {
+    let color: Color
+    let core: Double
+    let centre: UnitPoint
+
+    var body: some View {
+        GeometryReader { proxy in
+            Rectangle().fill(.white)
+                .colorEffect(ShaderLibrary.default.skinFxLight(.float2(proxy.size), .color(color), .float(core), .float2(centre.x, centre.y)))
         }
         .allowsHitTesting(false)
     }

@@ -17,6 +17,7 @@ struct SkinSceneHostProbe: NSViewRepresentable {
             for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification, NSWindow.didChangeScreenNotification] {
                 NotificationCenter.default.addObserver(self, selector: #selector(changed), name: name, object: window)
             }
+            NotificationCenter.default.addObserver(self, selector: #selector(changed), name: SkinHoverLatch.presenceChanged, object: nil)
             updateTrackingAreas(); publish()
         }
         override func updateTrackingAreas() {
@@ -25,14 +26,26 @@ struct SkinSceneHostProbe: NSViewRepresentable {
             let area = NSTrackingArea(rect: .zero, options: [.activeInActiveApp, .inVisibleRect, .mouseEnteredAndExited, .mouseMoved], owner: self)
             addTrackingArea(area); tracking = area
         }
-        override func mouseEntered(with event: NSEvent) { data?.updateHostFacts(["host.pointerInside": .boolean(true)]); moved() }
-        override func mouseExited(with event: NSEvent) { data?.updateHostFacts(["host.pointerInside": .boolean(false)]); moved() }
-        override func mouseMoved(with event: NSEvent) { moved() }
-        private func moved() { data?.pointerMoved() }
+        override func mouseEntered(with event: NSEvent) { data?.updateHostFacts(["host.pointerInside": .boolean(true)]); moved(event) }
+        override func mouseExited(with event: NSEvent) { data?.updateHostFacts(["host.pointerInside": .boolean(false)]); moved(nil) }
+        override func mouseMoved(with event: NSEvent) { moved(event) }
+        private func moved(_ event: NSEvent?) {
+            data?.pointerMoved()
+            guard let event, bounds.height > 0 else { return }
+            // A pointer already inside when the probe appears reports itself only by moving.
+            let point = convert(event.locationInWindow, from: nil)
+            let y = isFlipped ? point.y : bounds.height - point.y
+            let step = bounds.height / 24
+            data?.updateHostFacts([
+                "host.pointerInside": .boolean(bounds.contains(point)),
+                "host.pointerY": .number(Double((y / step).rounded(.down) * step)),
+            ])
+        }
         @objc private func changed() { publish() }
         func publish() {
             guard let window, let data else { return }
-            data.updateHostFacts(["host.isKeyWindow": .boolean(window.isKeyWindow)])
+            data.updateHostFacts(["host.isKeyWindow": .boolean(window.isKeyWindow),
+                                  "host.popoutOpen": .boolean(SkinHoverLatch.isExclusiveOpen)])
             let inset = safeAreaInsets
             data.updateViewportFacts([
                 "viewport.maximumRefreshRate": .number(Double(window.screen?.maximumFramesPerSecond ?? 60)),

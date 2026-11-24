@@ -3,14 +3,13 @@ import SwiftUI
 /// `fov` — a lens edge for a whole subtree, strongest in the corners and absent inside `start`.
 ///
 /// `distortion` (−0.6…0.6) stretches the edges outward like a wide-angle lens; `chromatic`
-/// (points) splits red and blue along the radius; `blur` (points) is the Gaussian radius at the
-/// corners, growing from zero at `start` (0…1 of the half-diagonal). The lens is one pass of three
-/// samples; the blur is a separable pair, so a pixel inside `start` costs one sample per pass.
+/// (points) spreads overlapping wavelength bands along the radius. `blur` (points)
+/// is the Gaussian radius at the corners, growing from zero at `start` (0…1 of the half-diagonal).
 /// `scale` is the share of resolution the passes run at; the point radii are multiplied by it.
 enum SkinSceneFOV {
     static func apply(_ view: AnyView, filter: SkinValue, enabled: Bool, scale: Double = 1) -> AnyView {
         let distortion = min(0.6, max(-0.6, filter[member: "distortion"].number(0.2)))
-        let chromaticPoints = max(0, min(8, filter[member: "chromatic"].number(1.5)))
+        let chromaticPoints = max(0, min(24, filter[member: "chromatic"].number(1.5)))
         let blurPoints = max(0, min(32, filter[member: "blur"].number(6)))
         let chromatic = chromaticPoints * scale
         let blur = blurPoints * scale

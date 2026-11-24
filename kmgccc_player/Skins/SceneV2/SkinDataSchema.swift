@@ -93,6 +93,8 @@ enum SkinDataSchema {
             ("lyrics.prefs.romanizationLanguage", .text), ("lyrics.prefs.fontSize", .number),
             ("lyrics.prefs.fontFamily", .text), ("lyrics.prefs.translationFontSize", .number),
             ("lyrics.prefs.fontFamilyCJK", .text), ("lyrics.prefs.fontWeight", .text),
+            ("lyrics.prefs.translationFontFamily", .text), ("lyrics.prefs.translationFontWeight", .text),
+            ("lyrics.prefs.fontScale", .number), ("lyrics.prefs.translationFontScale", .number),
             ("lyrics.prefs.obscenity", .text),
         ])
         add("lyrics.derived@1", .lyricsTimeline, .frame, [
@@ -105,7 +107,7 @@ enum SkinDataSchema {
         add("theme@1", .theme, .change, SkinThemeRoles.colorRoles.map { ($0.path, SkinValueType.color) } + [
             ("theme.scheme", .text), ("theme.isDark", .boolean), ("theme.accent", .color),
             ("theme.hasArtworkColor", .boolean), ("theme.palette", .list), ("theme.averageColor", .color),
-            ("theme.spectrumColors", .list), ("theme.spectrumUsesDarkForeground", .boolean),
+            ("theme.spectrumColors", .list), ("theme.artSwatches", .list), ("theme.spectrumUsesDarkForeground", .boolean),
             ("theme.artBackgroundIsUltraDark", .boolean), ("theme.readability.usesDarkForeground", .boolean),
             ("theme.roles", .record),
             ("theme.readability.isNearMonochrome", .boolean),
@@ -140,10 +142,16 @@ enum SkinDataSchema {
         add("host@1", .host, .change, [
             ("host.isActive", .boolean), ("host.lyricsVisible", .boolean), ("host.queueVisible", .boolean),
             ("host.isKeyWindow", .boolean), ("host.pointerInside", .boolean), ("host.reservedControls", .record),
-            ("host.layout", .record),
+            ("host.layout", .record), ("host.quickPanelVisible", .boolean),
+            ("host.detailVisible", .boolean), ("host.detail", .record),
         ])
+        // The pointer's height in viewport points, rounded down to a 24th of the viewport so it
+        // changes a few dozen times across the window, never every frame.
+        add("host.pointer@1", .host, .change, [("host.pointerY", .number)])
         add("host.pointer@1", .host, .frame, [("host.pointerIdleTime", .number)])
         add("host.pointer@1", .host, .change, [("host.pointerIdle", .boolean)])
+        // True while a pop-out control stack is open, so controls stay up under its raised items.
+        add("host.pointer@1", .host, .change, [("host.popoutOpen", .boolean)])
         add("prefs@1", .prefs, .change, [
             ("prefs.fullscreenDimming", .number), ("prefs.artBackgroundEnabled", .boolean),
             ("prefs.artworkScale", .number), ("prefs.miniPlayerAutoHide", .number),

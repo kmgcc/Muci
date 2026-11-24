@@ -3,7 +3,7 @@
 // Two kinds of pass share one edge factor: 0 inside `edgeStart` (as a fraction of the
 // half-diagonal), rising smoothly to 1 at the corners.
 //
-// skinFxLens      wide-angle stretch plus lateral chromatic aberration, three samples.
+// skinFxLens      wide-angle stretch and overlapping wavelength bands.
 // skinFxEdgeBlur  one axis of a Gaussian whose radius follows the edge factor. Run once
 //                 horizontally and once vertically. Up to 8 taps per side, at most half
 //                 a sigma apart from a 4pt reach on (~1pt apart below it), so a wide
@@ -11,6 +11,7 @@
 
 #include <metal_stdlib>
 #include <SwiftUI/SwiftUI_Metal.h>
+#include "SkinLensDispersion.h"
 using namespace metal;
 
 static float skinFxEdge(float2 position, float2 size, float inset, float edgeStart) {
@@ -32,16 +33,15 @@ static float skinFxEdge(float2 position, float2 size, float inset, float edgeSta
     // Wide-angle stretch: the source moves toward the centre as r² grows, so the edges are
     // magnified outward and nothing is sampled from beyond the frame.
     float2 source = centre + (position - centre) * (1.0 - clamp(distortion, -0.6, 0.6) * 0.35 * r2);
+    half4 base = layer.sample(clamp(source, lo, hi));
     float edge = skinFxEdge(position, size, inset, edgeStart);
-    float2 radial = length(c) > 1e-4 ? normalize(position - centre) : float2(0.0);
-    float2 split = radial * max(0.0, chromatic) * edge;
-
-    half4 g = layer.sample(clamp(source, lo, hi));
-    if (chromatic <= 0.0 || edge <= 0.0) { return g; }
-    half4 r = layer.sample(clamp(source + split, lo, hi));
-    half4 b = layer.sample(clamp(source - split, lo, hi));
-    half a = max(g.a, max(r.a, b.a));
-    return half4(r.r, g.g, b.b, a);
+    if (chromatic <= 0.0 || edge <= 0.0) { return base; }
+    float2 offset = normalize(position - centre) * (chromatic * edge);
+    return half4(skinLensDispersion(float4(layer.sample(clamp(source + offset, lo, hi))),
+                                   float4(layer.sample(clamp(source + 0.5 * offset, lo, hi))),
+                                   float4(base),
+                                   float4(layer.sample(clamp(source - 0.5 * offset, lo, hi))),
+                                   float4(layer.sample(clamp(source - offset, lo, hi)))));
 }
 
 [[stitchable]] half4 skinFxEdgeBlur(float2 position, SwiftUI::Layer layer,

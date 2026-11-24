@@ -61,6 +61,10 @@ final class SkinHoverLatch {
     @ObservationIgnored private var isHeld = false
     @ObservationIgnored private var closeTask: Task<Void, Never>?
     private static weak var openExclusive: SkinHoverLatch?
+    /// Posted when an exclusive stack opens or folds, so the scene can keep its controls up
+    /// while the pointer is on items that popped out above them (`host.popoutOpen`).
+    static let presenceChanged = Notification.Name("SkinHoverLatch.presenceChanged")
+    static var isExclusiveOpen: Bool { openExclusive?.isOpen == true }
 
     init(exclusive: Bool = false) {
         self.exclusive = exclusive
@@ -82,15 +86,20 @@ final class SkinHoverLatch {
             if let other = Self.openExclusive, other !== self { other.close() }
             Self.openExclusive = self
         }
-        if !isOpen { isOpen = true }
+        if !isOpen {
+            isOpen = true
+            if exclusive { NotificationCenter.default.post(name: Self.presenceChanged, object: nil) }
+        }
     }
 
     func close() {
         cancelClose()
         isHovering = false
         isHeld = false
+        let wasOpen = isOpen
         if isOpen { isOpen = false }
         if Self.openExclusive === self { Self.openExclusive = nil }
+        if exclusive && wasOpen { NotificationCenter.default.post(name: Self.presenceChanged, object: nil) }
     }
 
     private func cancelClose() {
@@ -403,6 +412,7 @@ struct SkinActionStackPart: View {
                                          slack: open ? 10 : 0))
         .onHover { stack.hover($0, grace: grace) }
         .onChange(of: open) { _, isOpen in if !isOpen { volume.close() } }
+        .onDisappear { stack.close() }
         .skinProvidesControls([.fullscreen, .lyricsToggle, .quickPanel])
     }
 
@@ -439,7 +449,7 @@ struct SkinActionStackPart: View {
                     actions.setVolume(max(0.05, restoreVolume))
                 }
             }
-            .background(SkinSceneScrollRegion { _, y in
+            .background(SkinSceneScrollRegion { _, y, _ in
                 guard enabled else { return }
                 actions.setVolume(min(1, max(0, playback.stablePresentation.volume + y * 0.0025)))
             })
@@ -544,6 +554,7 @@ struct SkinPlaybackModeStackPart: View {
                                          sideRow: nil, sideWidth: 0, slack: open ? 10 : 0))
         .onHover { stack.hover($0, grace: grace) }
         .onChange(of: open) { _, isOpen in if isOpen { settling = nil } }
+        .onDisappear { stack.close() }
     }
 
     private func choose(_ entry: Entry, others: [Entry], current: String) {

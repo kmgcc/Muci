@@ -281,8 +281,14 @@ struct SkinSceneNodeV2View: View {
         if let cursor = values["cursor"]?.textValue { result = AnyView(result.background(SkinSceneCursorRegion(name: cursor))) }
         if let controls = values["controls"] { result = AnyView(result.skinProvidesControls(Set(controls.listValue.compactMap { SkinSceneControl(rawValue: $0.textValue) }))) }
         if node.actions["scroll"] != nil {
-            result = AnyView(result.background(SkinSceneScrollRegion { x, y in
-                perform("scroll", now: Date.timeIntervalSinceReferenceDate, gesture: .record(["deltaX": .number(x), "deltaY": .number(y)]))
+            result = AnyView(result.background(SkinSceneScrollRegion { x, y, precise in
+                perform("scroll", now: Date.timeIntervalSinceReferenceDate,
+                        gesture: .record(["deltaX": .number(x), "deltaY": .number(y), "precise": .boolean(precise)]))
+            }))
+        }
+        if node.actions["magnify"] != nil {
+            result = AnyView(result.background(SkinSceneMagnifyRegion { magnification in
+                perform("magnify", now: Date.timeIntervalSinceReferenceDate, gesture: .record(["magnification": .number(magnification)]))
             }))
         }
         for watch in node.watches {
@@ -506,6 +512,11 @@ struct SkinSceneNodeV2View: View {
                                                   startRadiusFraction: 0, endRadiusFraction: values["radius"]?.number(0.5) ?? 0.5))
             case "angular":
                 return AnyView(AngularGradient(gradient: gradient, center: unitPoint(values["start"]?.textValue ?? "center")))
+            case "light":
+                let first = (values["stops"]?.listValue ?? []).first?[member: "color"].colorValue
+                    ?? (values["colors"]?.listValue ?? []).first?.colorValue
+                return AnyView(SkinSceneLight(color: first?.swiftUIColor ?? .clear, core: values["radius"]?.number(SkinLightGradient.core) ?? SkinLightGradient.core,
+                                              centre: unitPoint(values["start"]?.textValue ?? "center")))
             default:
                 return AnyView(LinearGradient(gradient: gradient, startPoint: unitPoint(values["start"]?.textValue ?? "topLeading"), endPoint: unitPoint(values["end"]?.textValue ?? "bottomTrailing")))
             }
@@ -611,8 +622,15 @@ struct SkinSceneNodeV2View: View {
         var filters: [SkinValue] = []
         if let filter = values["filter"] { filters = filter.type == .list ? filter.listValue : [filter] }
         var grain = 0.0
-        if let entry = filters.first(where: { $0[member: "type"].textValue == "grain" }) { grain = entry[member: "amount"].number(0.08) }
+        var grainRate = SkinGrain.defaultRate
+        if let entry = filters.first(where: { $0[member: "type"].textValue == "grain" }) {
+            grain = entry[member: "amount"].number(0.08)
+            grainRate = entry[member: "rate"].number(SkinGrain.defaultRate)
+        }
         let lens = filters.first(where: { $0[member: "type"].textValue == "fov" }).map(SkinGPULens.init)
+        let bokeh = filters.first(where: { $0[member: "type"].textValue == "bokeh" }).flatMap(SkinGPUBokeh.init)
+        let lut = filters.first(where: { $0[member: "type"].textValue == "lut" })
+            .flatMap { SkinColorLUTFilter($0, root: resources) }
         let view = self, node = node, followers = followers, data = data
         var camera: (@MainActor (Double) -> SkinSceneCamera)?
         if let property = node.camera {
@@ -621,7 +639,7 @@ struct SkinSceneNodeV2View: View {
         return SkinGPULayerInputs(
             node: node, data: data, size: size, locals: locals, live: live, motionTokens: motionTokens, moves: moves,
             playing: components.snapshot.playback.isPlaying, active: active, renderScale: renderScale,
-            resolution: values["resolution"]?.numberValue ?? 1, grain: grain, lens: lens, camera: camera,
+            resolution: values["resolution"]?.numberValue ?? 1, grain: grain, grainRate: grainRate, lens: lens, bokeh: bokeh, lut: lut, camera: camera,
             cameraStill: { playing, timeMoves in
                 node.camera == nil || node.cameraInputs.isStill(playing: playing, timeMoves: timeMoves, following: followers.isMoving)
             },

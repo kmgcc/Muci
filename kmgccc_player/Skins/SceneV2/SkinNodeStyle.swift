@@ -154,6 +154,11 @@ struct SkinGlyphExtrude: Equatable, Sendable {
 /// every glyph and frame. `core` (0 to 1) also lifts the glyph itself toward white. Each glyph's
 /// `glyphMotion.glow` scales it, and the light is drawn with the glyph's own motion, so it never
 /// drifts off the text.
+///
+/// In a `render: "gpu"` layer the glow is light instead: the lit glyph is drawn into a bloom
+/// pyramid whose octaves sum to an inverse-square falloff, hugging the glyph up close and
+/// opening into a wide veil that reaches `radius`. `strength` is its exposure, `haze` lifts the
+/// widest octaves, and the colour saturates and drifts in hue as the light fades.
 struct SkinGlyphGlow: Equatable, Sendable {
     static let layers: [(share: Double, weight: Double)] = [(0.14, 1.2)]
     static let blurLimit = 16.0
@@ -162,13 +167,20 @@ struct SkinGlyphGlow: Equatable, Sendable {
     var radius: Double
     var ink: SkinGlyphInk
     var core: Double
+    var strength: Double
+    var haze: Double
+    /// The colour's strength through the falloff: 0 neutral, 1 designed, 2 rich.
+    var saturation: Double
 
     init?(_ value: SkinValue?, fallback: OKLCHColor?) {
         guard let value, value.type == .record else { return nil }
-        radius = min(400, max(0, value[member: "radius"].number(24)))
+        radius = min(1600, max(0, value[member: "radius"].number(24)))
         guard radius > 0.5 else { return nil }
         ink = SkinGlyphInk(value[member: "color"].colorValue ?? fallback ?? OKLCHColor(lightness: 1, chroma: 0, hue: nil))
         core = value[member: "core"].number(0.5).clamped01
+        strength = max(0, value[member: "strength"].number(2.5))
+        haze = max(0, min(4, value[member: "haze"].number(1.4)))
+        saturation = max(0, min(2, value[member: "saturation"].number(1)))
     }
 
     /// How far the light reaches past the glyph.
