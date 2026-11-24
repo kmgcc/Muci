@@ -14,6 +14,41 @@ struct SkinOption: Identifiable {
     let name: String
     let detail: String
     let systemImage: String
+    /// Imported or linked packages, which carry package actions on their cards.
+    let isCustomPackage: Bool
+    /// What the author put on the card's side strip; nil draws no strip.
+    let sidebar: SkinCardSidebarText?
+
+    init(_ skin: any NowPlayingSkin) {
+        id = skin.id
+        name = skin.name
+        detail = skin.detail
+        systemImage = skin.systemImage
+        let package = skin as? PackagedSkin
+        isCustomPackage = package?.isExportable == true
+        sidebar = package.flatMap { SkinCardSidebarText(manifest: $0.manifest) }
+    }
+}
+
+/// The resolved text of a card's side strip.
+struct SkinCardSidebarText: Equatable {
+    let label: String?
+    let author: String?
+
+    init?(manifest: SkinPackageManifest) {
+        guard let sidebar = manifest.sidebar, sidebar.visible else { return nil }
+        func trimmed(_ text: String?) -> String? {
+            guard let text = text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }
+            return text
+        }
+        label = trimmed(sidebar.label)
+        if sidebar.showsAuthor, let name = trimmed(manifest.author) {
+            author = sidebar.showsAuthorPrefix ? SkinCardSidebar.authorPrefix + name : name
+        } else {
+            author = nil
+        }
+        guard label != nil || author != nil else { return nil }
+    }
 }
 
 enum SkinRegistry {
@@ -104,14 +139,7 @@ enum SkinRegistry {
     }
 
     static var options: [SkinOption] {
-        skins.map {
-            SkinOption(
-                id: $0.id,
-                name: $0.name,
-                detail: $0.detail,
-                systemImage: $0.systemImage
-            )
-        }
+        skins.map(SkinOption.init)
     }
 
     static var fullscreenOptions: [SkinOption] {
@@ -119,24 +147,10 @@ enum SkinRegistry {
             let leftOrder = lhs.element.descriptor.fullscreenOrder
             let rightOrder = rhs.element.descriptor.fullscreenOrder
             return leftOrder == rightOrder ? lhs.offset < rhs.offset : leftOrder < rightOrder
-        }.map {
-            SkinOption(
-                id: $0.element.id,
-                name: $0.element.name,
-                detail: $0.element.detail,
-                systemImage: $0.element.systemImage
-            )
-        }
+        }.map { SkinOption($0.element) }
     }
 
     static var nowPlayingOptions: [SkinOption] {
-        nowPlayingSkins.map {
-            SkinOption(
-                id: $0.id,
-                name: $0.name,
-                detail: $0.detail,
-                systemImage: $0.systemImage
-            )
-        }
+        nowPlayingSkins.map(SkinOption.init)
     }
 }

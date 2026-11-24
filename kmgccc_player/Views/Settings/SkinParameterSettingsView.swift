@@ -1,3 +1,4 @@
+import MotionKit
 import SwiftUI
 
 struct SkinParameterSettingsView: View {
@@ -5,9 +6,14 @@ struct SkinParameterSettingsView: View {
     let surface: SkinSurface
     let definitions: [SkinParameterDefinition]
     let store: SkinParameterStore
+    /// A scene skin draws at the render quality the lyrics share, so it offers that with its own options.
+    var showsRenderQuality = false
 
     @Environment(\.fullscreenSettingsPresentationStyle) private var presentationStyle
+    @Environment(AppSettings.self) private var settings
     @EnvironmentObject private var themeStore: ThemeStore
+    @State private var changedNextLine: Set<String> = []
+    @State private var hintHideTask: Task<Void, Never>?
 
     private var visibleDefinitions: [SkinParameterDefinition] {
         Self.visibleDefinitions(skinID: skinID, surface: surface, definitions: definitions, store: store)
@@ -16,6 +22,13 @@ struct SkinParameterSettingsView: View {
     var body: some View {
         let _ = store.revision
         VStack(alignment: .leading, spacing: presentationStyle.groupSpacing) {
+            if showsRenderQuality {
+                AMLLLyricsRenderQualitySlider(quality: Binding(
+                    get: { settings.amllLyricsRenderQuality },
+                    set: { settings.amllLyricsRenderQuality = $0 }
+                ))
+                .settingsSearchAnchor("skin.renderQuality")
+            }
             ForEach(sections, id: \.offset) { section in
                 if let title = section.title { Text(title).settingsDescriptionStyle() }
                 ForEach(section.definitions) { definition in
@@ -23,6 +36,34 @@ struct SkinParameterSettingsView: View {
                         .settingsSearchAnchor("skin.parameter.\(definition.id)")
                 }
             }
+            if let hint = nextLineHint {
+                Text(hint)
+                    .settingsDescriptionStyle()
+                    .transition(.opacity)
+            }
+        }
+        .motionAnimation(.control, value: changedNextLine)
+        .onDisappear { hintHideTask?.cancel() }
+    }
+
+    /// Names the parameters just adjusted that wait for the next lyric line, in declaration order.
+    private var nextLineHint: String? {
+        let titles = visibleDefinitions
+            .filter { $0.applies == .nextLine && changedNextLine.contains($0.id) }
+            .map(\.title)
+        guard !titles.isEmpty else { return nil }
+        return "调整\(titles.joined(separator: "、"))后，下一行歌词生效"
+    }
+
+    /// Shows the hint for a few seconds after a next-line parameter changes.
+    private func noteNextLineChange(_ definition: SkinParameterDefinition) {
+        guard definition.applies == .nextLine else { return }
+        changedNextLine.insert(definition.id)
+        hintHideTask?.cancel()
+        hintHideTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(8))
+            guard !Task.isCancelled else { return }
+            changedNextLine.removeAll()
         }
     }
 
@@ -60,8 +101,7 @@ struct SkinParameterSettingsView: View {
                 selection: Binding(
                     get: { textValue(store.value(skinID: skinID, surface: surface, definition: definition), choices: choices) },
                     set: { set(definition, value: .text($0)) }
-                ),
-                accentColor: themeStore.accentColor
+                )
             )
         case .color:
             ColorPicker(definition.title, selection: Binding(
@@ -77,29 +117,36 @@ struct SkinParameterSettingsView: View {
         maximum: Double,
         step: Double
     ) -> some View {
-        VStack(alignment: .leading, spacing: presentationStyle.compactInlineSpacing) {
-            HStack {
-                Text(definition.title)
-                    .settingsRowLabelStyle()
-                Spacer(minLength: 12)
-                Text(numberValue(store.value(skinID: skinID, surface: surface, definition: definition)), format: .number)
-                    .font(presentationStyle.captionFont)
-                    .foregroundStyle(.secondary)
-            }
-            Slider(
-                value: Binding(
-                    get: { numberValue(store.value(skinID: skinID, surface: surface, definition: definition)) },
-                    set: { set(definition, value: .number($0)) }
-                ),
-                in: minimum...maximum,
-                step: step
-            )
-            .tint(themeStore.accentColor)
+        let tint = presentationStyle.settingsSelectedTextColor(accentColor: themeStore.accentColor, appColors: nil)
+        return DSPRangeSliderRow(
+            title: definition.title,
+            value: Binding(
+                get: { numberValue(store.value(skinID: skinID, surface: surface, definition: definition)) },
+                set: { set(definition, value: .number($0)) }
+            ),
+            range: minimum...maximum,
+            step: step,
+            unit: "",
+            fractionDigits: Self.fractionDigits(for: step),
+            defaultValue: numberValue(definition.defaultValue),
+            defaultMarkerColor: tint.opacity(0.85)
+        )
+        .tint(tint)
+    }
+
+    /// Decimal places the step needs, so 0.05 shows as 0.25 and 1 shows as 3.
+    private static func fractionDigits(for step: Double) -> Int {
+        var digits = 0
+        var scaled = step
+        while digits < 4, abs(scaled - scaled.rounded()) > 1e-9 {
+            scaled *= 10
+            digits += 1
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        return digits
     }
 
     private func set(_ definition: SkinParameterDefinition, value: SkinParameterValue) {
+        noteNextLineChange(definition)
         store.set(skinID: skinID, surface: surface, definition: definition, value: value)
     }
 

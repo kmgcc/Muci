@@ -26,6 +26,22 @@ ZIP 根目录包含 `manifest.json`。场景可直接写在 manifest 的 `scene`
 }
 ```
 
+`author` 填写作者署名，最多 24 个字符。`sidebar` 在设置的皮肤卡片右侧加一条竖排边栏：`label` 写在顶端，作为简短标识，例如 `beta`、`实验` 或 `限定`，最多 12 个字符；`showsAuthor` 为 true 时，把 `author` 以 `-by 作者` 的形式写在底端，`showsAuthorPrefix` 为 false 时只写作者名；`visible` 为 false 时隐藏边栏并保留其余写法。省略 `sidebar` 的卡片不带边栏。
+
+```json
+"author": "kmgccc",
+"sidebar": {"label": "beta", "showsAuthor": true}
+```
+
+`preview` 指定皮肤卡片上的正方形预览图，可写包内路径，也可写成 `{"image": "preview.png", "dark": "preview-dark.png", "themed": true}`，深色外观使用 `dark`。图片为 png、jpg 或 heic，边长建议 512 像素，不少于 256 像素。未写 `preview` 时，App 按场景的构图生成预览：在固定视口和样例数据下取一次布局，只画封面、歌词、标题与可视化几块主体，配色跟随当前主题。逐字运动、镜头、着色器与粒子不参与，因此以动效为主的皮肤更适合自带预览图。
+
+预览图与设置界面同处一行，遵循以下规范：
+
+- **主题模板。** 推荐 `themed: true`：只用纯红 `#FF0000`、纯绿 `#00FF00`、纯蓝 `#0000FF` 作画，卡片分别换成当前主题的强调色、前景色与带强调色调的中性色。三色都与卡片形成对比：深色卡片上取浅色，浅色卡片上取深色。三色可调不透明度，也可相互叠压，过渡按混合比例换色。背景留透明，透出卡片底色。
+- **最多三色。** 非模板图片同样以三种颜色为限，色相克制，大面积用中性色，强调色只点在一处。
+- **意象。** 用一两个简洁图形点出皮肤的主题与气质，例如一方封面、几道光、一阵上涌的字形。避免截图、文字、按钮与图标，也避免繁复的细节。
+- **构图。** 主体居中偏稳，四周留出约八分之一边长的空白；卡片边长约 150 点，细于 2% 边长的线条会消失。
+
 [JSON Schema](skin-package-v2.schema.json)用于编辑器补全和结构检查。表达式、组件与能力的最终校验由 App 的 `skin.check` 完成。
 
 包只能引用自身目录内的本地资源。路径使用相对路径，不能包含上级目录、绝对路径或链接。包中最多 4096 个条目、展开后最多 512 MiB，单个资源最多 128 MiB；JSON 最多 4 MiB，字体最多 16 个。ZIP 使用普通存储或 Deflate 压缩。
@@ -38,7 +54,7 @@ ZIP 根目录包含 `manifest.json`。场景可直接写在 manifest 的 `scene`
 
 内容节点包括 `text`、`lyricLine`、`symbol`、`image`、`artwork`、`video`、`shape` 与 `gradient`。未写 `color` 的文字、符号和形状使用主题的主要前景色。
 
-任一节点写上 `"adaptive": true`，宿主就读取它所在位置下方的背景明暗，为整棵子树选择可读的前景：未写颜色的文字、符号和形状随之变色，系统材质与配色方案随之翻转，`control.miniPlayer` 等原生控件改用相应的前景与玻璃。节点表达式可读 `self.backdrop`（`light` 或 `dark`）、`self.foreground` 与 `self.secondaryForeground`。判断以封面铺满视口为背景估计，并计入 `background.host` 与 `background.dimming` 的压暗；只在节点移动、封面或压暗变化时重算。文字可设 `font`、`fontSize`、`weight`、`design`（rounded、serif、monospaced）、`italic`、`tracking`、`lineSpacing`、`lineLimit`、`alignment` 与 `minScale`。`gradient` 的 `mode` 为 linear、radial、elliptical 或 angular；`stops` 写成 `{"color": …, "at": 0.4}` 的数组，未写时 `colors` 均匀分布；径向渐变以 `start` 为中心，`radius` 为相对节点长边的半径，在非正方形的框里会被短边截断；椭圆渐变随框拉伸，`radius` 为 0.5 时恰好在框边缘收尽，适合宽幅光晕。形状支持矩形、圆、椭圆、胶囊和单位正方形坐标内的路径。路径命令使用大写 M/L/C/Q/H/V/Z，坐标为绝对值。
+任一节点写上 `"adaptive": true`，宿主就读取它所在位置下方的背景明暗，为整棵子树选择可读的前景：未写颜色的文字、符号和形状随之变色，系统材质与配色方案随之翻转，`control.miniPlayer` 等原生控件改用相应的前景与玻璃。节点表达式可读 `self.backdrop`（`light` 或 `dark`）、`self.foreground` 与 `self.secondaryForeground`。判断以封面铺满视口为背景估计，并计入 `background.host` 与 `background.dimming` 的压暗；只在节点移动、封面或压暗变化时重算。文字可设 `font`、`fontSize`、`weight`、`design`（rounded、serif、monospaced）、`italic`、`tracking`、`lineSpacing`、`lineLimit`、`alignment` 与 `minScale`。`gradient` 的 `mode` 为 linear、radial、elliptical、angular 或 light；`stops` 写成 `{"color": …, "at": 0.4}` 的数组，未写时 `colors` 均匀分布；径向渐变以 `start` 为中心，`radius` 为相对节点长边的半径，在非正方形的框里会被短边截断；椭圆渐变随框拉伸，`radius` 为 0.5 时恰好在框边缘收尽，适合宽幅光晕。light 是一点光源，亮度随距离按平方反比衰减，颜色取第一个色标，`radius` 为光核占半个框的比例（默认 0.08）；光随框拉伸并在框边缘柔和收尽，扁长的框便是一道横向光芒；渐变带抖动，长距离的过渡保持平滑。形状支持矩形、圆、椭圆、胶囊和单位正方形坐标内的路径。路径命令使用大写 M/L/C/Q/H/V/Z，坐标为绝对值。
 
 `component` 通过 `component` 名称调用宿主组件，`props` 传参数。`lyrics` 是 `lyrics.native` 的简写。原生歌词（含 `lyrics.panel`）每个可实现布局最多一份，不能放入 repeat；自绘歌词没有这个限制。
 
@@ -144,11 +160,11 @@ manifest 顶层的 `let` 为反复出现的表达式命名，例如 `"let": {"he
 
 `clock.position` 是音频进度；`clock.lyrics` 是含视觉偏移的歌词文档时间。点击歌词使用 `seekToLyric` 或 `lyricTime(index)`，避免把视觉提前量带进跳转。
 
-常量在编译时折叠；曲目、主题和参数按变化更新；只有引用时钟、音频或逐帧效果的节点进入显示时间线。进入时间线的节点每帧只重算逐帧的属性，其余属性保留到数据变化；但它每帧重建自身与全部子节点，所以逐帧的值应写在叶子节点上，不要写在包着控件的图层上。`camera`、`filter` 与 `bloom` 各自带时间线，只逐帧改变几何与着色，不重建子树，因此镜头漂移可以放心写在根图层上。`host.pointerIdle` 只在指针停下或再次移动时变化，可以放心用来隐藏整组控件；`host.pointerIdleTime` 逐帧更新。时间线跟随显示器，不另设帧率上限。节点的时间线在它读到的输入全部静止后歇下：只依赖时钟、歌词或音频的节点在暂停的一刻停下；读 `time` 的节点随播放流缓缓停稳后停下；`follow()` 落定后停下；关键帧、`host.pointerIdleTime` 与 `time.free` 一直运行。
+常量在编译时折叠；曲目、主题和参数按变化更新；只有引用时钟、音频或逐帧效果的节点进入显示时间线。进入时间线的节点每帧只重算逐帧的属性，其余属性保留到数据变化；但它每帧重建自身与全部子节点，所以逐帧的值应写在叶子节点上，不要写在包着控件的图层上。`camera`、`filter` 与 `bloom` 各自带时间线，只逐帧改变几何与着色，不重建子树，因此镜头漂移可以放心写在根图层上。`host.pointerIdle` 只在指针停下或再次移动时变化，可以放心用来隐藏整组控件；`host.pointerIdleTime` 逐帧更新。`host.pointerY` 是指针在视口中的纵坐标，按视口高度的 1/24 取整，只在跨过一格时变化；与 `host.pointerInside` 一起，可以让控件只在指针靠近时出现。`host.popoutOpen` 在弹出式控件栈展开时为真，可让控件在指针移到上方弹出的按钮时保持显示。时间线跟随显示器，不另设帧率上限。节点的时间线在它读到的输入全部静止后歇下：只依赖时钟、歌词或音频的节点在暂停的一刻停下；读 `time` 的节点随播放流缓缓停稳后停下；`follow()` 落定后停下；关键帧、`host.pointerIdleTime` 与 `time.free` 一直运行。
 
 ## 交互与动画
 
-节点的 `on` 可以绑定 tap、doubleTap、longPress、hoverStart、hoverEnd、appear、disappear、scroll、dragStart、drag 与 dragEnd。拖动事件提供 `gesture.x/y/fractionX/fractionY/translationX/translationY`；滚轮提供 deltaX/deltaY。操作可以是名称或对象：
+节点的 `on` 可以绑定 tap、doubleTap、longPress、hoverStart、hoverEnd、appear、disappear、scroll、magnify、dragStart、drag 与 dragEnd。拖动事件提供 `gesture.x/y/fractionX/fractionY/translationX/translationY`；滚轮提供 deltaX/deltaY 与 `precise`：触控板为 true，增量以点计；鼠标滚轮为 false，增量以行计。magnify 是触控板双指缩放，`gesture.magnification` 为相对上一次的变化量，张开为正，例如 `(state.zoom ?? 1) * (1 + gesture.magnification)`。操作可以是名称或对象：
 
 ```json
 {"on":{"drag":{"do":"seek","value":"=gesture.fractionX * playback.duration"}}}
@@ -178,6 +194,7 @@ manifest 顶层的 `let` 为反复出现的表达式命名，例如 `"let": {"he
 | --- | --- |
 | `spring(token, 秒)` | 该 token 的弹簧在给定秒数时的进度，自 0 起、到 1 落定，带回弹的 token 会略过 1 |
 | `springVelocity(token, 秒)` | 同一弹簧每秒的进度变化 |
+| `focusHunt(秒, 种子, 方式)` | `bokeh` 滤镜的对焦抽动在该时刻的强度，0 到 1；方式可省略。让镜头推近、曝光等跟着虚焦一起动 |
 | `springTo(秒, 时长, 弹性)` | 一段给定时长与弹性（0 到 1）的 MotionKit 弹簧在该时刻的进度；弹性为 0 时平滑落定、不越过 1。时长与弹性可以来自参数，让用户调整入场的长短与回弹 |
 | `follow(目标, token, 缓起)` | 一个追随目标的弹簧；目标改变时从当前位置与速度接着追。token 省略时为 control。缓起（秒）让目标跳变后的拉力逐渐加大，镜头便像手持一样先倾身再移动 |
 | `followVelocity(目标, token, 缓起)` | 同一追随弹簧的速度，单位为目标单位每秒，适合做拉伸与倾斜 |
@@ -225,11 +242,11 @@ token 可以是名称，也可以是与 `animation` 相同的记录。`spring` �
 }}
 ```
 
-`easeIn`、`easeOut`、`easeInOut` 与 `backOut` 把 0 到 1 的进度映射为缓动曲线，`backOut` 带回弹。表达式里的时长宜写成 MotionKit token 的倍数：声明 `motion@1` 后，`motion.emphasis`、`motion.contentReplacement` 等给出各 token 按用户动画速度换算后的秒数，`motion.speed` 为相对标准速度的倍率；上例的 0.5 可写作 `motion.emphasis`。颜色同理取自 `theme.*`，皮肤便随歌曲换色。逐字运动与 `glyphs` 过渡可以叠加；`outline` 为每个字描边，写成宽度，或 `{width, color, hollow}`，`hollow` 只留外圈，适合做空心衬底大字；宽度为 0 时不描边。`extrude` 为每个字加上实心的厚度，写成深度，或 `{depth, angle, color, endColor}`，颜色由近及远渐变。glyphMotion 另有 `split`（红蓝错开的点数，逐字色散）与 `smearX`/`smearY`（沿位移方向的拖影）。`glow` 写成 `{radius, color, core}`，给每个字加上贴合字形的辉光：一层模糊副本取半径的七分之一（模糊最多 16 点），贴着字形形成亮边；更远的光是一团以字为中心、随距离近似平方衰减的圆形光晕，伸到字外约 1.5 倍半径，不用模糊，所以大半径也不拖慢渲染；这些都以加亮叠在字上，`core`（0 到 1）同时把字本身提亮到接近白色；亮度由 glyphMotion 的 `glow` 逐字决定（0 不亮，1 全亮，大于 1 是更亮的一闪），光随字一起运动；半径为 0 时不发光。减弱动态效果时逐字运动停止，描边与厚度保留。
+`easeIn`、`easeOut`、`easeInOut` 与 `backOut` 把 0 到 1 的进度映射为缓动曲线，`backOut` 带回弹。表达式里的时长宜写成 MotionKit token 的倍数：声明 `motion@1` 后，`motion.emphasis`、`motion.contentReplacement` 等给出各 token 按用户动画速度换算后的秒数，`motion.speed` 为相对标准速度的倍率；上例的 0.5 可写作 `motion.emphasis`。颜色同理取自 `theme.*`，皮肤便随歌曲换色。`presentation.controlForeground` 为 `fixedLight` 的皮肤画在暗场上，`theme.*` 与 `viewport.isDark` 始终按深色外观给出，日间模式下也取夜间配色。逐字运动与 `glyphs` 过渡可以叠加；`outline` 为每个字描边，写成宽度，或 `{width, color, hollow}`，`hollow` 只留外圈，适合做空心衬底大字；宽度为 0 时不描边。`extrude` 为每个字加上实心的厚度，写成深度，或 `{depth, angle, color, endColor}`，颜色由近及远渐变。glyphMotion 另有 `split`（红蓝错开的点数，逐字色散）与 `smearX`/`smearY`（沿位移方向的拖影）。`glow` 写成 `{radius, color, core}`，给每个字加上贴合字形的辉光：一层模糊副本取半径的七分之一（模糊最多 16 点），贴着字形形成亮边；更远的光是一团以字为中心、随距离近似平方衰减的圆形光晕，伸到字外约 1.5 倍半径，不用模糊，所以大半径也不拖慢渲染；这些都以加亮叠在字上，`core`（0 到 1）同时把字本身提亮到接近白色；亮度由 glyphMotion 的 `glow` 逐字决定（0 不亮，1 全亮，大于 1 是更亮的一闪），光随字一起运动；半径为 0 时不发光。在 `render: "gpu"` 图层里，辉光是真实的泛光：发光的字先画进一组逐级减半的高动态范围画面，各级按倍频程等权叠加，得到光在空气与镜头中散射的平方反比衰减，近处贴合字形，远处化作一层宽阔的薄晕，`radius` 即这层薄晕所及的距离。`strength`（默认 2.5）为曝光，`haze`（默认 1.4）加厚最外两级的薄晕，`saturation`（0 到 2，默认 1）调节光色浓淡，0 为无色的白光；光越淡，颜色越饱和，色相按色系偏移：淡黄偏向橙红，红偏向紫，绿与青偏向蓝。每个字的辉光取自己的颜色，同一画面最多分三组光色，更多颜色并入最接近的一组。减弱动态效果时逐字运动停止，描边与厚度保留。
 
 文字默认按像素栅格绘制，缓慢缩放或平移时会一格一格地跳。`text` 写上 `"subpixel": true` 后，每个字按字形轮廓填充，位置与字号连续变化，适合镜头缓推和逐字慢移的大字；表情符号等没有轮廓的字仍按原方式绘制。
 
-歌词字体可以跟随 App：声明 `lyrics.prefs@1` 后，`lyrics.prefs.fontFamily`、`lyrics.prefs.fontFamilyCJK` 与 `lyrics.prefs.fontWeight`（thin 到 black）给出用户为当前皮肤选定的歌词字体与字重，这款皮肤没有单独设置时为全局歌词设置。皮肤可以把它作为一个字体选项，与自带的字体并列，例如 `"font": "=params.font == 'app' ? lyrics.prefs.fontFamilyCJK : 'youyou-yisong'"`。
+歌词字体可以跟随 App：声明 `lyrics.prefs@1` 后，`lyrics.prefs.fontFamily`、`lyrics.prefs.fontFamilyCJK` 与 `lyrics.prefs.fontWeight`（thin 到 black）给出用户为当前皮肤选定的歌词字体与字重，这款皮肤没有单独设置时为全局歌词设置。译文另有 `lyrics.prefs.translationFontFamily` 与 `lyrics.prefs.translationFontWeight`。字号有两种读法：`lyrics.prefs.fontSize` 与 `translationFontSize` 是原生歌词实际使用的点数，已按全屏画布与窗口内全屏放大换算；`lyrics.prefs.fontScale` 与 `translationFontScale` 是用户设定相对这一界面默认字号的倍数，1 为默认，适合按视口自定字号的皮肤。皮肤可以把它作为一个字体选项，与自带的字体并列，例如 `"font": "=params.font == 'app' ? lyrics.prefs.fontFamilyCJK : 'youyou-yisong'"`。
 
 逐词排版用文字测量与列表函数完成，不必手算：
 
@@ -237,6 +254,7 @@ token 可以是名称，也可以是与 `animation` 相同的记录。`spring` �
 | --- | --- |
 | `measureText(文字, 字号, 字重, 字体)` | 文字宽度（点），字重与字体可省略；字体可用包内字体的名称 |
 | `measureEach(列表, 字号, 字重, 字体)` | 每项的宽度；列表项为文字或含 `text` 的记录 |
+| `textHeight(文字, 字号, 宽度, 字重, 字体, 行距, 行数上限)` | 文字按宽度折行后的高度（点），与 `render: "gpu"` 图层的文字排版一致；宽度为 0 时排成一行，后四项可省略 |
 | `cumsum(列表)`、`offsets(列表, 间距)` | 累加和；每项的起点 |
 | `pluck(列表, 字段)` | 取出每条记录的一个字段 |
 | `argmax(列表)`、`argmin(列表)` | 最大、最小值的序号 |
@@ -269,26 +287,34 @@ token 可以是名称，也可以是与 `animation` 相同的记录。`spring` �
 | `motionBlur` | x、y、samples | 沿位移方向的运动模糊 |
 | `scanlines` | spacing、intensity、speed | 扫描线 |
 | `wave` | amplitude、wavelength、speed | 缓慢的液态扭曲 |
-| `grain` | amount | 逐帧胶片颗粒 |
-| `fov` | distortion、chromatic、blur、start | 镜头边缘：广角畸变、边缘色散与半径渐增的边缘模糊；start 以内不受影响。各项为 0 时画面原样，可随表达式在 0 与其他值间平滑变化；子树先按节点画框裁切 |
+| `grain` | amount、rate | 胶片颗粒，每秒跳动 rate 次（默认 8；0 为每帧更新），颗粒细密，亮部与辉光保留约一半 |
+| `lut` | file、amount | 按 `.cube` 文件（3D 或 1D，sRGB 编码）给子树调色。file 是包内相对路径，amount（0 到 1，默认 1）为强度。`render: "gpu"` 的图层在最后一道放大时调色，位于虚焦、畸变、色散和边缘模糊之后、颗粒之前。其他节点按滤镜顺序调色。文件在后台载入，路径为空或载入期间沿用原色。可以用 `choice` 参数在包内的多份 LUT 之间切换 |
+| `fov` | distortion、chromatic、blur、start | 镜头边缘：广角畸变、沿径向逐段展开的色散和边缘模糊；chromatic 以点计，最大 24，色散后的画面再做边缘模糊，start 控制色散和模糊的起点。各项为 0 时画面原样，可随表达式在 0 与其他值间平滑变化；子树先按节点画框裁切 |
+| `bokeh` | at、seed、wave、radius、amount、speed、glow、threshold、swirl、hold、breathing、detail | 仅用于 `render: "gpu"` 的图层。镜头在歌词时间 at（秒）抛虚一到三下，每下之间拉回到几乎清晰，一下比一下小，最后逐渐回到清晰；换行时已开始的抽动照常走完，hold（0 到 1）大于 0 时一直按该强度虚焦，便于调整光斑。每一点化作光圈形状的圆盘，边缘清楚，文字留下圆润的轮廓：radius 为最大虚焦半径（点），wave 选对焦方式（0 搜焦、1 颤动、2 恍惚、3 抽动，省略时按 seed 随机），speed 为快慢，amount 为整体强度，glow（0 到 1，默认 0.6）决定亮处在光斑里的分量，越大亮点散成的光斑越亮越实，threshold（0 到 1，默认 0.3）为算作亮处的起点，swirl（0 到 1，默认 0.3）让越靠四角的圆盘越扁、略带旋转，breathing 让画面随虚焦轻微放大，detail 调整光斑源的精细度（默认 1，越大越细、GPU 用时越多）。同一 at 与 seed 的几层一起抽动；at 为空时不触发 |
 
 `custom` 调用包内预编译的着色器库，写法为 `{type: "custom", library: "fx.metallib", function, kind, args, reach, animated}`。`kind` 为 layer（可采样子树）、color 或 distortion；函数在 SwiftUI 规定的参数之后依次收到 `float2 size`（含外扩的画布尺寸）、`float time`，再按顺序收到 `args`：数为 float，2 至 4 个数的列表为 float2 至 float4，更长的列表为浮点数组（函数收到 `device const float *` 与 `int` 两个参数，可写 `=spectrum(64)`），颜色为 half4，`{image: "textures/noise.png"}` 为包内图片（`texture2d<half>`）。`reach` 为最大采样偏移，`animated` 为 true 时逐帧更新。用 `xcrun -sdk macosx metal -o fx.metallib fx.metal` 编译，源码以 `#include <SwiftUI/SwiftUI_Metal.h>` 开头，函数标注 `[[stitchable]]`。
 
-`bloom` 让子树的亮部向外泛光并叠加回去，写成半径，或 `{radius, intensity, threshold}`。滤镜与泛光按效果所需的范围外扩绘制，不会被节点边框裁掉；它们作用于整棵子树，应写在文字或装饰等叶子节点上，不要套在整屏图层上。减弱动态效果时，glitch 与 wave 停止。
+`bloom` 让子树的亮部向外泛光并叠加回去，写成半径，或 `{radius, intensity, threshold}`。滤镜与泛光按效果所需的范围外扩绘制，不会被节点边框裁掉；它们作用于整棵子树，应写在文字或装饰等叶子节点上，不要套在整屏图层上。减弱动态效果时，glitch、wave 与 grain 停止跳动。
 
-设置中的「歌词与皮肤渲染质量」同时决定滤镜、泛光与 `camera.rasterize` 位图的分辨率：低、中、高分别以 0.5x、0.75x、1x 绘制，再放大到画面。半径、偏移与间距始终以点书写，宿主按分辨率换算，各档构图一致，差别只在清晰度。`custom` 着色器与只含 scanlines、grain 的滤镜始终以原分辨率绘制。
+设置中的「歌词与皮肤渲染质量」同时决定滤镜、泛光与 `camera.rasterize` 位图的分辨率：低、中、高分别以 0.5x、0.75x、1x 绘制，再放大到画面。半径、偏移与间距始终以点书写，宿主按分辨率换算，各档构图一致，差别只在清晰度。`custom` 着色器与只含 scanlines、grain 的滤镜始终以原分辨率绘制。场景皮肤的选项中同样列出这项设置。
 
 节点的 `resolution`（0.25 至 1）让其内容以更低分辨率绘制后放大，再乘以渲染质量，适合雾、渐变等柔和的背景；节点自身的滤镜与泛光随后按常规分辨率叠加，颗粒依旧清晰。
 
-整屏画面可在 layer 上写 `render: "gpu"`，其子节点合进一张 Metal 画面，按自己的显示时钟绘制，画面静止时随之停歇。子节点可用 `shape`（矩形、圆、椭圆与 `path`，可带 `stroke`、`trimStart`、`trimEnd`、`rotation`、`blur`，`path` 还可带 angular `gradient` 遮罩）、`gradient`、`fog`、`particles`、`comet` 与 `text`，也可嵌套 `layer`（可带 `offsetX`、`offsetY`）与 `layout: "free"` 的 `repeat`；属性与表达式照常书写，粒子可带 `motionBlur`，嵌套节点各按自己的 `depth` 取镜头视差，未写时随父层。画面空无一物时随之隐去。`text` 取字体、字号、字距、对齐、行数、颜色、旋转、缩放、偏移、`blur`、`glow` 与 `glyphMotion`，字形经 Core Text 排版后按字号缓存，在 GPU 上逐字绘制，适合整屏逐字运动的歌词。图层的镜头取 `x`、`y`、`zoom`、`perspective`、`rotation`、`rotationX` 与 `rotationY`，倾斜与同一镜头下的其他图层重合；滤镜取 `grain` 与 `fov`，畸变、色散与边缘模糊都在这张画面上完成，颗粒在放大到画面时叠加；`resolution` 决定这张画面的分辨率。
+整屏画面可在 layer 上写 `render: "gpu"`，其子节点合进一张 Metal 画面，按自己的显示时钟绘制，画面静止时随之停歇。子节点可用 `shape`（矩形、圆、椭圆与 `path`，可带 `stroke`、`trimStart`、`trimEnd`、`rotation`、`blur`，`path` 还可带 angular `gradient` 遮罩）、`gradient`、`fog`、`particles`、`comet` 与 `text`，也可嵌套 `layer`（可带 `offsetX`、`offsetY`）与 `layout: "free"` 的 `repeat`；属性与表达式照常书写，粒子可带 `motionBlur`，嵌套节点各按自己的 `depth` 取镜头视差，未写时随父层。画面空无一物时随之隐去。`text` 取字体、字号、字距、行距、对齐、行数、颜色、旋转、缩放、偏移、`blur`、`glow` 与 `glyphMotion`，字形经 Core Text 排版后按字号缓存，在 GPU 上逐字绘制，适合整屏逐字运动的歌词。图层的镜头取 `x`、`y`、`zoom`、`perspective`、`rotation`、`rotationX` 与 `rotationY`，倾斜与同一镜头下的其他图层重合；滤镜取 `grain`、`fov`、`bokeh` 与 `lut`，虚焦、畸变、光谱色散和边缘模糊依次在这张画面上完成，放大时依次叠加调色与颗粒；`resolution` 决定这张画面的分辨率。
+
+`motionBlur` 让整张画面按一帧的位移留下拖尾，写成 0 到 2 的份额，0 关闭。位移是镜头运镜与元素自身运动之和：镜头平移、推拉时，画面里的字、粒子、圆环一起拖；镜头静止时，逐字入场、粒子飞行仍有自己的拖尾。每个字、每颗粒子、每个圆环只在自己的像素上沿自身轨迹积分，采样数随位移长度自适应，静止时不足半像素即跳过，因此没有额外的一遍全屏处理，字的拖尾也不会被相邻的元素拖出色边。悬浮控件不在 `render: "gpu"` 图层里，保持清晰。
 
 `fog` 节点绘制域扭曲的分形噪声雾，`colors` 给出由暗到亮的两色（只给一色时从透明过渡），`size` 为一团雾的尺度（点），另有 `speed`、`warp`（折叠强度）与 `gain`（对比）。叠一层低不透明度的 fog 即是网易云式的流雾，换成暗红两色便是流体底。
+
+`render: "gpu"` 下的 fog 可加 `zones`，让雾自己带上颜色：整团雾取第一色，其余颜色只在零星的小片里晕染进来，镜头移过时偶尔拍到。`zones` 写一列颜色，或写 `{colors, lightness, chroma, size, share, scrollX, scrollY}`：相近的色调并作一色，`lightness` 把各色拉到同一明度、只留少许高低，`chroma` 缩放彩度（点缀色比主色更淡，暗处彩度另有上限），`size` 为一片色斑的尺度（点），`share` 为色斑出现的多少（0 到 1），`scrollX`、`scrollY` 让色斑单独滑动，未写时随雾本身。色斑边缘随雾的浓淡起伏，中心仍留两成主色；交融在感知色彩空间里进行，明度不变。几层滚速与 `depth` 不同的雾各带色斑，镜头移动时前后错开，背景便有纵深。`theme.artSwatches` 是封面插画背景小色块所用的色板，封面素净时只有一色的几种深浅，丰富时可到六色，与 `zones` 配合，背景的色彩便随封面的丰富程度变化。
 
 `shape` 的 `stroke` 改为描线，写成宽度，或 `{width, color, cap, join, dash}`；同时写了 `color` 时才另行填充。`trimStart` 与 `trimEnd` 截取线段，让 `trimEnd` 随时间从 0 走到 1，就是逐笔画出的线圈。
 
 `spectrum`、`waveform`、`meter` 直接绘制共享音频。`particles` 提供确定性的粒子画布：默认是缓缓上浮的尘点，`soft`（点）让每颗尘点的边缘逐渐虚化，比整层 `blur` 省去每帧一次全层模糊；写上 `lifetime`（秒）后改为发射，每颗粒子在随机位置出现，沿 `angle` 度方向、在 `spread` 度内散开，以 `speed` 点每秒飞行，在一生中淡入淡出，`trail` 给出以秒计的拖尾，`colors` 为随机取用的颜色。`turbulence`（点）与 `wander`（弧度每秒）让粒子沿前进方向两侧缓慢摆动，`curve` 让路线逐渐弯曲；粒子始终向前，拖尾是它刚走过的路径，画成一条由细到粗、由暗到亮的连续光带。配合 `blendMode: plusLighter`，就是带拖尾的彗星与火花。
 
-`comet` 是绕目标飞行的单颗彗星，以节点中心为目标：`orbit` 为 [rx, ry] 椭圆，`progress` 从 0 到 1 表示飞行进度，通常由时钟算出；它从 `angle` 所指的一侧远处飞来，绕目标转过 `sweep` 度后飞离。`trail` 为拖尾占整段飞行的比例，`size` 为实心彗头半径，`width` 为拖尾最宽处。节点框需要容纳整段轨迹，约为椭圆的 5.6 倍。`shadow` 可以写成数组，按顺序叠加多层。`video.path` 加载静音循环视频，隐藏时停止；动态封面使用 `artwork`，沿用 App 的共享解码。
+`comet` 是绕目标飞行的单颗彗星，以节点中心为目标：`orbit` 为 [rx, ry] 椭圆，`progress` 从 0 到 1 表示飞行进度，通常由时钟算出；它从 `angle` 所指的一侧远处飞来，绕目标转过 `sweep` 度后飞离。`trail` 为拖尾占整段飞行的比例，`size` 为实心彗头半径，`width` 为拖尾最宽处。节点框需要容纳整段轨迹，约为椭圆的 5.6 倍。
+
+在 `render: "gpu"` 的图层里，`comet`、带 `trail` 的发射粒子，以及带 `stroke` 的圆、椭圆与 `path` 可写 `brush`，画成颜料笔触。`brush` 可以是 0 到 1 的数，也可以写成 `{amount, dry, wobble, warp, seed}`：`amount` 决定干笔油彩的质感：起伏而参差的轮廓、刷毛拖出的条纹与颜料的厚薄，每一笔的刷毛数与粗糙程度各不相同，0 保持平滑线条；`dry` 决定颜料向笔画末端干涸、露出飞白的程度；圆和椭圆保持原有轮廓，描边由许多交叠的短笔铺成，边缘带毛边，`wobble` 决定每笔的错位与斜度；`path` 的每一笔起笔略钝，收笔收成笔尖，毛分叉而干，粗细随运笔缓缓起伏，`wobble` 决定压力起伏与线条轻微的摆动；`warp`（默认同 `wobble`）让图形像手画一样走形：整体略微弯斜，线条细细抖动，闭合的图形收笔越过起点又错开，不严丝合缝。走形与笔触按图形自身的坐标固定，镜头移动时不变。彗星画成笔触时，`width` 即笔画半宽，不受彗头大小限制，笔画以圆润的湿笔头收尾，省去实心彗头；粒子的 `width` 按各自的彗头大小缩放。`shadow` 可以写成数组，按顺序叠加多层。`video.path` 加载静音循环视频，隐藏时停止；动态封面使用 `artwork`，沿用 App 的共享解码。
 
 `fonts` 列出包内 ttf、otf 或 ttc 路径。字体按可见场景持有，退出后释放登记。
 
@@ -328,7 +354,17 @@ float4 skinFragment(float2 uv, constant SkinUniforms& u, texture2d<float> artwor
 
 ## 参数、安装和开发
 
-`parameters` 声明 id、title、defaultValue、control；control 支持 toggle、range、choice 和 color。`isUserVisible` 为 true 的参数出现在设置的皮肤选项与全屏快速面板中，只为少量重要选项开启。`visibleWhen` 可以引用其他 params，支持参数联动。相邻且 `section` 相同的参数归在同一小标题下。普通用户不编辑位置。场景用到 `control.miniPlayer` 时，快速面板同时列出播放条的可视化、自动隐藏与材质；用到 `background.host` 时，窗口设置列出艺术背景开关。
+`parameters` 声明 id、title、defaultValue、control，支持 toggle、range、choice 和 color。`isUserVisible` 为 true 的参数出现在设置的皮肤选项与全屏快速面板中，只为少量重要选项开启。`visibleWhen` 可以引用其他 params，支持参数联动。相邻且 `section` 相同的参数归在同一小标题下。普通用户不编辑位置。场景用到 `control.miniPlayer` 时，快速面板同时列出播放条的可视化、自动隐藏与材质；用到 `background.host` 时，窗口设置列出艺术背景开关。每个参数占一行：名称在左，range 为定宽滑块，数值在滑块末尾。
+
+参数默认立即生效。皮肤只在换行时读取某个值（例如把字体或节奏写进整行的版面）时，给该参数加 `"applies": "nextLine"`；用户调整这些参数后，设置与快速面板的参数列表底部会临时出现一行小字，列出刚调整的参数，提示从下一行歌词起生效；几秒后淡出。立即生效的参数省略该字段。
+
+`presentation.panelPlacement` 决定全屏快速面板的位置：`center`（默认）、`leading` 或 `trailing`。面板从所在一侧滑入，关闭时滑回并淡出；居中时轻轻上浮。快速面板的歌词页只列出皮肤读到的设置：场景挂载 `lyrics.native` 或 `lyrics.panel` 时列出全部；自绘歌词的场景保留字体与时间轴，声明 `lyricsLead` 后时间轴只留整体提前量。快速面板打开时 `host.quickPanelVisible` 为 true，皮肤可以借此收起自己的控件。
+
+`presentation.scrollVolume` 设为 true 后，在场景任意位置滚动即可调节音量，并显示与内置皮肤相同的音量胶囊。指针下有列表、文本等可滚动内容，或节点绑定了 `scroll`，或快速面板、歌曲详情正在显示时，滚动交给它们。
+
+查看详情默认在窗口内弹出玻璃卡片。`presentation.trackDetail` 设为 `scene` 后改由场景绘制：`host.detailVisible` 为 true 时，`host.detail` 提供 `title`、`artist`、`album`、`heading`、`text` 与 `note`，皮肤执行 `trackDetail.close` 结束显示。
+
+场景的右键菜单列出当前歌曲的喜欢、添加到播放列表、查看详情、编辑歌曲信息与从资料库删除；从某个播放列表开始播放时，另有从该播放列表移除。支持自定义皮肤的版本在菜单末尾另有刷新皮肤与恢复默认皮肤。
 
 `lyricsLead` 是宿主识别的保留参数，单位为秒。声明后，它只把该皮肤的歌词时钟提前对应秒数，不改变原生歌词与其他皮肤；`clock.lyrics`、`lyrics.current` 与逐词进度都会一起前移。正值提前，默认 0.4 表示提前 400 毫秒。
 

@@ -24,6 +24,18 @@ def check(directory):
     descriptor = manifest.get("descriptor", {})
     if not descriptor.get("id") or not descriptor.get("name"):
         raise ValueError("descriptor requires id and name")
+    author = manifest.get("author")
+    if author is not None and (not isinstance(author, str) or not author.strip() or len(author) > 24):
+        raise ValueError("author must be 1 to 24 characters")
+    sidebar = manifest.get("sidebar")
+    if sidebar is not None:
+        if not isinstance(sidebar, dict) or set(sidebar) - {"visible", "label", "showsAuthor", "showsAuthorPrefix"}:
+            raise ValueError("sidebar takes only visible, label, showsAuthor and showsAuthorPrefix")
+        label = sidebar.get("label")
+        if label is not None and (not isinstance(label, str) or len(label) > 12):
+            raise ValueError("sidebar.label must be at most 12 characters")
+        if sidebar.get("showsAuthor") and not (author or "").strip():
+            raise ValueError("sidebar.showsAuthor requires author")
 
     def resource(path):
         if not isinstance(path, str) or path.startswith(("/", "=")) or ".." in pathlib.PurePosixPath(path).parts or ":" in path:
@@ -32,6 +44,21 @@ def check(directory):
         if not resolved.is_relative_to(directory) or not resolved.is_file():
             raise ValueError(f"missing or escaped resource: {path}")
         return resolved
+
+    preview = manifest.get("preview")
+    if preview is not None:
+        if isinstance(preview, str):
+            paths = [preview]
+        elif isinstance(preview, dict) and set(preview) <= {"image", "dark", "themed"} and "image" in preview:
+            if not isinstance(preview.get("themed", False), bool):
+                raise ValueError("preview.themed is a boolean")
+            paths = [preview["image"]] + ([preview["dark"]] if "dark" in preview else [])
+        else:
+            raise ValueError("preview is a path or {image, dark, themed}")
+        for path in paths:
+            if not isinstance(path, str) or pathlib.PurePosixPath(path).suffix.lower() not in {".png", ".jpg", ".jpeg", ".heic"}:
+                raise ValueError("preview must name a png, jpg or heic image")
+            resource(path)
 
     scenes = list(manifest.get("scenes", {}).values())
     if isinstance(manifest.get("scene"), str):

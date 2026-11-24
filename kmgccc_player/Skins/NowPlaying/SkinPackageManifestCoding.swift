@@ -1,7 +1,7 @@
 import Foundation
 
 extension SkinPackageManifest {
-    private enum CodingKeys: String, CodingKey { case formatVersion, hostAPIVersion, version, descriptor, nativePreset, scene, scenes, parameters, requires, uses, fonts, lets = "let" }
+    private enum CodingKeys: String, CodingKey { case formatVersion, hostAPIVersion, version, descriptor, nativePreset, scene, scenes, parameters, requires, uses, fonts, lets = "let", author, sidebar, preview }
 
     init(from decoder: any Decoder) throws {
         let keys = try decoder.container(keyedBy: CodingKeys.self)
@@ -20,6 +20,9 @@ extension SkinPackageManifest {
         uses = try keys.decodeIfPresent([String].self, forKey: .uses) ?? []
         fonts = try keys.decodeIfPresent([String].self, forKey: .fonts) ?? []
         lets = try keys.decodeIfPresent([String: String].self, forKey: .lets) ?? [:]
+        author = try keys.decodeIfPresent(String.self, forKey: .author)
+        sidebar = try keys.decodeIfPresent(SkinCardSidebar.self, forKey: .sidebar)
+        preview = try keys.decodeIfPresent(SkinPackagePreview.self, forKey: .preview)
     }
 
     func encode(to encoder: any Encoder) throws {
@@ -37,6 +40,9 @@ extension SkinPackageManifest {
         if !uses.isEmpty { try keys.encode(uses, forKey: .uses) }
         if !fonts.isEmpty { try keys.encode(fonts, forKey: .fonts) }
         if !lets.isEmpty { try keys.encode(lets, forKey: .lets) }
+        try keys.encodeIfPresent(author, forKey: .author)
+        try keys.encodeIfPresent(sidebar, forKey: .sidebar)
+        try keys.encodeIfPresent(preview, forKey: .preview)
     }
 }
 
@@ -81,7 +87,7 @@ extension SkinDescriptor {
 
 // Partial author overrides inherit current defaults for omitted fields.
 extension SkinPresentationPolicy {
-    private nonisolated enum CodingKeys: String, CodingKey { case windowBackgroundPlacement, backgroundOwner, backgroundDimming, artworkLayout, lyricsBackdrop, controlForeground, movesArtworkWithControls, artBackgroundResourceProfile }
+    private nonisolated enum CodingKeys: String, CodingKey { case windowBackgroundPlacement, backgroundOwner, backgroundDimming, artworkLayout, lyricsBackdrop, controlForeground, movesArtworkWithControls, artBackgroundResourceProfile, panelPlacement, scrollVolume, trackDetail }
 
     nonisolated init(from decoder: any Decoder) throws {
         self.init()
@@ -94,6 +100,9 @@ extension SkinPresentationPolicy {
         controlForeground = try keys.decodeIfPresent(ControlForeground.self, forKey: .controlForeground) ?? controlForeground
         movesArtworkWithControls = try keys.decodeIfPresent(Bool.self, forKey: .movesArtworkWithControls) ?? movesArtworkWithControls
         artBackgroundResourceProfile = try keys.decodeIfPresent(ArtBackgroundResourceProfile.self, forKey: .artBackgroundResourceProfile) ?? artBackgroundResourceProfile
+        panelPlacement = try keys.decodeIfPresent(PanelPlacement.self, forKey: .panelPlacement) ?? panelPlacement
+        scrollVolume = try keys.decodeIfPresent(Bool.self, forKey: .scrollVolume) ?? scrollVolume
+        trackDetail = try keys.decodeIfPresent(TrackDetailPresentation.self, forKey: .trackDetail) ?? trackDetail
     }
 
     nonisolated func encode(to encoder: any Encoder) throws {
@@ -106,6 +115,9 @@ extension SkinPresentationPolicy {
         try keys.encode(controlForeground, forKey: .controlForeground)
         try keys.encode(movesArtworkWithControls, forKey: .movesArtworkWithControls)
         try keys.encode(artBackgroundResourceProfile, forKey: .artBackgroundResourceProfile)
+        try keys.encode(panelPlacement, forKey: .panelPlacement)
+        try keys.encode(scrollVolume, forKey: .scrollVolume)
+        try keys.encode(trackDetail, forKey: .trackDetail)
     }
 }
 

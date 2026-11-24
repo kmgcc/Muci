@@ -183,6 +183,11 @@ final class SkinPackageStore {
         }
         if let resourceRoot {
             try validateResources(in: resourceRoot, fonts: manifest.fonts)
+            for path in manifest.preview?.paths ?? [] {
+                let url = try SkinResourceResolver.resolve(path, root: resourceRoot)
+                guard SkinPackagePreview.fileExtensions.contains(url.pathExtension.lowercased()),
+                      FileManager.default.fileExists(atPath: url.path) else { throw SkinPackageError.invalidManifest("预览图无效：\(path)") }
+            }
             let assets = programs.values.reduce(into: Set<String>()) { $0.formUnion($1.root.referencedAssets) }
             for path in assets {
                 let url = try SkinResourceResolver.resolve(path, root: resourceRoot)
