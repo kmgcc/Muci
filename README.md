@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="pages/assets/icon.png" width="192" alt="kmgccc_player Icon" />
+  <img src="pages/assets/icon.png" width="192" alt="Muci Icon" />
 </p>
 
-<h1 align="center">kmgccc_player</h1>
+<h1 align="center">Muci</h1>
 
 <p align="center">
   面向 macOS 26 的本地音乐播放器。<br>
@@ -10,9 +10,9 @@
 </p>
 
 > [!WARNING]
-> kmgccc_player 是个人项目，可能存在缺陷、未完成特性或行为变动。不建议在重要环境中作为唯一播放器使用。欢迎通过官网或 Issue 反馈问题。
+> Muci 是个人项目，可能存在缺陷、未完成特性或行为变动。不建议在重要环境中作为唯一播放器使用。欢迎通过官网或 Issue 反馈问题。
 
-[kmgccc_player 官网](https://player.kmgccc.cn)
+[Muci 官网](https://player.kmgccc.cn)
 
 作为喜欢音乐，绘画多年的枸，我想为音乐播放器添加一份随性与独特的美感。感谢你的使用和喜欢！
 
@@ -37,6 +37,13 @@
 CUE 和 SACD 按曲目入库，每首独立匹配歌曲资料与歌词，同一专辑共享封面。托管模式保留一份整轨音频或 ISO。DSD 转为 176.4 kHz Float32 PCM，接入现有音量、音效与频谱链路，技术信息保留源采样率。
 
 WavPack 混合模式的 `.wvc` 校正文件应与 `.wv` 放在同一目录并保持同名。导入、拖放和原位扫描使用统一的格式列表，入库前由对应解码器读取 PCM 验证。
+
+## 安装与更新
+
+打开下载的 DMG，将 `Muci.app` 拖入「应用程序」。已安装旧版的用户可通过播放器内的更新功能升级，原有资料库仍从原位置打开。
+
+- [下载安装包](https://github.com/kmgcc/kmgccc_player/releases/latest)
+- [接入 MCP、CLI 或 Agent Skill](docs/automation-mcp.md)
 
 ## 系统要求
 
