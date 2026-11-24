@@ -60,6 +60,12 @@ private enum RotatingCoverLayout {
     private static let embeddedFullscreenYOffset: CGFloat = 12
 
     static let discToBaseRatio: CGFloat = 0.75
+    /// CD 的透明外缘很窄：封面圆几乎铺满玻璃底座，只留一圈细玻璃边。
+    static let cdDiscToBaseRatio: CGFloat = 0.97
+    /// 封面环的内径：往里是一圈精致适度的透明盘心。
+    static let cdLabelInnerToBaseRatio: CGFloat = 0.31
+    /// 中心孔径，适度呈现精致真实的光碟结构。
+    static let cdHoleToBaseRatio: CGFloat = 0.14
     static let yOffsetWindow: CGFloat = 0
     static let yOffsetFullscreen: CGFloat = 32
 
@@ -70,9 +76,9 @@ private enum RotatingCoverLayout {
         let yOffset: CGFloat
     }
 
-    static func metrics(for context: SkinContext, isFullscreen: Bool) -> Metrics {
+    static func metrics(for context: SkinContext, isFullscreen: Bool, discRatio: CGFloat) -> Metrics {
         let baseSize = expandedBaseVisualSize(for: context, isFullscreen: isFullscreen)
-        let discSize = baseSize * discToBaseRatio
+        let discSize = baseSize * discRatio
         let xOffset = FullscreenCoverHorizontalOffset.artworkOffsetX(
             for: context,
             baseOffset: fullscreenSharedBaseXOffset
@@ -572,42 +578,84 @@ private extension NSImage {
         return cgImage(forProposedRect: &rect, context: nil, hints: nil)
     }
 
-    func blurCacheSignature(trackID: UUID?) -> String {
+    func blurCacheSignature(trackID: UUID?, checksum: UInt64 = 0) -> String {
         if let trackID {
-            return "track:\(trackID.uuidString)"
+            return "track:\(trackID.uuidString)-art:\(checksum)-\(self.hash)"
         }
         return "size:\(Int(size.width))x\(Int(size.height))-\(self.hash)"
+    }
+}
+
+/// 圆环：外圆减去同心内圆，内径按外径比例给出。
+nonisolated private struct RotatingCoverRingShape: Shape {
+    let innerDiameterRatio: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path(ellipseIn: rect)
+        let ratio = max(0, min(innerDiameterRatio, 1))
+        guard ratio > 0 else { return path }
+        let inset = rect.width * (1 - ratio) / 2
+        path.addEllipse(in: rect.insetBy(dx: inset, dy: inset))
+        return path
     }
 }
 
 private struct RotatingCoverDiscStack<DiscView: View>: View {
     let context: SkinContext
     let baseSize: CGFloat
+    /// CD 中心孔径占底座直径的比例；nil 时底座为实心圆。
+    let holeRatio: CGFloat?
     let discView: DiscView
 
     init(
         context: SkinContext,
         baseSize: CGFloat,
+        holeRatio: CGFloat? = nil,
         @ViewBuilder discView: () -> DiscView
     ) {
         self.context = context
         self.baseSize = baseSize
+        self.holeRatio = holeRatio
         self.discView = discView()
     }
 
     var body: some View {
         ZStack(alignment: .center) {
-            Circle()
-                .frame(width: baseSize, height: baseSize)
-                .liquidGlassCircle(
-                    colorScheme: context.theme.colorScheme,
-                    isFloating: false
-                )
+            glassBase
 
             discView
                 .frame(width: baseSize, height: baseSize, alignment: .center)
         }
         .frame(width: baseSize, height: baseSize, alignment: .center)
+    }
+
+    @ViewBuilder
+    private var glassBase: some View {
+        let glass = Circle()
+            .frame(width: baseSize, height: baseSize)
+            .liquidGlassCircle(
+                colorScheme: context.theme.colorScheme,
+                isFloating: false
+            )
+        if let holeRatio, holeRatio > 0 {
+            let holeSize = baseSize * holeRatio
+            glass
+                .mask {
+                    RotatingCoverRingShape(innerDiameterRatio: holeRatio)
+                        .fill(style: FillStyle(eoFill: true))
+                }
+                .overlay {
+                    Circle()
+                        .strokeBorder(
+                            GlassStyleTokens.glassBorderColor(for: context.theme.colorScheme),
+                            lineWidth: GlassStyleTokens.hairlineWidth
+                        )
+                        .frame(width: holeSize, height: holeSize)
+                        .allowsHitTesting(false)
+                }
+        } else {
+            glass
+        }
     }
 }
 
@@ -757,27 +805,312 @@ private final class RotatingDiscHostView<Content: View>: NSView {
     }
 }
 
+private enum RotatingCoverCDHubRenderer {
+    struct HubImages {
+        let crisp: CGImage
+        let blurred: CGImage
+    }
+
+    static func formatMatrixText(title: String, artist: String, album: String) -> String {
+        let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        let cleanArtist = artist.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        let cleanAlbum = album.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+
+        var parts: [String] = []
+        if !cleanTitle.isEmpty { parts.append(cleanTitle) }
+        if !cleanArtist.isEmpty { parts.append(cleanArtist) }
+        if !cleanAlbum.isEmpty && cleanAlbum != cleanTitle { parts.append(cleanAlbum) }
+        parts.append("COMPACT DISC DIGITAL AUDIO")
+
+        return parts.joined(separator: "  •  ") + "  •  "
+    }
+
+    static func renderHubImages(
+        baseSize: CGFloat,
+        holeRatio: CGFloat,
+        labelInnerRatio: CGFloat,
+        title: String,
+        artist: String,
+        album: String,
+        scale: CGFloat
+    ) -> HubImages? {
+        guard let crisp = renderHubImage(
+            baseSize: baseSize,
+            holeRatio: holeRatio,
+            labelInnerRatio: labelInnerRatio,
+            title: title,
+            artist: artist,
+            album: album,
+            scale: scale
+        ) else {
+            return nil
+        }
+
+        let pixelSize = max(16, Int((baseSize * scale).rounded()))
+        let blurred = renderBlurredHub(from: crisp, pixelSize: pixelSize) ?? crisp
+        return HubImages(crisp: crisp, blurred: blurred)
+    }
+
+    static func renderHubImage(
+        baseSize: CGFloat,
+        holeRatio: CGFloat,
+        labelInnerRatio: CGFloat,
+        title: String,
+        artist: String,
+        album: String,
+        scale: CGFloat
+    ) -> CGImage? {
+        guard baseSize.isFinite, baseSize > 10 else { return nil }
+
+        let pixelSize = max(16, Int((baseSize * scale).rounded()))
+        guard pixelSize > 0 else { return nil }
+
+        guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
+              let context = CGContext(
+                  data: nil,
+                  width: pixelSize,
+                  height: pixelSize,
+                  bitsPerComponent: 8,
+                  bytesPerRow: 0,
+                  space: colorSpace,
+                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+              ) else {
+            return nil
+        }
+
+        let nsCtx = NSGraphicsContext(cgContext: context, flipped: false)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = nsCtx
+
+        let center = CGPoint(x: CGFloat(pixelSize) / 2, y: CGFloat(pixelSize) / 2)
+        let s = scale
+
+        // Radii in pixels
+        let holeRadius = (baseSize * holeRatio / 2) * s
+        let labelInnerRadius = (baseSize * labelInnerRatio / 2) * s
+        guard labelInnerRadius > holeRadius + 4 else {
+            NSGraphicsContext.restoreGraphicsState()
+            return nil
+        }
+
+        // 1. Spindle hole rim (transparent inside, fine highlight ring on rim)
+        context.setStrokeColor(NSColor.white.withAlphaComponent(0.24).cgColor)
+        context.setLineWidth(1.0 * s)
+        context.addEllipse(in: CGRect(
+            x: center.x - holeRadius,
+            y: center.y - holeRadius,
+            width: holeRadius * 2,
+            height: holeRadius * 2
+        ))
+        context.strokePath()
+
+        // 2. Clamping ring (堆叠环 / 模具成型环)
+        let clampInnerRadius = holeRadius + (labelInnerRadius - holeRadius) * 0.26
+        let clampOuterRadius = holeRadius + (labelInnerRadius - holeRadius) * 0.38
+
+        context.setStrokeColor(NSColor.white.withAlphaComponent(0.14).cgColor)
+        context.setLineWidth(0.75 * s)
+        context.addEllipse(in: CGRect(
+            x: center.x - clampInnerRadius,
+            y: center.y - clampInnerRadius,
+            width: clampInnerRadius * 2,
+            height: clampInnerRadius * 2
+        ))
+        context.strokePath()
+
+        context.setStrokeColor(NSColor.white.withAlphaComponent(0.10).cgColor)
+        context.setLineWidth(0.5 * s)
+        context.addEllipse(in: CGRect(
+            x: center.x - clampOuterRadius,
+            y: center.y - clampOuterRadius,
+            width: clampOuterRadius * 2,
+            height: clampOuterRadius * 2
+        ))
+        context.strokePath()
+
+        // 3. Mirror band boundary grooves (just inside the artwork label edge)
+        let grooveRadius = labelInnerRadius - 4 * s
+        let grooveRadius2 = labelInnerRadius - 1.5 * s
+
+        context.setStrokeColor(NSColor.white.withAlphaComponent(0.18).cgColor)
+        context.setLineWidth(0.75 * s)
+        context.addEllipse(in: CGRect(
+            x: center.x - grooveRadius,
+            y: center.y - grooveRadius,
+            width: grooveRadius * 2,
+            height: grooveRadius * 2
+        ))
+        context.strokePath()
+
+        context.setStrokeColor(NSColor.white.withAlphaComponent(0.10).cgColor)
+        context.setLineWidth(0.5 * s)
+        context.addEllipse(in: CGRect(
+            x: center.x - grooveRadius2,
+            y: center.y - grooveRadius2,
+            width: grooveRadius2 * 2,
+            height: grooveRadius2 * 2
+        ))
+        context.strokePath()
+
+        // 4. Circular matrix text
+        let textRadius = (clampOuterRadius + grooveRadius) / 2
+        let textCircumference = 2 * CGFloat.pi * textRadius
+        let fontSize = max(5.5, min(8.0, baseSize * 0.018)) * s
+        let font = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .medium)
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: NSColor.white.withAlphaComponent(0.34)
+        ]
+
+        let baseText = formatMatrixText(title: title, artist: artist, album: album)
+        drawCircularText(
+            in: context,
+            baseText: baseText,
+            center: center,
+            radius: textRadius,
+            circumference: textCircumference,
+            font: font,
+            attributes: attrs
+        )
+
+        NSGraphicsContext.restoreGraphicsState()
+        return context.makeImage()
+    }
+
+    private static func drawCircularText(
+        in context: CGContext,
+        baseText: String,
+        center: CGPoint,
+        radius: CGFloat,
+        circumference: CGFloat,
+        font: NSFont,
+        attributes: [NSAttributedString.Key: Any]
+    ) {
+        let baseWidth = (baseText as NSString).size(withAttributes: attributes).width
+        guard baseWidth > 0, circumference > 0 else { return }
+
+        var fullString = baseText
+        while (fullString as NSString).size(withAttributes: attributes).width + baseWidth <= circumference {
+            fullString += baseText
+        }
+
+        let totalTextWidth = (fullString as NSString).size(withAttributes: attributes).width
+        let extraSpacing = (circumference - totalTextWidth) / CGFloat(fullString.count)
+
+        var currentAngle: CGFloat = 0
+        let capHeight = font.capHeight
+
+        for c in fullString {
+            let str = String(c) as NSString
+            let charWidth = str.size(withAttributes: attributes).width
+            let adv = charWidth + extraSpacing
+            let angleDelta = adv / radius
+            let midAngle = currentAngle + angleDelta / 2
+
+            context.saveGState()
+            context.translateBy(x: center.x, y: center.y)
+            context.rotate(by: -midAngle)
+            context.translateBy(x: 0, y: radius)
+
+            let point = CGPoint(x: -charWidth / 2, y: -capHeight / 2)
+            str.draw(at: point, withAttributes: attributes)
+
+            context.restoreGState()
+            currentAngle += angleDelta
+        }
+    }
+
+    private static func renderBlurredHub(from crisp: CGImage, pixelSize: Int) -> CGImage? {
+        guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
+              let context = CGContext(
+                  data: nil,
+                  width: pixelSize,
+                  height: pixelSize,
+                  bitsPerComponent: 8,
+                  bytesPerRow: 0,
+                  space: colorSpace,
+                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+              ) else {
+            return nil
+        }
+
+        let bounds = CGRect(x: 0, y: 0, width: pixelSize, height: pixelSize)
+        let sampleOffsets = stride(from: CGFloat(-24), through: CGFloat(24), by: CGFloat(1.5)).map { $0 }
+        let maxOffset: CGFloat = 24.0
+        let sampleWeights = sampleOffsets.map { angle in
+            let norm = abs(angle) / maxOffset
+            return 0.55 + pow(1 - norm, 0.6) * 0.85
+        }
+        let weightSum = sampleWeights.reduce(0, +)
+
+        context.interpolationQuality = .high
+        context.saveGState()
+        context.translateBy(x: bounds.midX, y: bounds.midY)
+
+        let drawRect = CGRect(
+            x: -bounds.width / 2,
+            y: -bounds.height / 2,
+            width: bounds.width,
+            height: bounds.height
+        )
+
+        for (angle, weight) in zip(sampleOffsets, sampleWeights) {
+            context.saveGState()
+            context.rotate(by: angle * .pi / 180)
+            context.setAlpha(weight / weightSum * 1.8)
+            context.draw(crisp, in: drawRect)
+            context.restoreGState()
+        }
+        context.restoreGState()
+
+        return context.makeImage()
+    }
+}
+
 private struct RotatingCDDiscLayerView: NSViewRepresentable {
     let rotation: RotatingCoverRotation
     let baseSize: CGFloat
     let discSize: CGFloat
-    let artworkImage: NSImage
+    let artworkImage: NSImage?
     let blurredImage: NSImage?
+    let trackTitle: String
+    let artistName: String
+    let albumName: String
 
     func makeCoordinator() -> Coordinator {
         Coordinator(rotation: rotation)
     }
 
+    private var labelInnerDiameter: CGFloat {
+        baseSize * RotatingCoverLayout.cdLabelInnerToBaseRatio
+    }
+
+    private var holeDiameter: CGFloat {
+        baseSize * RotatingCoverLayout.cdHoleToBaseRatio
+    }
+
     func makeNSView(context: Context) -> RotatingCDDiscHostView {
         let view = RotatingCDDiscHostView()
-        view.updateGeometry(discSize: discSize)
+        view.updateGeometry(
+            baseSize: baseSize,
+            discSize: discSize,
+            labelInnerDiameter: labelInnerDiameter,
+            holeDiameter: holeDiameter
+        )
+        view.updateTrackMetadata(title: trackTitle, artist: artistName, album: albumName)
         view.updateImages(artworkImage: artworkImage, blurredImage: blurredImage)
         context.coordinator.attach(to: view)
         return view
     }
 
     func updateNSView(_ nsView: RotatingCDDiscHostView, context: Context) {
-        nsView.updateGeometry(discSize: discSize)
+        nsView.updateGeometry(
+            baseSize: baseSize,
+            discSize: discSize,
+            labelInnerDiameter: labelInnerDiameter,
+            holeDiameter: holeDiameter
+        )
+        nsView.updateTrackMetadata(title: trackTitle, artist: artistName, album: albumName)
         nsView.updateImages(artworkImage: artworkImage, blurredImage: blurredImage)
         context.coordinator.attach(to: nsView)
     }
@@ -812,6 +1145,9 @@ private struct RotatingCDDiscLayerView: NSViewRepresentable {
                 .sink { [weak view] ratio in
                     view?.setBlurStrength(ratio)
                 }
+
+            view.setRotationAngle(rotation.anglePublisher.value)
+            view.setBlurStrength(rotation.speedRatioPublisher.value)
         }
 
         func detach() {
@@ -826,10 +1162,31 @@ private struct RotatingCDDiscLayerView: NSViewRepresentable {
 
 private final class RotatingCDDiscHostView: NSView {
     private let discRootLayer = CALayer()
+    private let artworkContainerLayer = CALayer()
     private let blurLayer = CALayer()
     private let artworkLayer = CALayer()
     private let borderLayer = CAShapeLayer()
+    private let artworkMaskLayer = CAShapeLayer()
+    private let hubCrispLayer = CALayer()
+    private let hubBlurLayer = CALayer()
+
+    private var baseSize: CGFloat = 0
     private var discSize: CGFloat = 0
+    private var labelInnerDiameter: CGFloat = 0
+    private var holeDiameter: CGFloat = 0
+    private var currentBlurCoverage: Float = 0
+
+    private struct HubKey: Equatable {
+        let baseSize: CGFloat
+        let title: String
+        let artist: String
+        let album: String
+        let scale: CGFloat
+    }
+    private var currentHubKey: HubKey?
+    private var trackTitle: String = ""
+    private var artistName: String = ""
+    private var albumName: String = ""
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -838,8 +1195,14 @@ private final class RotatingCDDiscHostView: NSView {
         layer?.masksToBounds = false
         layer?.addSublayer(discRootLayer)
 
+        let scale = NSScreen.main?.backingScaleFactor ?? 2
         discRootLayer.masksToBounds = false
-        discRootLayer.contentsScale = NSScreen.main?.backingScaleFactor ?? 2
+        discRootLayer.contentsScale = scale
+
+        artworkContainerLayer.masksToBounds = false
+        artworkMaskLayer.fillRule = .evenOdd
+        artworkMaskLayer.fillColor = NSColor.black.cgColor
+        artworkContainerLayer.mask = artworkMaskLayer
 
         blurLayer.contentsGravity = .resizeAspectFill
         blurLayer.masksToBounds = true
@@ -858,9 +1221,23 @@ private final class RotatingCDDiscHostView: NSView {
         borderLayer.strokeColor = NSColor.white.withAlphaComponent(0.12).cgColor
         borderLayer.lineWidth = 1
 
-        discRootLayer.addSublayer(artworkLayer)
-        discRootLayer.addSublayer(blurLayer)
-        discRootLayer.addSublayer(borderLayer)
+        artworkContainerLayer.addSublayer(artworkLayer)
+        artworkContainerLayer.addSublayer(blurLayer)
+        artworkContainerLayer.addSublayer(borderLayer)
+
+        hubCrispLayer.contentsGravity = .resizeAspectFill
+        hubCrispLayer.masksToBounds = false
+        hubCrispLayer.contentsScale = scale
+        hubCrispLayer.opacity = 1.0
+
+        hubBlurLayer.contentsGravity = .resizeAspectFill
+        hubBlurLayer.masksToBounds = false
+        hubBlurLayer.contentsScale = scale
+        hubBlurLayer.opacity = 0.0
+
+        discRootLayer.addSublayer(artworkContainerLayer)
+        discRootLayer.addSublayer(hubCrispLayer)
+        discRootLayer.addSublayer(hubBlurLayer)
     }
 
     @available(*, unavailable)
@@ -870,38 +1247,119 @@ private final class RotatingCDDiscHostView: NSView {
 
     override func layout() {
         super.layout()
-        guard discSize.isFinite, discSize > 1 else {
+        guard discSize.isFinite, discSize > 1, baseSize.isFinite, baseSize > 1 else {
             discRootLayer.bounds = .zero
+            artworkContainerLayer.frame = .zero
             blurLayer.frame = .zero
             artworkLayer.frame = .zero
             borderLayer.frame = .zero
             borderLayer.path = nil
+            artworkMaskLayer.frame = .zero
+            artworkMaskLayer.path = nil
+            hubCrispLayer.frame = .zero
+            hubBlurLayer.frame = .zero
             return
         }
 
+        let baseBounds = CGRect(origin: .zero, size: CGSize(width: baseSize, height: baseSize))
         let discBounds = CGRect(origin: .zero, size: CGSize(width: discSize, height: discSize))
-        discRootLayer.bounds = discBounds
+        discRootLayer.bounds = baseBounds
+
+        artworkContainerLayer.bounds = discBounds
+        artworkContainerLayer.position = CGPoint(x: baseBounds.midX, y: baseBounds.midY)
         blurLayer.frame = discBounds
         artworkLayer.frame = discBounds
         blurLayer.cornerRadius = discBounds.width / 2
         artworkLayer.cornerRadius = discBounds.width / 2
+
+        // 封面只占外环；内径以内露出底座的透明盘心。
+        let innerDiameter = min(labelInnerDiameter, discSize)
+        let innerInset = (discSize - innerDiameter) / 2
+        let innerBounds = discBounds.insetBy(dx: innerInset, dy: innerInset)
+        let ringPath = CGMutablePath()
+        ringPath.addEllipse(in: discBounds)
+        let borderPath = CGMutablePath()
+        borderPath.addEllipse(in: discBounds.insetBy(dx: 0.5, dy: 0.5))
+        if innerDiameter > 1 {
+            ringPath.addEllipse(in: innerBounds)
+            borderPath.addEllipse(in: innerBounds.insetBy(dx: -0.5, dy: -0.5))
+        }
+        artworkMaskLayer.frame = discBounds
+        artworkMaskLayer.path = ringPath
         borderLayer.frame = discBounds
-        borderLayer.path = CGPath(ellipseIn: discBounds.insetBy(dx: 0.5, dy: 0.5), transform: nil)
+        borderLayer.path = borderPath
+
+        hubCrispLayer.frame = baseBounds
+        hubBlurLayer.frame = baseBounds
+
         updateRotationAnchor()
+        updateHubImageIfNeeded()
     }
 
-    func updateGeometry(discSize: CGFloat) {
+    func updateGeometry(
+        baseSize: CGFloat,
+        discSize: CGFloat,
+        labelInnerDiameter: CGFloat,
+        holeDiameter: CGFloat
+    ) {
+        self.baseSize = baseSize.isFinite && baseSize > 0 ? baseSize : 0
         self.discSize = discSize.isFinite && discSize > 0 ? discSize : 0
+        self.labelInnerDiameter = labelInnerDiameter.isFinite && labelInnerDiameter > 0 ? labelInnerDiameter : 0
+        self.holeDiameter = holeDiameter.isFinite && holeDiameter > 0 ? holeDiameter : 0
         needsLayout = true
     }
 
-    func updateImages(artworkImage: NSImage, blurredImage: NSImage?) {
-        artworkLayer.contents = artworkImage.cgImageSnapshot()
+    func updateTrackMetadata(title: String, artist: String, album: String) {
+        if trackTitle != title || artistName != artist || albumName != album {
+            trackTitle = title
+            artistName = artist
+            albumName = album
+            currentHubKey = nil
+            updateHubImageIfNeeded()
+        }
+    }
+
+    private func updateHubImageIfNeeded() {
+        guard baseSize > 10 else { return }
+        let scale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
+        let key = HubKey(
+            baseSize: baseSize,
+            title: trackTitle,
+            artist: artistName,
+            album: albumName,
+            scale: scale
+        )
+        guard currentHubKey != key else { return }
+        currentHubKey = key
+
+        let images = RotatingCoverCDHubRenderer.renderHubImages(
+            baseSize: baseSize,
+            holeRatio: RotatingCoverLayout.cdHoleToBaseRatio,
+            labelInnerRatio: RotatingCoverLayout.cdLabelInnerToBaseRatio,
+            title: trackTitle,
+            artist: artistName,
+            album: albumName,
+            scale: scale
+        )
+        hubCrispLayer.contents = images?.crisp
+        hubCrispLayer.contentsScale = scale
+        hubBlurLayer.contents = images?.blurred
+        hubBlurLayer.contentsScale = scale
+    }
+
+    func updateImages(artworkImage: NSImage?, blurredImage: NSImage?) {
+        if let artworkImage {
+            artworkLayer.contents = artworkImage.cgImageSnapshot()
+        } else {
+            artworkLayer.contents = nil
+        }
         artworkLayer.opacity = 1
         blurLayer.contents = blurredImage?.cgImageSnapshot()
-        blurLayer.isHidden = blurredImage == nil
+        blurLayer.isHidden = (blurredImage == nil)
         if blurredImage == nil {
             blurLayer.opacity = 0
+        } else {
+            blurLayer.opacity = currentBlurCoverage
         }
     }
 
@@ -912,9 +1370,14 @@ private final class RotatingCDDiscHostView: NSView {
         blurLayer.removeAllAnimations()
         artworkLayer.removeAllAnimations()
         borderLayer.removeAllAnimations()
+        hubCrispLayer.removeAllAnimations()
+        hubBlurLayer.removeAllAnimations()
         blurLayer.contents = nil
         artworkLayer.contents = nil
+        hubCrispLayer.contents = nil
+        hubBlurLayer.contents = nil
         blurLayer.opacity = 0
+        currentHubKey = nil
         CATransaction.commit()
     }
 
@@ -940,10 +1403,17 @@ private final class RotatingCDDiscHostView: NSView {
         } else {
             coverage = baseCoverage
         }
+        currentBlurCoverage = Float(coverage)
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        blurLayer.opacity = Float(coverage)
+        if blurLayer.contents != nil {
+            blurLayer.opacity = currentBlurCoverage
+        } else {
+            blurLayer.opacity = 0
+        }
         artworkLayer.opacity = 1
+        hubBlurLayer.opacity = currentBlurCoverage
+        hubCrispLayer.opacity = 1.0 - currentBlurCoverage
         CATransaction.commit()
     }
 
@@ -990,33 +1460,48 @@ private struct RotatingCoverArtwork: View {
         cdMode ? .cd : .vinyl
     }
 
+    private var currentArtworkImage: NSImage? {
+        guard let track = context.track else { return nil }
+        if let displayedArtworkID = track.displayedArtworkID, displayedArtworkID != track.id {
+            return nil
+        }
+        return track.artworkImage
+    }
+
     private var artworkSignature: String? {
-        context.track?.artworkImage?.blurCacheSignature(trackID: context.track?.id)
+        guard let track = context.track, let image = currentArtworkImage else { return nil }
+        return image.blurCacheSignature(trackID: track.id, checksum: track.artworkChecksum)
     }
 
     var body: some View {
         let usesFullscreenLayout = context.usesFullscreenPlayerLayout
         let fillsFrame = componentConfiguration.boolean("fillsFrame", fallback: false)
         let side = min(context.contentSize.width, context.contentSize.height)
+        let discRatio = discMode == .cd
+            ? RotatingCoverLayout.cdDiscToBaseRatio
+            : RotatingCoverLayout.discToBaseRatio
         let layout = fillsFrame
-            ? RotatingCoverLayout.Metrics(discSize: side * RotatingCoverLayout.discToBaseRatio, baseSize: side, xOffset: 0, yOffset: 0)
-            : RotatingCoverLayout.metrics(for: context, isFullscreen: usesFullscreenLayout)
+            ? RotatingCoverLayout.Metrics(discSize: side * discRatio, baseSize: side, xOffset: 0, yOffset: 0)
+            : RotatingCoverLayout.metrics(for: context, isFullscreen: usesFullscreenLayout, discRatio: discRatio)
         let visualizerMode = componentConfiguration.text("visualizerMode", fallback: usesFullscreenLayout ? fullscreenVisualizerMode : normalVisualizerMode)
         let motionEnabled = context.motionPolicy == .full
 
         VStack(spacing: 32) {
             RotatingCoverDiscStack(
                 context: context,
-                baseSize: layout.baseSize
+                baseSize: layout.baseSize,
+                holeRatio: discMode == .cd ? RotatingCoverLayout.cdHoleToBaseRatio : nil
             ) {
-                if discMode == .cd,
-                   let artworkImage = context.track?.artworkImage {
+                if discMode == .cd {
                     RotatingCDDiscLayerView(
                         rotation: rotation,
                         baseSize: layout.baseSize,
                         discSize: layout.discSize,
-                        artworkImage: artworkImage,
-                        blurredImage: cdMotionBlurCache.blurredImage
+                        artworkImage: currentArtworkImage,
+                        blurredImage: cdMotionBlurCache.blurredImage,
+                        trackTitle: context.track?.title ?? "",
+                        artistName: context.track?.artist ?? "",
+                        albumName: context.track?.album ?? ""
                     )
                     .frame(width: layout.baseSize, height: layout.baseSize)
                 } else {
@@ -1083,6 +1568,12 @@ private struct RotatingCoverArtwork: View {
         .onChange(of: artworkSignature) { _, _ in
             updateCDMotionBlurCache(discSize: layout.discSize)
         }
+        .onChange(of: currentArtworkImage) { _, _ in
+            updateCDMotionBlurCache(discSize: layout.discSize)
+        }
+        .onChange(of: context.track?.displayedArtworkID) { _, _ in
+            updateCDMotionBlurCache(discSize: layout.discSize)
+        }
         .onChange(of: context.track?.preferredMotionArtwork) { _, _ in
             updateCDMotionBlurCache(discSize: layout.discSize)
         }
@@ -1092,6 +1583,7 @@ private struct RotatingCoverArtwork: View {
                 cdMotionBlurCache.clear()
                 rotation.reset()
                 rotation.setMode(discMode, isPlaying: context.playback.isPlaying)
+                updateCDMotionBlurCache(discSize: layout.discSize)
             }
         }
         .onDisappear {
@@ -1103,7 +1595,7 @@ private struct RotatingCoverArtwork: View {
     @ViewBuilder
     private func artworkView(size: CGFloat) -> some View {
         Group {
-            if let image = context.track?.artworkImage {
+            if let image = currentArtworkImage {
                 Image(nsImage: image)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
@@ -1120,7 +1612,7 @@ private struct RotatingCoverArtwork: View {
 
     private func updateCDMotionBlurCache(discSize: CGFloat) {
         cdMotionBlurCache.update(
-            artworkImage: context.track?.artworkImage,
+            artworkImage: currentArtworkImage,
             artworkSignature: artworkSignature,
             discSize: discSize,
             enabled: discMode == .cd
@@ -1196,13 +1688,17 @@ private struct PillSpectrumView: View {
     let isFullscreen: Bool
     @Environment(\.colorScheme) private var colorScheme
 
-    private let capsuleCount = CGFloat(TunedSpectrumEngine.baselineBandCount)
+    @AppStorage(SkinSpectrumBandCount.storageKey)
+    private var storedBandCount = SkinSpectrumBandCount.defaultValue
+    private var bandCount: Int { SkinSpectrumBandCount.clamped(storedBandCount) }
+    private var capsuleCount: CGFloat { CGFloat(bandCount) }
     private let capsuleWidth: CGFloat = 7
     // Keep the capsule size unchanged while tightening the gaps so the
     // spectrum reads as one continuous waveform.
     private let capsuleSpacing: CGFloat = 4
     private let horizontalPadding: CGFloat = 28
-    private let contentHeight: CGFloat = 52  // Spectrum bars height (increased from 48)
+    private let contentHeight: CGFloat = 36  // Spectrum bars height
+    private let pillContentHeight: CGFloat = 52  // Glass pill height, independent of the bars
     private var verticalPadding: CGFloat {
         isFullscreen ? 1 : 2  // Fullscreen shell gets one final compacting pass
     }
@@ -1216,7 +1712,7 @@ private struct PillSpectrumView: View {
     }
 
     private var backgroundHeight: CGFloat {
-        contentHeight + verticalPadding * 2
+        pillContentHeight + verticalPadding * 2
     }
 
     var body: some View {
@@ -1229,7 +1725,8 @@ private struct PillSpectrumView: View {
             artworkColors: context.theme.spectrumArtworkColors,
             artworkAccentColor: NSColor(pillTint ?? .white),
             capsuleWidth: capsuleWidth,
-            capsuleSpacing: capsuleSpacing
+            capsuleSpacing: capsuleSpacing,
+            bandCount: bandCount
         )
         .frame(width: contentWidth, height: contentHeight)
         .background(
@@ -1255,6 +1752,7 @@ private struct PillSpectrumContainer: NSViewRepresentable {
     let artworkAccentColor: NSColor
     let capsuleWidth: CGFloat
     let capsuleSpacing: CGFloat
+    let bandCount: Int
 
     func makeNSView(context: Context) -> CapsuleSpectrumHostView {
         let view = CapsuleSpectrumHostView(configuration: makeConfiguration())
@@ -1284,20 +1782,24 @@ private struct PillSpectrumContainer: NSViewRepresentable {
         hasher.combine(lightModeDarkening)
         hasher.combine(capsuleWidth)
         hasher.combine(capsuleSpacing)
+        hasher.combine(bandCount)
         hasher.combine(SpectrumColorResolver.colorSignature(
             artworkColors: artworkColors,
             accentColor: artworkAccentColor,
             usesDarkForeground: usesDarkForeground,
-            lightModeDarkening: lightModeDarkening
+            lightModeDarkening: lightModeDarkening,
+            capsuleCount: bandCount
         ))
         return hasher.finalize()
     }
 
     private func makeConfiguration() -> CapsuleSpectrumConfiguration {
         .centeredBars(
+            capsuleCount: bandCount,
             capsuleWidth: capsuleWidth,
             capsuleSpacing: capsuleSpacing,
-            strokeWidth: 0.5
+            strokeWidth: 0.5,
+            usesExactBands: true
         )
     }
 
@@ -1306,14 +1808,16 @@ private struct PillSpectrumContainer: NSViewRepresentable {
             artworkColors: artworkColors,
             accentColor: artworkAccentColor,
             usesDarkForeground: usesDarkForeground,
-            lightModeDarkening: lightModeDarkening
+            lightModeDarkening: lightModeDarkening,
+            capsuleCount: bandCount
         )
         view.updateColors(signature: signature) {
             let resolved = SpectrumColorResolver.resolveArtworkFaithfulColors(
                 from: artworkColors,
                 fallback: artworkAccentColor,
                 usesDarkForeground: usesDarkForeground,
-                lightModeDarkening: lightModeDarkening
+                lightModeDarkening: lightModeDarkening,
+                capsuleCount: bandCount
             )
             return (resolved.fillColors, resolved.strokeColors)
         }

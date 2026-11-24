@@ -137,7 +137,8 @@ struct ClassicCoverArtworkView: View {
                     dotSize: dotSize,
                     spacing: spacing,
                     pillTint: context.theme.artworkAccentColor,
-                    isFullscreen: usesFullscreenLayout
+                    isFullscreen: usesFullscreenLayout,
+                    forceBright: forceBrightLEDColors || context.theme.artBackgroundIsUltraDark
                 )
             }
         }
@@ -1305,15 +1306,24 @@ private struct PillSpectrumView: View {
     let spacing: CGFloat
     let pillTint: Color?
     let isFullscreen: Bool
-    @Environment(\.colorScheme) private var colorScheme
+    /// Light bars and a dark glass pill, for skins that draw over a dark
+    /// backdrop whatever the app appearance or artwork foreground says.
+    var forceBright: Bool = false
+    @Environment(\.colorScheme) private var systemColorScheme
 
-    private let capsuleCount = CGFloat(TunedSpectrumEngine.baselineBandCount)
+    private var colorScheme: ColorScheme { forceBright ? .dark : systemColorScheme }
+
+    @AppStorage(SkinSpectrumBandCount.storageKey)
+    private var storedBandCount = SkinSpectrumBandCount.defaultValue
+    private var bandCount: Int { SkinSpectrumBandCount.clamped(storedBandCount) }
+    private var capsuleCount: CGFloat { CGFloat(bandCount) }
     private let capsuleWidth: CGFloat = 7
     // Keep the capsule size unchanged while tightening the gaps so the
     // spectrum reads as one continuous waveform.
     private let capsuleSpacing: CGFloat = 4
     private let horizontalPadding: CGFloat = 28
-    private let contentHeight: CGFloat = 52  // Spectrum bars height (increased from 48)
+    private let contentHeight: CGFloat = 36  // Spectrum bars height
+    private let pillContentHeight: CGFloat = 52  // Glass pill height, independent of the bars
     private var verticalPadding: CGFloat {
         isFullscreen ? 1 : 2  // Fullscreen shell gets one final compacting pass
     }
@@ -1327,20 +1337,21 @@ private struct PillSpectrumView: View {
     }
 
     private var backgroundHeight: CGFloat {
-        contentHeight + verticalPadding * 2
+        pillContentHeight + verticalPadding * 2
     }
 
     var body: some View {
         PillSpectrumContainer(
             isPlaying: context.playback.isPlaying,
-            usesDarkForeground: context.theme.spectrumUsesDarkForeground,
+            usesDarkForeground: !forceBright && context.theme.spectrumUsesDarkForeground,
             // App light mode: darken fill + give the outline its own milder dark
             // treatment so the in-skin spectrum reads against the light glass.
             lightModeDarkening: colorScheme == .light,
             artworkColors: context.theme.spectrumArtworkColors,
             artworkAccentColor: NSColor(pillTint ?? .white),
             capsuleWidth: capsuleWidth,
-            capsuleSpacing: capsuleSpacing
+            capsuleSpacing: capsuleSpacing,
+            bandCount: bandCount
         )
         .frame(width: contentWidth, height: contentHeight)
         .background(
@@ -1366,6 +1377,7 @@ private struct PillSpectrumContainer: NSViewRepresentable {
     let artworkAccentColor: NSColor
     let capsuleWidth: CGFloat
     let capsuleSpacing: CGFloat
+    let bandCount: Int
 
     func makeNSView(context: Context) -> CapsuleSpectrumHostView {
         let view = CapsuleSpectrumHostView(configuration: makeConfiguration())
@@ -1395,20 +1407,24 @@ private struct PillSpectrumContainer: NSViewRepresentable {
         hasher.combine(lightModeDarkening)
         hasher.combine(capsuleWidth)
         hasher.combine(capsuleSpacing)
+        hasher.combine(bandCount)
         hasher.combine(SpectrumColorResolver.colorSignature(
             artworkColors: artworkColors,
             accentColor: artworkAccentColor,
             usesDarkForeground: usesDarkForeground,
-            lightModeDarkening: lightModeDarkening
+            lightModeDarkening: lightModeDarkening,
+            capsuleCount: bandCount
         ))
         return hasher.finalize()
     }
 
     private func makeConfiguration() -> CapsuleSpectrumConfiguration {
         .centeredBars(
+            capsuleCount: bandCount,
             capsuleWidth: capsuleWidth,
             capsuleSpacing: capsuleSpacing,
-            strokeWidth: 0.5
+            strokeWidth: 0.5,
+            usesExactBands: true
         )
     }
 
@@ -1417,14 +1433,16 @@ private struct PillSpectrumContainer: NSViewRepresentable {
             artworkColors: artworkColors,
             accentColor: artworkAccentColor,
             usesDarkForeground: usesDarkForeground,
-            lightModeDarkening: lightModeDarkening
+            lightModeDarkening: lightModeDarkening,
+            capsuleCount: bandCount
         )
         view.updateColors(signature: signature) {
             let resolved = SpectrumColorResolver.resolveArtworkFaithfulColors(
                 from: artworkColors,
                 fallback: artworkAccentColor,
                 usesDarkForeground: usesDarkForeground,
-                lightModeDarkening: lightModeDarkening
+                lightModeDarkening: lightModeDarkening,
+                capsuleCount: bandCount
             )
             return (resolved.fillColors, resolved.strokeColors)
         }

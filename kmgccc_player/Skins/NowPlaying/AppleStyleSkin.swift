@@ -134,7 +134,6 @@ private struct AppleStyleSettingsView: View {
     let mode: Mode
 
     @Environment(LEDMeterServiceProvider.self) private var ledMeterProvider
-    @EnvironmentObject private var themeStore: ThemeStore
     @Environment(\.fullscreenSettingsPresentationStyle) private var presentationStyle
     @Environment(\.settingsAppForegroundColors) private var appColors
 
@@ -147,13 +146,6 @@ private struct AppleStyleSettingsView: View {
             get: { AppleMeshBackgroundSpeed(rawValue: flowSpeed) ?? .standard },
             set: { flowSpeed = $0.rawValue }
         )
-    }
-
-    private var slidingKnobColor: Color {
-        if presentationStyle.usesMaterialSectionCards {
-            return presentationStyle.settingsPrimaryTextColor(appColors: appColors)
-        }
-        return themeStore.accentColor
     }
 
     var body: some View {
@@ -207,49 +199,11 @@ private struct AppleStyleSettingsView: View {
 
             Spacer()
 
-            SlidingSelector(
-                segments: AppleMeshBackgroundSpeed.allCases,
+            SettingsCapsuleSelector(
+                options: AppleMeshBackgroundSpeed.allCases,
                 selection: speedSelection,
-                hSpacing: 0,
-                background: {
-                    Color.clear
-                },
-                knob: {
-                    Capsule()
-                        .fill(slidingKnobColor.opacity(0.18))
-                },
-                content: { speed, isSelected in
-                    Text(speed.title)
-                        .font(.system(size: presentationStyle.segmentedFontSize, weight: isSelected ? .medium : .regular))
-                        .padding(.horizontal, presentationStyle.segmentedHorizontalPadding)
-                        .padding(.vertical, presentationStyle.segmentedVerticalPadding)
-                        .foregroundStyle(
-                            isSelected
-                                ? presentationStyle.settingsSelectedTextColor(
-                                    accentColor: themeStore.accentColor,
-                                    appColors: appColors
-                                )
-                                : presentationStyle.settingsSecondaryTextColor(appColors: appColors)
-                        )
-                }
+                title: \.title
             )
-            .padding(.horizontal, presentationStyle.segmentedTrackHorizontalPadding)
-            .padding(.vertical, presentationStyle.segmentedTrackVerticalPadding)
-            .background(
-                Capsule()
-                    .fill(presentationStyle.settingsSegmentedTrackColor(appColors: appColors))
-                    .overlay(
-                        Capsule()
-                            .strokeBorder(
-                                presentationStyle.segmentedTrackStrokeColor,
-                                lineWidth: presentationStyle.segmentedTrackStrokeColor == .clear
-                                    ? 0
-                                    : presentationStyle.scaledHairlineWidth
-                            )
-                            .allowsHitTesting(false)
-                    )
-            )
-            .fixedSize(horizontal: true, vertical: false)
         }
     }
 }
