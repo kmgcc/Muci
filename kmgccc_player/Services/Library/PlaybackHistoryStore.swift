@@ -25,10 +25,11 @@ struct PlaybackHistoryItem: Identifiable, Equatable, Sendable {
 final class PlaybackHistoryStore {
     /// A bounded event log keeps launch and day queries predictable even for
     /// libraries that have been played for years.
-    static let maximumStoredRecords = 10_000
+    nonisolated static let maximumStoredRecords = 10_000
 
     @ObservationIgnored private var modelContainer: ModelContainer
     @ObservationIgnored private var modelContext: ModelContext
+    @ObservationIgnored private let writer: PlaybackHistoryWriter
     @ObservationIgnored private var activeStoreURL: URL
     @ObservationIgnored private var dailyCountsCache: [Date: Int]?
     private(set) var revision: Int = 0
@@ -37,12 +38,14 @@ final class PlaybackHistoryStore {
         let container = try Self.makeContainer(context: context)
         self.modelContainer = container
         self.modelContext = ModelContext(container)
+        self.writer = PlaybackHistoryWriter(container: container)
         self.activeStoreURL = context.paths.playbackHistoryStoreURL
     }
 
     private init(inMemoryContainer: ModelContainer) {
         self.modelContainer = inMemoryContainer
         self.modelContext = ModelContext(inMemoryContainer)
+        self.writer = PlaybackHistoryWriter(container: inMemoryContainer)
         self.activeStoreURL = URL(fileURLWithPath: "/dev/null/kmgccc-playback-history")
     }
 
@@ -75,26 +78,42 @@ final class PlaybackHistoryStore {
         duration: Double,
         playedSeconds: Double
     ) {
-        let record = PlaybackHistoryRecord(
-            trackID: trackID,
-            playedAt: playedAt,
-            title: title,
-            artist: artist,
-            album: album,
-            duration: max(0, duration),
-            playedSeconds: max(0, playedSeconds)
+        // Synchronous path for termination flushes and tests. It waits behind
+        // any in-flight background write so ordering stays intact.
+        let entry = PlaybackHistoryWriter.Entry(
+            trackID: trackID, playedAt: playedAt, title: title, artist: artist,
+            album: album, duration: duration, playedSeconds: playedSeconds
         )
-        modelContext.insert(record)
+        guard writer.writeAndWait(entry) else { return }
+        publishRecordedChange()
+    }
 
-        do {
-            try trimIfNeeded()
-            try modelContext.save()
-        } catch {
-            modelContext.rollback()
-            Log.error("[PlaybackHistory] save failed: \(error)", category: .library)
-            return
-        }
+    /// Insert, trim and save on the writer's own context so a track switch
+    /// never waits on SQLite I/O. Observers are notified on the main actor
+    /// after the row is durable.
+    func recordInBackground(
+        trackID: UUID,
+        playedAt: Date,
+        title: String,
+        artist: String,
+        album: String,
+        duration: Double,
+        playedSeconds: Double
+    ) async {
+        let entry = PlaybackHistoryWriter.Entry(
+            trackID: trackID, playedAt: playedAt, title: title, artist: artist,
+            album: album, duration: duration, playedSeconds: playedSeconds
+        )
+        guard await writer.write(entry) else { return }
+        publishRecordedChange()
+    }
 
+    /// Blocks until queued background writes have reached the store.
+    func waitForPendingWrites() {
+        writer.waitUntilIdle()
+    }
+
+    private func publishRecordedChange() {
         // A trim can remove records from the same day as the new event, so
         // invalidate rather than incrementing a potentially stale aggregate.
         dailyCountsCache = nil
@@ -269,19 +288,6 @@ final class PlaybackHistoryStore {
         }
     }
 
-    private func trimIfNeeded() throws {
-        let count = try modelContext.fetchCount(FetchDescriptor<PlaybackHistoryRecord>())
-        guard count > Self.maximumStoredRecords else { return }
-
-        var descriptor = FetchDescriptor<PlaybackHistoryRecord>(
-            sortBy: [SortDescriptor(\PlaybackHistoryRecord.playedAt, order: .forward)]
-        )
-        descriptor.fetchLimit = count - Self.maximumStoredRecords
-        for record in try modelContext.fetch(descriptor) {
-            modelContext.delete(record)
-        }
-    }
-
     private static func makeItem(_ record: PlaybackHistoryRecord) -> PlaybackHistoryItem {
         PlaybackHistoryItem(
             id: record.id,
@@ -408,6 +414,102 @@ final class PlaybackHistoryStore {
         }
 
         return movedStore
+    }
+}
+
+/// Serial writer for new history events. It owns a second context on the
+/// same container and touches it only on its queue, so inserts, trims and
+/// saves stay off the main thread. Reads and user deletions keep using the
+/// store's main-actor context, whose fetches go to the shared store.
+private nonisolated final class PlaybackHistoryWriter: @unchecked Sendable {
+    struct Entry: Sendable {
+        let trackID: UUID
+        let playedAt: Date
+        let title: String
+        let artist: String
+        let album: String
+        let duration: Double
+        let playedSeconds: Double
+    }
+
+    /// Counting and trimming the oldest rows needs a sorted scan of the whole
+    /// table. Checking on the first write and then every N writes keeps the
+    /// log bounded (it may exceed the cap by at most N - 1 rows in between).
+    private static let trimCheckInterval = 64
+
+    private let container: ModelContainer
+    private let queue = DispatchQueue(label: "kmgccc.playback-history.writer", qos: .utility)
+    private var context: ModelContext?
+    private var writesSinceTrimCheck = PlaybackHistoryWriter.trimCheckInterval
+
+    init(container: ModelContainer) {
+        self.container = container
+    }
+
+    func write(_ entry: Entry) async -> Bool {
+        await withCheckedContinuation { continuation in
+            queue.async {
+                continuation.resume(returning: self.perform(entry))
+            }
+        }
+    }
+
+    func writeAndWait(_ entry: Entry) -> Bool {
+        queue.sync { perform(entry) }
+    }
+
+    func waitUntilIdle() {
+        queue.sync {}
+    }
+
+    /// Runs only on `queue`.
+    private func perform(_ entry: Entry) -> Bool {
+        let context: ModelContext
+        if let existing = self.context {
+            context = existing
+        } else {
+            context = ModelContext(container)
+            context.autosaveEnabled = false
+            self.context = context
+        }
+
+        context.insert(PlaybackHistoryRecord(
+            trackID: entry.trackID,
+            playedAt: entry.playedAt,
+            title: entry.title,
+            artist: entry.artist,
+            album: entry.album,
+            duration: max(0, entry.duration),
+            playedSeconds: max(0, entry.playedSeconds)
+        ))
+
+        do {
+            writesSinceTrimCheck += 1
+            if writesSinceTrimCheck >= Self.trimCheckInterval {
+                writesSinceTrimCheck = 0
+                try trimIfNeeded(in: context)
+            }
+            try context.save()
+            return true
+        } catch {
+            context.rollback()
+            Log.error("[PlaybackHistory] save failed: \(error)", category: .library)
+            return false
+        }
+    }
+
+    private func trimIfNeeded(in context: ModelContext) throws {
+        let limit = PlaybackHistoryStore.maximumStoredRecords
+        let count = try context.fetchCount(FetchDescriptor<PlaybackHistoryRecord>())
+        guard count > limit else { return }
+
+        var descriptor = FetchDescriptor<PlaybackHistoryRecord>(
+            sortBy: [SortDescriptor(\PlaybackHistoryRecord.playedAt, order: .forward)]
+        )
+        descriptor.fetchLimit = count - limit
+        for record in try context.fetch(descriptor) {
+            context.delete(record)
+        }
     }
 }
 

@@ -691,10 +691,21 @@ final class LibraryLoudnessService: BackgroundWorkSource {
         }
         states[trackID] = .measuring(phase: .readingTags, fraction: nil)
         let mediaSelection = track.mediaSelection
-        let resolution = track.resolveFileURL()
+        // Bookmark resolution and the file identity (resource values + path
+        // digest) are file-system work; keep them off the main actor so a
+        // measurement that starts right after a track switch cannot stall it.
+        let resolution = await track.resolveFileURLOffMain()
         defer { resolution.lease.release() }
-        guard let fileURL = resolution.url,
-              let identity = try? Self.fileIdentity(for: fileURL, selection: track.mediaSelection) else {
+        let resolvedIdentity: LoudnessFileIdentity?
+        if let resolvedURL = resolution.url {
+            resolvedIdentity = await Task.detached(priority: context.taskPriority) {
+                try? Self.fileIdentity(for: resolvedURL, selection: mediaSelection)
+            }.value
+        } else {
+            resolvedIdentity = nil
+        }
+        guard !isClosed else { return .cancelled }
+        guard let fileURL = resolution.url, let identity = resolvedIdentity else {
             let message = "无法打开这首歌曲的音频文件。"
             finishFailure(trackID, message: message)
             return .failed(message)
@@ -726,7 +737,12 @@ final class LibraryLoudnessService: BackgroundWorkSource {
                 )
             }.value
             guard !isClosed else { return .cancelled }
-            guard (try? Self.fileIdentity(for: fileURL, selection: track.mediaSelection)) == identity, trim == playbackAACGaplessTrimEnabled else {
+            let currentSelection = track.mediaSelection
+            let finalIdentity = await Task.detached(priority: context.taskPriority) {
+                try? Self.fileIdentity(for: fileURL, selection: currentSelection)
+            }.value
+            guard !isClosed else { return .cancelled }
+            guard finalIdentity == identity, trim == playbackAACGaplessTrimEnabled else {
                 let message = "音频文件正在变化，请稍后重试。"
                 finishFailure(trackID, message: message)
                 return .failed(message)

@@ -216,6 +216,20 @@ final class LocalLibraryService {
     private var acceptsBackgroundWrites = true
     private var backgroundWriteTasks: [UUID: Task<Void, Never>] = [:]
 
+    /// Identifies one on-disk version of a playlist sidecar. Atomic writes
+    /// replace the file, so any writer changes the inode or mtime.
+    private struct PlaylistSidecarStamp: Equatable {
+        let inode: UInt64
+        let size: Int64
+        let modifiedSeconds: Int
+        let modifiedNanoseconds: Int
+    }
+
+    /// Views read the artwork revision from `body` (task identities, cache
+    /// keys). Revalidate with one `stat` instead of reading and decoding the
+    /// sidecar JSON on every evaluation.
+    private var playlistArtworkRevisionCache: [UUID: (stamp: PlaylistSidecarStamp?, revision: String?)] = [:]
+
     init(
         paths: LibraryPaths,
         preferenceStatsService: PreferenceStatsService,
@@ -1564,7 +1578,24 @@ final class LocalLibraryService {
     }
 
     func playlistArtworkRevision(playlistID: UUID) -> String? {
-        loadPlaylistSidecar(playlistID: playlistID)?.artworkRevision
+        let stamp = Self.playlistSidecarStamp(at: paths.playlistURL(for: playlistID))
+        if let cached = playlistArtworkRevisionCache[playlistID], cached.stamp == stamp {
+            return cached.revision
+        }
+        let revision = loadPlaylistSidecar(playlistID: playlistID)?.artworkRevision
+        playlistArtworkRevisionCache[playlistID] = (stamp, revision)
+        return revision
+    }
+
+    private static func playlistSidecarStamp(at url: URL) -> PlaylistSidecarStamp? {
+        var info = stat()
+        guard stat(url.path, &info) == 0 else { return nil }
+        return PlaylistSidecarStamp(
+            inode: UInt64(info.st_ino),
+            size: Int64(info.st_size),
+            modifiedSeconds: Int(info.st_mtimespec.tv_sec),
+            modifiedNanoseconds: Int(info.st_mtimespec.tv_nsec)
+        )
     }
 
     nonisolated func playlistSortPreference(playlistID: UUID) -> (key: String, order: String)? {

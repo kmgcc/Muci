@@ -11,8 +11,12 @@ import SwiftData
 /// One effective playback session. This is deliberately separate from the
 /// per-track preference statistics stored in `meta.json`: a timeline needs one
 /// row per session and must not make library sidecars grow without bound.
+///
+/// Nonisolated so `PlaybackHistoryStore`'s background writer can insert and
+/// trim rows on its own context; each instance stays confined to the context
+/// that created or fetched it.
 @Model
-final class PlaybackHistoryRecord {
+nonisolated final class PlaybackHistoryRecord {
     @Attribute(.unique) var id: UUID
     var trackID: UUID
     var playedAt: Date

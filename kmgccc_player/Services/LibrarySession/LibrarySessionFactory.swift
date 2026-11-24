@@ -574,12 +574,16 @@ final class LibrarySessionFactory: LibrarySessionBuilding {
     ) -> [UUID] {
         var updated: [UUID] = []
         for sibling in tracks where sibling.id != excluding && sibling.motionArtwork?.isUserSelected != true {
+            // Cheap equality first: this runs over the whole library on the
+            // main actor, and building each sibling's enrichment query is the
+            // expensive part. A sibling that already holds `artwork` is skipped
+            // by the guard below either way.
+            guard sibling.motionArtwork != artwork else { continue }
             let siblingRecord = MusicEnrichmentRecord(query: MusicEnrichmentWorkSource.query(sibling))
             guard let siblingIdentity = siblingRecord.motionAlbumIdentity,
                   (siblingIdentity.catalogAlbumID != nil && siblingIdentity.catalogAlbumID == identity.catalogAlbumID)
                     || (identity.fallbackKey != nil && siblingIdentity.fallbackKey == identity.fallbackKey
-                        && (siblingIdentity.catalogAlbumID == nil || identity.catalogAlbumID == nil || siblingIdentity.catalogAlbumID == identity.catalogAlbumID)),
-                  sibling.motionArtwork != artwork else { continue }
+                        && (siblingIdentity.catalogAlbumID == nil || identity.catalogAlbumID == nil || siblingIdentity.catalogAlbumID == identity.catalogAlbumID)) else { continue }
             sibling.motionArtwork = artwork
             updated.append(sibling.id)
             _ = libraryService?.writeMetaOnly(for: sibling, reason: "albumMotionArtwork")
