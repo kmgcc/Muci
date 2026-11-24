@@ -16,5 +16,6 @@ mkdir -p "$dst_dir"
   -framework AppKit -framework Security "$src" -o "$dst"
 
 if [[ "${CODE_SIGNING_ALLOWED:-NO}" == YES && -n "${EXPANDED_CODE_SIGN_IDENTITY:-}" ]]; then
-  /usr/bin/codesign --force --sign "$EXPANDED_CODE_SIGN_IDENTITY" --timestamp=none "$dst"
+  /usr/bin/codesign --force --identifier muci-install-migration \
+    --sign "$EXPANDED_CODE_SIGN_IDENTITY" --timestamp=none "$dst"
 fi

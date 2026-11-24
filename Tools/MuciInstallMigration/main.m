@@ -82,8 +82,11 @@ int main(int argc, const char *argv[])
         pid_t oldPID = getppid();
         char parentExecutable[PROC_PIDPATHINFO_MAXSIZE];
         NSString *expectedExecutable = [source URLByAppendingPathComponent:executablePath].path;
-        if (oldPID <= 1 || proc_pidpath(oldPID, parentExecutable, sizeof(parentExecutable)) <= 0 ||
-            ![expectedExecutable isEqualToString:@(parentExecutable)] ||
+        if (oldPID <= 1 || proc_pidpath(oldPID, parentExecutable, sizeof(parentExecutable)) <= 0) {
+            return EXIT_FAILURE;
+        }
+        NSURL *actualExecutable = [NSURL fileURLWithPath:@(parentExecutable)].URLByStandardizingPath;
+        if (![expectedExecutable isEqualToString:actualExecutable.path] ||
             ![source.lastPathComponent isEqualToString:@LEGACY_APP_NAME] ||
             ![source.path isEqualToString:source.URLByResolvingSymlinksInPath.path] ||
             [source.pathComponents containsObject:@"AppTranslocation"] ||
