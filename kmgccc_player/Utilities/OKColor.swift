@@ -669,6 +669,36 @@ nonisolated enum PerceptualToneLadder {
         }
     }
 
+    /// A light's colour as it fades into haze, at `t` from the source (0) to the faintest outer
+    /// veil (1). Close to the source the light is intense enough to read almost white, as an
+    /// overexposed lamp does; the colour appears as it thins, and the faint outer veil is the
+    /// richest. Its hue drifts by family on the way out, deeper than the LED ladder's but inside
+    /// the 0.07 ceiling where a colour still reads as itself: yellow toward red, red toward
+    /// purple, green and cyan toward blue, blue toward violet. A light with no visible hue stays
+    /// neutral. `saturation` scales the whole ladder's chroma: 0 is a neutral light, 1 the
+    /// designed ladder, 2 twice as rich (the display gamut still bounds it).
+    static func glowFalloffTone(_ base: OKColor.OKLCH, t: CGFloat, saturation: CGFloat = 1) -> OKColor.OKLCH {
+        let k = pow(min(1, max(0, t)), 0.8)
+        let s = min(2, max(0, saturation))
+        guard base.c >= LEDPerceptualPolicy.visibleHueChromaFloor else { return OKColor.OKLCH(l: base.l, c: base.c * s, h: base.h) }
+        let far = min(0.22, max(base.c * 2, 0.08))
+        let chroma = far * (0.08 + 0.92 * pow(k, 1.4)) * s
+        return OKColor.OKLCH(l: base.l, c: chroma, h: OKColor.normalizedHue(base.h + glowFamilyDrift(base.h) * k))
+    }
+
+    private static func glowFamilyDrift(_ h: CGFloat) -> CGFloat {
+        switch OKColor.normalizedHue(h) {
+        case 0.00..<0.06, 0.94..<1.00: return -0.050  // red veils lean purple
+        case 0.06..<0.18:              return -0.050  // orange and amber toward red
+        case 0.18..<0.32:              return -0.060  // pale yellow warms toward orange-red
+        case 0.32..<0.48:              return 0.060   // green toward teal and blue
+        case 0.48..<0.62:              return 0.050   // cyan toward blue
+        case 0.62..<0.76:              return 0.045   // blue toward indigo
+        case 0.76..<0.88:              return 0.035   // violet toward magenta
+        default:                       return -0.025  // magenta back toward purple
+        }
+    }
+
     // Family drifts — tighter than v1 so hue identity is preserved.
     // Values are in normalised hue units (1.0 == 360°); ±0.012 ≈ ±4.3°.
     private static func familyShadowDrift(_ h: CGFloat) -> CGFloat {
