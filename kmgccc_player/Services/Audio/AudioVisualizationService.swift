@@ -14,6 +14,9 @@ import os
 nonisolated struct SpectrumWaveFrame: Sendable {
     let legacy: [Float]
     let detailed: [Float]
+    /// Independent N-band waves for the counts consumers asked for (> 6).
+    /// Empty until a consumer registers a count.
+    var custom: [Int: [Float]] = [:]
 }
 
 nonisolated final class AudioVisualizationService: @unchecked Sendable {
@@ -49,6 +52,10 @@ nonisolated final class AudioVisualizationService: @unchecked Sendable {
 
     private var consumers: [UUID: Consumer] = [:]
     private var adaptiveConsumers: [UUID: AdaptiveConsumer] = [:]
+    /// Exact band count each adaptive consumer asked for. Guarded by `consumerLock`.
+    private var adaptiveBandCounts: [UUID: Int] = [:]
+    private var outputCustomWaves: [Int: [Float]] = [:]
+    private var lastPublishedCustomWaves: [Int: [Float]] = [:]
     private var hubConsumerId: UUID?
     private var hasHubLease = false
     private var timer: DispatchSourceTimer?
@@ -206,18 +213,20 @@ nonisolated final class AudioVisualizationService: @unchecked Sendable {
         return id
     }
 
-    func addAdaptiveConsumer(_ callback: @escaping AdaptiveConsumer) -> UUID {
+    func addAdaptiveConsumer(bandCount: Int? = nil, _ callback: @escaping AdaptiveConsumer) -> UUID {
         let id = UUID()
 
         consumerLock.lock()
         let isFirstDetailedConsumer = adaptiveConsumers.isEmpty
         adaptiveConsumers[id] = callback
+        if let bandCount { adaptiveBandCounts[id] = bandCount }
         consumerLock.unlock()
 
         let initialFrame = processingQueue.sync {
             if isFirstDetailedConsumer {
                 resetDetailedSpectrumLocked()
             }
+            syncCustomBandCountsLocked()
             reconcileConsumerDemandLocked()
             return SpectrumWaveFrame(
                 legacy: lastPublishedWave,
@@ -231,10 +240,35 @@ nonisolated final class AudioVisualizationService: @unchecked Sendable {
         return id
     }
 
+    /// Changes the exact band count an adaptive consumer receives.
+    func setAdaptiveBandCount(_ id: UUID, count: Int?) {
+        consumerLock.lock()
+        let known = adaptiveConsumers[id] != nil
+        if known { adaptiveBandCounts[id] = count }
+        consumerLock.unlock()
+        guard known else { return }
+        processingQueue.async { [weak self] in
+            self?.syncCustomBandCountsLocked()
+        }
+    }
+
+    private func requestedCustomBandCounts() -> [Int] {
+        consumerLock.lock()
+        defer { consumerLock.unlock() }
+        let counts = Set(adaptiveBandCounts.values.filter { $0 > Constants.bandCount })
+        return counts.sorted()
+    }
+
+    /// Hands the engine the counts it must keep a chain for. processingQueue only.
+    private func syncCustomBandCountsLocked() {
+        tunedEngine.setExtraBandCounts(Set(requestedCustomBandCounts()))
+    }
+
     func removeConsumer(_ id: UUID) {
         consumerLock.lock()
         consumers.removeValue(forKey: id)
         let removedDetailedConsumer = adaptiveConsumers.removeValue(forKey: id) != nil
+        adaptiveBandCounts.removeValue(forKey: id)
         let hasDetailedConsumers = !adaptiveConsumers.isEmpty
         consumerLock.unlock()
 
@@ -243,6 +277,7 @@ nonisolated final class AudioVisualizationService: @unchecked Sendable {
             if removedDetailedConsumer, !hasDetailedConsumers {
                 self.resetDetailedSpectrumLocked()
             }
+            self.syncCustomBandCountsLocked()
             self.reconcileConsumerDemandLocked()
         }
     }
@@ -271,6 +306,8 @@ nonisolated final class AudioVisualizationService: @unchecked Sendable {
         liveDetailedWave = DetailedSpectrumProcessor.zeroWave
         outputDetailedWave = DetailedSpectrumProcessor.zeroWave
         lastPublishedDetailedWave = DetailedSpectrumProcessor.zeroWave
+        outputCustomWaves = [:]
+        lastPublishedCustomWaves = [:]
         pendingSampleRate = Constants.defaultSampleRate
         hasPendingFFT = false
         poseBlend = 0
@@ -312,6 +349,8 @@ nonisolated final class AudioVisualizationService: @unchecked Sendable {
         liveDetailedWave = DetailedSpectrumProcessor.zeroWave
         outputDetailedWave = DetailedSpectrumProcessor.zeroWave
         lastPublishedDetailedWave = DetailedSpectrumProcessor.zeroWave
+        outputCustomWaves = [:]
+        lastPublishedCustomWaves = [:]
         hasPendingFFT = false
         poseBlend = 0
         pauseStartTime = nil
@@ -373,6 +412,8 @@ nonisolated final class AudioVisualizationService: @unchecked Sendable {
         liveDetailedWave = DetailedSpectrumProcessor.zeroWave
         outputDetailedWave = DetailedSpectrumProcessor.zeroWave
         lastPublishedDetailedWave = DetailedSpectrumProcessor.zeroWave
+        outputCustomWaves = [:]
+        lastPublishedCustomWaves = [:]
     }
 
     /// Renderer-clock PCM tap. Runs on the renderer's analysis queue, so the
@@ -501,6 +542,23 @@ nonisolated final class AudioVisualizationService: @unchecked Sendable {
                 let pose = detailedIdlePattern[index]
                 outputDetailedWave[index] = live + (pose - live) * poseBlend
             }
+            // Exact-count waves: each registered count has its own chain (or, for
+            // external sources, a resample of the baseline wave) and blends to
+            // the rest pose resampled to the same count.
+            var custom: [Int: [Float]] = [:]
+            for count in requestedCustomBandCounts() {
+                let live = isExternalMode
+                    ? TunedSpectrumEngine.resample(liveWave, to: count)
+                    : tunedEngine.wave(bandCount: count)
+                let pose = TunedSpectrumEngine.resample(Self.restPose, to: count)
+                custom[count] = (0..<count).map { index in
+                    let value = index < live.count ? live[index] : 0
+                    return value + (pose[index] - value) * poseBlend
+                }
+            }
+            outputCustomWaves = custom
+        } else if !outputCustomWaves.isEmpty {
+            outputCustomWaves = [:]
         }
 
         #if DEBUG
@@ -525,6 +583,16 @@ nonisolated final class AudioVisualizationService: @unchecked Sendable {
                     max(partial, abs(pair.0 - pair.1))
                 }
             maxDelta = max(maxDelta, detailedDelta)
+            for (count, wave) in outputCustomWaves {
+                guard let previous = lastPublishedCustomWaves[count], previous.count == wave.count else {
+                    maxDelta = max(maxDelta, 1)
+                    continue
+                }
+                let customDelta = zip(wave, previous).reduce(Float.zero) { partial, pair in
+                    max(partial, abs(pair.0 - pair.1))
+                }
+                maxDelta = max(maxDelta, customDelta)
+            }
         }
         let uiColdPathActive = FirstUseHitchDiagnostics.currentMainOperationDescription() != nil
         let minPublishInterval = uiColdPathActive ? (1.0 / 15.0) : 0
@@ -538,11 +606,13 @@ nonisolated final class AudioVisualizationService: @unchecked Sendable {
         lastPublishedWave = outputWave
         if hasDetailedConsumers {
             lastPublishedDetailedWave = outputDetailedWave
+            lastPublishedCustomWaves = outputCustomWaves
         }
         publish(
             SpectrumWaveFrame(
                 legacy: outputWave,
-                detailed: outputDetailedWave
+                detailed: outputDetailedWave,
+                custom: outputCustomWaves
             )
         )
     }

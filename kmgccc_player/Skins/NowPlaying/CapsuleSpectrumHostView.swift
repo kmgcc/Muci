@@ -50,9 +50,14 @@ struct CapsuleSpectrumDynamics: Equatable {
     /// attack/release envelope, so the spring's job is purely visual: add a
     /// short, clear overshoot on transients and a crisp rebound, without
     /// smoothing over the signal's own fast decay.
-    /// The tuned display spring: 0.325 s / ζ=0.83 (ω=27.5 rad/s, 0.9% overshoot).
-    /// Matches the reference recordings the algorithm was fitted against.
-    static let standard = CapsuleSpectrumDynamics(response: 0.325, dampingFraction: 0.83)
+    /// Display spring, ζ=0.83 (0.9% overshoot). The fit (recordings the algorithm
+    /// was tuned against) stores a settle duration of 0.325 s with
+    /// ω = 8.95 / duration = 27.54 rad/s, i.e. a period of 0.2282 s. Running the
+    /// fitted speed read as too jumpy once the bars were narrower bands, while the
+    /// earlier 0.325 s period (ω=19.3) read as lag. 0.27 s (ω≈23.3) sits between;
+    /// set it to 0.2282 for the fitted speed. Now 0.30 s (ω≈20.9) after 0.27 s
+    /// still read slightly quick.
+    static let standard = CapsuleSpectrumDynamics(response: 0.30, dampingFraction: 0.83)
     /// Tighter, less bounce — quick and composed.
     static let tight = CapsuleSpectrumDynamics(response: 0.10, dampingFraction: 0.80)
     /// Looser and bouncier — bigger overshoot.
@@ -122,6 +127,9 @@ struct CapsuleSpectrumConfiguration {
     var levelShaping: LevelShaping
     /// Opts adaptive MiniPlayer spectra into raw-FFT sub-band sampling.
     var usesDetailedSampling: Bool
+    /// Asks the service for an independent chain with exactly `capsuleCount`
+    /// bands (> 6) instead of resampling the 36-band wave.
+    var usesExactBands: Bool
     /// Selects the follower implementation. Production defaults to the closed
     /// form integrator; the Apple evaluator is an opt-in debug A/B backend.
     var motionBackend: CapsuleSpectrumMotionBackend
@@ -151,6 +159,7 @@ struct CapsuleSpectrumConfiguration {
         heightBoost: CGFloat = 1.0,
         levelShaping: LevelShaping = .standard,
         usesDetailedSampling: Bool = false,
+        usesExactBands: Bool = false,
         motionBackend: CapsuleSpectrumMotionBackend = .closedForm,
         metrics: @escaping (_ bounds: CGRect, _ count: Int) -> CapsuleSpectrumMetrics
     ) {
@@ -162,6 +171,7 @@ struct CapsuleSpectrumConfiguration {
         self.heightBoost = heightBoost
         self.levelShaping = levelShaping
         self.usesDetailedSampling = usesDetailedSampling
+        self.usesExactBands = usesExactBands
         self.motionBackend = motionBackend
         self.metrics = metrics
     }
@@ -180,6 +190,7 @@ struct CapsuleSpectrumConfiguration {
         pausedBehavior: CapsuleSpectrumPausedBehavior = .idlePose,
         levelShaping: LevelShaping = .standard,
         usesDetailedSampling: Bool = false,
+        usesExactBands: Bool = false,
         motionBackend: CapsuleSpectrumMotionBackend = .closedForm
     ) -> CapsuleSpectrumConfiguration {
         CapsuleSpectrumConfiguration(
@@ -191,6 +202,7 @@ struct CapsuleSpectrumConfiguration {
             heightBoost: 1.0,
             levelShaping: levelShaping,
             usesDetailedSampling: usesDetailedSampling,
+            usesExactBands: usesExactBands,
             motionBackend: motionBackend
         ) { bounds, count in
             let totalWidth = CGFloat(count) * capsuleWidth
@@ -306,6 +318,12 @@ final class CapsuleSpectrumHostView: NSView {
 
     private var count: Int { max(1, configuration.capsuleCount) }
 
+    /// The exact band count to request from the service, or nil to use the
+    /// shared 6 / 36 waves.
+    private var exactBandRequest: Int? {
+        configuration.usesExactBands && count > TunedSpectrumEngine.baselineBandCount ? count : nil
+    }
+
     // MARK: Configuration
 
     /// Re-apply geometry / spring / stroke / pause config. Cheap; safe to call
@@ -316,6 +334,7 @@ final class CapsuleSpectrumHostView: NSView {
         let samplingChanged = newConfiguration.usesDetailedSampling != configuration.usesDetailedSampling
         let nextMotionBackend = Self.resolveMotionBackend(newConfiguration.motionBackend)
         let motionBackendChanged = nextMotionBackend != motionBackend
+        let wasExactBands = configuration.usesExactBands
         configuration = newConfiguration
         motionBackend = nextMotionBackend
         if motionBackendChanged {
@@ -325,6 +344,9 @@ final class CapsuleSpectrumHostView: NSView {
             resizeFollowerState()
             rebuildCapsuleLayers()
             lastColorSignature = nil // force color re-apply for the new layers
+        }
+        if countChanged || newConfiguration.usesExactBands != wasExactBands, let consumerID {
+            service.setAdaptiveBandCount(consumerID, count: exactBandRequest)
         }
         if countChanged || samplingChanged {
             applyWave(latestWaveFrame)
@@ -365,7 +387,7 @@ final class CapsuleSpectrumHostView: NSView {
 
     private func acquireConsumerIfNeeded() {
         guard consumerID == nil else { return }
-        consumerID = service.addAdaptiveConsumer { [weak self] frame in
+        consumerID = service.addAdaptiveConsumer(bandCount: exactBandRequest) { [weak self] frame in
             self?.applyWave(frame)
         }
         hasServiceLease = true
@@ -461,9 +483,14 @@ final class CapsuleSpectrumHostView: NSView {
         // Above six bars the six-band contour can no longer address every
         // capsule, so surfaces fall back to the engine's independent
         // sub-band wave (36 values) and resample it to their own count.
-        let wave = count > TunedSpectrumEngine.baselineBandCount
-            ? frame.detailed
-            : frame.legacy
+        let wave: [Float]
+        if configuration.usesExactBands, let exact = frame.custom[count] {
+            wave = exact
+        } else if count > TunedSpectrumEngine.baselineBandCount {
+            wave = frame.detailed
+        } else {
+            wave = frame.legacy
+        }
         let sampledWave = Self.resampledWave(wave, targetCount: count)
         var changed = false
         for index in 0..<count {

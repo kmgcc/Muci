@@ -190,7 +190,17 @@ nonisolated final class TunedSpectrumEngine: @unchecked Sendable {
     /// no second window and no second scale.
     private static let windowSize = 2048
 
+    /// Level trim for sub-bands that are a slice of an Apple band. A slice holds
+    /// the band's energy in fewer bins, so on real music it reads hotter than the
+    /// six-band value it descends from; measured on loud masters, nine bars ran
+    /// ~18% higher on average and pinned the top three times as often. 0.85 puts
+    /// the mean back level with the six-bar contour. Whole Apple bands are exempt.
+    static let subBandTrim = 0.85
+
     private var chains: [Int: TunedSpectrumChain] = [:]
+    /// Counts beyond the fixed three that a surface asked for (skin spectrum).
+    /// Only touched from the service's processing queue.
+    private var extraCounts: Set<Int> = []
     private var sampleRate: Double = 48_000
     private var layoutBinWidth: Double = 48_000.0 / 1024.0
 
@@ -217,6 +227,18 @@ nonisolated final class TunedSpectrumEngine: @unchecked Sendable {
         chains.values.forEach { $0.reset() }
         lastPCM = []
         elapsedSinceTick = 0
+    }
+
+    /// Keeps an independent chain for each requested count (> 6), so a surface
+    /// with N capsules gets N real bands instead of a resample of the 36.
+    func setExtraBandCounts(_ counts: Set<Int>) {
+        let fixed: Set<Int> = [Self.baselineBandCount, Self.cassetteBandCount, Self.detailedBandCount]
+        let wanted = counts.subtracting(fixed).filter { $0 > Self.baselineBandCount }
+        guard wanted != extraCounts else { return }
+        extraCounts = wanted
+        for key in chains.keys where !fixed.contains(key) && !wanted.contains(key) {
+            chains[key] = nil
+        }
     }
 
     // MARK: Tick
@@ -327,7 +349,7 @@ nonisolated final class TunedSpectrumEngine: @unchecked Sendable {
                 if Self.isWholeParentBand(index, layout: layout) {
                     acc[index] = coarse[parent]
                 } else {
-                    acc[index] = rows[index] * weights[index] / scale
+                    acc[index] = rows[index] * weights[index] / scale * Self.subBandTrim
                 }
             }
             chain.step(acc: acc, dt: dt)
@@ -344,6 +366,7 @@ nonisolated final class TunedSpectrumEngine: @unchecked Sendable {
 
     private func ensureChains() {
         let needed = [Self.baselineBandCount, Self.cassetteBandCount, Self.detailedBandCount]
+            + extraCounts.sorted()
         for count in needed where chains[count] == nil {
             chains[count] = TunedSpectrumChain(bandCount: count, binWidth: layoutBinWidth)
         }
