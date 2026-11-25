@@ -1,5 +1,8 @@
 <p align="center">
-  <img src="pages/assets/icon.png" width="192" alt="Muci Icon" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="pages/assets/icon-dark.png" />
+    <img src="pages/assets/icon.png" width="192" alt="Muci Icon" />
+  </picture>
 </p>
 
 <h1 align="center">Muci</h1>

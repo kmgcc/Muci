@@ -4,12 +4,17 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Muci - macOS 本地音乐播放器</title>
+    <link rel="icon" type="image/png" href="assets/icon.png">
+    <link rel="icon" type="image/png" href="assets/icon-dark.png" media="(prefers-color-scheme: dark)">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <div class="container">
         <div class="hero">
-            <img src="assets/icon.png" alt="Muci" class="app-icon">
+            <picture>
+                <source media="(prefers-color-scheme: dark)" srcset="assets/icon-dark.png">
+                <img src="assets/icon.png" alt="Muci" class="app-icon">
+            </picture>
             <div class="hero-content">
                 <h1>Muci</h1>
                 <p class="tagline">面向 macOS 26 的本地音乐播放器<br>原生开发 · 专注美学 · 沉浸体验</p>
