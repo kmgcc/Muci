@@ -1,0 +1,35 @@
+{
+  "type": "layer",
+  "id": "burst",
+  "hitTesting": false,
+  "visible": "=let.dLine && (props.line.accent.kind == 2 || props.line.accent.kind == 4)",
+  "frame": { "x": "50%", "y": "50%", "width": "100%", "height": "100%" },
+  "children": [
+    {
+      "type": "shape",
+      "id": "disk",
+      "shape": "circle",
+      "stroke": {
+        "width": "=max(0, let.dDiskGrow * (1 - pow(let.dDiskT, 1.8)))",
+        "color": "=withLightness(saturate(theme.accent, 1.5), 0.64)"
+      },
+      "blendMode": "plusLighter",
+      "visible": "=props.line.accent.kind == 4",
+      "opacity": "=let.dAccentAge > 0 && let.dAccentAge < let.dDiskSpan ? 0.8 * let.dShow : 0",
+      "hitTesting": false,
+      "frame": { "x": "=let.dHeroX", "y": "=let.dHeroY", "size": "=max(1, let.dDiskGrow * (1 + pow(let.dDiskT, 1.8)))" }
+    },
+    {
+      "type": "shape",
+      "id": "shock1",
+      "shape": "circle",
+      "stroke": { "width": "=max(0.3, viewport.min * 0.016 * pow(1 - clamp(let.dAccentAge / 1.7, 0, 1), 1.5))", "color": "=mix(theme.accent, #FFFFFF, 0.9)" },
+      "blendMode": "plusLighter",
+      "visible": "=props.line.accent.kind == 2",
+      "opacity": "=let.dAccentAge > 0 && let.dAccentAge < 1.7 ? 0.85 * pow(1 - clamp(let.dAccentAge / 1.7, 0, 1), 1.4) * let.dShow : 0",
+      "blur": "=viewport.min * 0.03 * smoothstep(0.25, 1, clamp(let.dAccentAge / 1.7, 0, 1))",
+      "hitTesting": false,
+      "frame": { "x": "=let.dHeroX", "y": "=let.dHeroY", "size": "=let.slotUnit * (let.dHeroSpan + 40) * (1 + 4.6 * (1 - pow(1 - clamp(let.dAccentAge / 1.7, 0, 1), 4)))" }
+    }
+  ]
+}

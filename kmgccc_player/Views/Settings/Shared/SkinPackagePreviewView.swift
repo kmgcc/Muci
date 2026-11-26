@@ -157,11 +157,7 @@ enum SkinPackagePreviewCache {
     static func authorImage(for skin: PackagedSkin, roles: SkinPreviewRoles) -> NSImage? {
         let dark = roles.onDark
         guard let preview = skin.manifest.preview else { return nil }
-        let root: URL
-        switch skin.origin {
-        case .installed(let url), .development(let url): root = url
-        case .bundled: guard let url = Bundle.main.resourceURL else { return nil }; root = url
-        }
+        guard let root = skin.origin.resourceRoot else { return nil }
         let path = dark ? preview.dark ?? preview.image : preview.image
         guard let url = try? SkinResourceResolver.resolve(path, root: root) else { return nil }
         // An edited picture in a linked directory has a new date, so it loads again.

@@ -13,9 +13,32 @@ final class SkinPackageActionModel {
         let isLinkedDirectory: Bool
     }
 
+    /// An archive that passed validation and waits for the user to confirm installing it.
+    struct PendingImport {
+        let name: String
+        let author: String?
+        let uses: [SkinPackageUse]
+        /// An earlier import has this ID: the user replaces it or keeps both.
+        let conflicts: Bool
+
+        var title: String { "安装“\(name)”？" }
+
+        var message: String {
+            var lines: [String] = []
+            if let author { lines.append("作者：\(author)") }
+            if uses.isEmpty {
+                lines.append("包含场景与图片。")
+            } else {
+                lines.append("包含\(uses.map(\.title).joined(separator: "、"))，安装后在播放界面中运行。仅安装来源可信的皮肤包。")
+            }
+            if conflicts { lines.append("已有此皮肤，可替换或另存副本。") }
+            return lines.joined(separator: "\n")
+        }
+    }
+
     var isWorking = false
     var pendingArchive: URL?
-    var showsConflict = false
+    var pendingImport: PendingImport?
     var pendingRemoval: Removal?
     var errorMessage: String?
 
@@ -38,15 +61,20 @@ final class SkinPackageActionModel {
                 let scoped = url.startAccessingSecurityScopedResource()
                 defer { if scoped { url.stopAccessingSecurityScopedResource() }; isWorking = false }
                 do {
-                    let manifest = try await manager.catalog.packages.inspect(url)
-                    if let existing = manager.catalog.registeredSkin(for: manifest.descriptor.id) as? PackagedSkin,
-                       case .installed = existing.origin {
-                        showsConflict = true
-                    } else {
-                        _ = try await manager.catalog.packages.importPackage(url, disposition: .copy)
-                        pendingArchive = nil
-                    }
-                } catch { errorMessage = error.localizedDescription }
+                    let inspection = try await manager.catalog.packages.inspectForImport(url)
+                    let manifest = inspection.manifest
+                    let author = manifest.author?.trimmingCharacters(in: .whitespacesAndNewlines)
+                    // Only an earlier import with this ID conflicts; one over a shipped skin or behind a linked folder goes in beside it.
+                    pendingImport = PendingImport(
+                        name: manifest.descriptor.name,
+                        author: author?.isEmpty == false ? author : nil,
+                        uses: inspection.uses,
+                        conflicts: manager.catalog.packages.installedDirectory(for: manifest.descriptor.id) != nil
+                    )
+                } catch {
+                    pendingArchive = nil
+                    errorMessage = error.localizedDescription
+                }
             }
         }
     }
@@ -94,12 +122,7 @@ final class SkinPackageActionModel {
     }
 
     func reveal(_ skin: PackagedSkin) {
-        switch skin.origin {
-        case .installed(let url), .development(let url):
-            NSWorkspace.shared.activateFileViewerSelecting([url])
-        case .bundled:
-            break
-        }
+        if let url = skin.origin.packageDirectory { NSWorkspace.shared.activateFileViewerSelecting([url]) }
     }
 
     func requestRemoval(_ skin: PackagedSkin) {
@@ -116,7 +139,8 @@ final class SkinPackageActionModel {
     }
 }
 
-/// Right-click menu for one skin card. Built-in skins have no package actions.
+/// Right-click menu for one skin card. Native skins have no package actions; shipped packages
+/// keep export, reload and reveal, and only imports and linked folders can be removed.
 struct SkinPackageCardMenu: View {
     let skinID: String
     let model: SkinPackageActionModel
@@ -127,11 +151,15 @@ struct SkinPackageCardMenu: View {
             Button("导出", systemImage: "square.and.arrow.up") { model.export(package, manager: manager) }
             Button("重载", systemImage: "arrow.clockwise") { model.reload(skinID, manager: manager) }
             Button("在访达中显示", systemImage: "folder") { model.reveal(package) }
-            Divider()
-            if case .development = package.origin {
+            switch package.origin {
+            case .development:
+                Divider()
                 Button("移除关联", systemImage: "link.badge.minus", role: .destructive) { model.requestRemoval(package) }
-            } else {
+            case .installed:
+                Divider()
                 Button("删除", systemImage: "trash", role: .destructive) { model.requestRemoval(package) }
+            case .bundled:
+                EmptyView()
             }
         }
     }
@@ -235,10 +263,21 @@ struct SkinPackageActionDialogs: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .confirmationDialog("已有此皮肤", isPresented: $model.showsConflict, titleVisibility: .visible) {
-                Button("替换") { model.importPending(.replace, manager: manager) }
-                Button("另存副本") { model.importPending(.copy, manager: manager) }
+            .confirmationDialog(
+                model.pendingImport?.title ?? "",
+                isPresented: Binding(get: { model.pendingImport != nil }, set: { if !$0 { model.pendingImport = nil } }),
+                titleVisibility: .visible,
+                presenting: model.pendingImport
+            ) { pending in
+                if pending.conflicts {
+                    Button("替换") { model.importPending(.replace, manager: manager) }
+                    Button("另存副本") { model.importPending(.copy, manager: manager) }
+                } else {
+                    Button("安装") { model.importPending(.copy, manager: manager) }
+                }
                 Button("取消", role: .cancel) { model.pendingArchive = nil }
+            } message: { pending in
+                Text(pending.message)
             }
             .confirmationDialog(
                 model.pendingRemoval?.isLinkedDirectory == true ? "移除此关联？" : "删除此皮肤？",

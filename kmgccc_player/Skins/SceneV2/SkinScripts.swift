@@ -19,6 +19,10 @@ import NaturalLanguage
 /// Calls run synchronously on the main thread, so a script should do one bounded piece of work
 /// per call (laying out a line, deciding the next camera move) and keep no state of its own
 /// between calls: hot reloading a skin starts a new context.
+///
+/// Each file's first run may take up to `loadLimit` and each call up to `callLimit`. A script
+/// that runs past its limit is stopped, and the package's scripts stay off until it reloads, so
+/// a runaway loop costs one short stall instead of the app.
 @MainActor
 final class SkinScripts {
     struct LoadError: LocalizedError {
@@ -26,10 +30,15 @@ final class SkinScripts {
         var errorDescription: String? { message }
     }
 
+    static let loadLimit: TimeInterval = 1
+    static let callLimit: TimeInterval = 0.25
+
     /// The top-level functions expressions may call.
     let functions: Set<String>
     private let context: JSContext
     private var reported: Set<String> = []
+    /// Set once a call runs past its limit; every later call gives null.
+    private(set) var isStopped = false
 
     /// Loads `scripts/*.js` from a package directory; nil when it has none.
     static func load(from root: URL) throws -> SkinScripts? {
@@ -55,23 +64,36 @@ final class SkinScripts {
         self.context = context
         context.name = "skin scripts"
         context.setObject(Self.host(in: context), forKeyedSubscript: "host" as NSString)
+        Self.limit(context, to: Self.loadLimit)
         for source in sources {
             context.exception = nil
+            let start = Date()
             context.evaluateScript(source.text, withSourceURL: URL(fileURLWithPath: source.name))
+            if Date().timeIntervalSince(start) >= Self.loadLimit {
+                throw LoadError(message: "\(source.name)：运行超过 \(Int(Self.loadLimit)) 秒，已停止")
+            }
             if let exception = context.exception {
                 throw LoadError(message: "\(source.name)：\(Self.describe(exception))")
             }
         }
         let names = context.evaluateScript("Object.keys(globalThis).filter(function (k) { return typeof globalThis[k] === 'function' })")
         functions = Set((names?.toArray() as? [String]) ?? [])
+        Self.limit(context, to: Self.callLimit)
     }
 
     /// Calls a top-level function. A thrown error or a missing function gives null; each
-    /// distinct error is logged once.
+    /// distinct error is logged once. A call past `callLimit` stops all of the package's scripts.
     func call(_ name: String, _ arguments: [SkinValue]) -> SkinValue {
-        guard functions.contains(name), let function = context.objectForKeyedSubscript(name) else { return .null }
+        guard !isStopped, functions.contains(name), let function = context.objectForKeyedSubscript(name) else { return .null }
         context.exception = nil
+        let start = Date()
         let result = function.call(withArguments: arguments.map(Self.object))
+        if Date().timeIntervalSince(start) >= Self.callLimit {
+            isStopped = true
+            context.exception = nil
+            Log.error("Skin script \(name)() ran past \(Self.callLimit) s; scripts are off until the skin reloads", category: .ui)
+            return .null
+        }
         if let exception = context.exception {
             let message = "\(name)()：\(Self.describe(exception))"
             if reported.insert(message).inserted { Log.warning("Skin script failed: \(message)", category: .ui) }
@@ -79,6 +101,25 @@ final class SkinScripts {
             return .null
         }
         return Self.value(result?.toObject(), depth: 0)
+    }
+
+    // MARK: Time limit
+
+    private typealias ShouldTerminate = @convention(c) (JSContextRef?, UnsafeMutableRawPointer?) -> Bool
+    private typealias SetExecutionTimeLimit = @convention(c) (JSContextGroupRef?, Double, ShouldTerminate?, UnsafeMutableRawPointer?) -> Void
+
+    /// JavaScriptCore's watchdog. The function ships in the framework without a public header,
+    /// so it is looked up at run time; when it is missing, scripts run without a limit and the
+    /// elapsed-time check still turns them off after the first overrun.
+    private static let setExecutionTimeLimit: SetExecutionTimeLimit? = {
+        guard let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "JSContextGroupSetExecutionTimeLimit") else { return nil }
+        return unsafeBitCast(symbol, to: SetExecutionTimeLimit.self)
+    }()
+
+    /// Each entry into JavaScript from the host may run for `seconds`; past that it is terminated.
+    private static func limit(_ context: JSContext, to seconds: TimeInterval) {
+        guard let setExecutionTimeLimit, let global = context.jsGlobalContextRef else { return }
+        setExecutionTimeLimit(JSContextGetGroup(global), seconds, { _, _ in true }, nil)
     }
 
     // MARK: Values

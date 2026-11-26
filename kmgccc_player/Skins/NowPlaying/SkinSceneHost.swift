@@ -203,12 +203,7 @@ struct SkinSceneHost: View {
     }
 
     private var resourceDirectory: URL? {
-        guard let skin = skin as? PackagedSkin else { return nil }
-        switch skin.origin {
-        case .bundled: return Bundle.main.resourceURL
-        case .installed(let url): return url
-        case .development(let url): return url
-        }
+        (skin as? PackagedSkin)?.origin.resourceRoot
     }
 
     private func reload() {

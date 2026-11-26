@@ -216,9 +216,10 @@ struct SkinSceneNodeV2View: View {
         if values["group"]?.isTruthy == true { result = AnyView(result.compositingGroup()) }
         // A hidden node that keeps its transition stays mounted; its effects stop with it.
         let dormant = hidden || (values["opacity"]?.number(1) ?? 1) <= 0
-        if !drawsOnGPU, let filter = values["filter"] {
+        let chain = chainFilters(values)
+        if !drawsOnGPU, !chain.isEmpty {
             let frozen = !data.timeMoves(playing: components.snapshot.playback.isPlaying)
-            result = AnyView(result.modifier(SkinSceneFilters(filters: filter.type == .list ? filter.listValue : [filter], dormant: dormant, frozen: frozen)))
+            result = AnyView(result.modifier(SkinSceneFilters(filters: chain, dormant: dormant, frozen: frozen)))
         }
         if !drawsOnGPU, let bloom = values["bloom"] { result = AnyView(result.modifier(SkinSceneBloom(value: bloom, dormant: dormant))) }
         result = SkinNodeStyle.apply(result, values: values, keys: node.styleKeys, reduceTransparency: reduceTransparency)
@@ -516,7 +517,8 @@ struct SkinSceneNodeV2View: View {
                 let first = (values["stops"]?.listValue ?? []).first?[member: "color"].colorValue
                     ?? (values["colors"]?.listValue ?? []).first?.colorValue
                 return AnyView(SkinSceneLight(color: first?.swiftUIColor ?? .clear, core: values["radius"]?.number(SkinLightGradient.core) ?? SkinLightGradient.core,
-                                              centre: unitPoint(values["start"]?.textValue ?? "center")))
+                                              centre: unitPoint(values["start"]?.textValue ?? "center"),
+                                              grade: Self.filterList(values).first { $0[member: "type"].textValue == "lut" }))
             default:
                 return AnyView(LinearGradient(gradient: gradient, startPoint: unitPoint(values["start"]?.textValue ?? "topLeading"), endPoint: unitPoint(values["end"]?.textValue ?? "bottomTrailing")))
             }
@@ -611,6 +613,18 @@ struct SkinSceneNodeV2View: View {
         cameraSource.followers = followers
         cameraSource.evaluate = { now in SkinSceneCamera(property.evaluate(view.context(now: now))) }
         return SkinCameraLink(source: cameraSource, steady: nil, placement: placement)
+    }
+
+    private static func filterList(_ values: [String: SkinValue]) -> [SkinValue] {
+        guard let filter = values["filter"] else { return [] }
+        return filter.type == .list ? filter.listValue : [filter]
+    }
+
+    /// A `light` gradient grades itself on its float profile, so the filter chain skips its `lut`.
+    private func chainFilters(_ values: [String: SkinValue]) -> [SkinValue] {
+        let filters = Self.filterList(values)
+        guard node.type == "gradient", values["mode"]?.textValue == "light" else { return filters }
+        return filters.filter { $0[member: "type"].textValue != "lut" }
     }
 
     /// A `render: "gpu"` layer, when Metal is there to draw it; otherwise its children draw as views.

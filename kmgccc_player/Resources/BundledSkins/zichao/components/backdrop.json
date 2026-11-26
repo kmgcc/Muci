@@ -1,0 +1,158 @@
+{
+  "type": "layer",
+  "id": "backdrop",
+  "hitTesting": false,
+  "frame": { "x": 0, "y": 0, "anchor": "topLeading", "width": "100%", "height": "=host.layout.window.height" },
+  "filter": [
+    { "type": "lut", "file": "=params.lut", "amount": "=params.lutAmount * params.bgLUTAmount" },
+    { "type": "grain", "amount": "=let.grain", "rate": "=params.grainRate" },
+    { "type": "bokeh", "at": "=host.detailVisible ? null : state.line.accent.focusAt", "seed": "=state.line.accent.focusSeed ?? 0", "wave": "=let.defocusWave", "radius": "=1.3 * params.defocusRadius", "speed": "=params.defocusSpeed", "breathing": "=0.006 * params.defocusBreathing", "detail": "=0.5 * params.defocusDetail", "glow": "=params.defocusGlow", "threshold": "=params.defocusThreshold", "swirl": "=params.defocusSwirl" }
+  ],
+  "resolution": 0.5,
+  "render": "gpu",
+  "motionBlur": "=params.motionBlur",
+  "camera": {
+    "x": "=0.6 * let.gapBreathX",
+    "y": "=0.6 * let.gapBreathY",
+    "zoom": "=let.bgZoom * (1 + 0.6 * (let.gapBreathZoom - 1))",
+    "perspective": 0.55
+  },
+  "children": [
+    {
+      "type": "shape",
+      "id": "base",
+      "color": "=withLightness(desaturate(theme.artBackgroundPrimary, 0.55), clamp(0.035 * let.bgK, 0, 0.35))",
+      "frame": { "x": "50%", "y": "50%", "width": "110%", "height": "110%" },
+      "depth": 40
+    },
+    {
+      "type": "fog",
+      "id": "fluid",
+      "colors": [
+        "=withLightness(desaturate(theme.artBackgroundPrimary, 0.4), clamp(0.045 * let.bgK, 0, 0.4))",
+        "=withLightness(saturate(theme.accent, 1.25), clamp(0.25 * let.bgK, 0, 0.8))"
+      ],
+      "zones": {
+        "colors": "=let.bgZoneColors",
+        "lightness": "=clamp(0.25 * let.bgK, 0, 0.8)",
+        "chroma": 1.15,
+        "size": "=let.bgZoneSize",
+        "share": "=params.bgZoneShare"
+      },
+      "size": "=viewport.min * 0.72",
+      "speed": "=0.1 * motion.speed",
+      "warp": 2.1,
+      "gain": "=1.9 * clamp(let.bgK, 0.3, 2.5)",
+      "scrollX": "=0.35 * let.scrollX",
+      "scrollY": "=0.35 * let.bgScrollY",
+      "frame": { "x": "50%", "y": "50%", "width": "130%", "height": "130%" },
+      "depth": 1.2
+    },
+    {
+      "type": "fog",
+      "id": "ribbons",
+      "colors": ["=withLightness(saturate(theme.accent, 1.5), clamp(0.5 * let.bgK, 0, 0.95))"],
+      "zones": {
+        "colors": "=let.bgZoneColors",
+        "lightness": "=clamp(0.5 * let.bgK, 0, 0.95)",
+        "chroma": 1.3,
+        "size": "=1.3 * let.bgZoneSize",
+        "share": "=params.bgZoneShare"
+      },
+      "size": "=viewport.min * 1.0",
+      "speed": "=0.07 * motion.speed",
+      "warp": 2.7,
+      "gain": "=2.4 * clamp(let.bgK, 0.3, 2.5)",
+      "opacity": "=clamp(0.28 * let.bgK, 0.05, 0.85)",
+      "blendMode": "plusLighter",
+      "scrollX": "=0.8 * let.scrollX",
+      "scrollY": "=0.8 * let.bgScrollY",
+      "frame": { "x": "50%", "y": "50%", "width": "130%", "height": "130%" },
+      "depth": 0.7
+    },
+    {
+      "type": "gradient",
+      "id": "vignette",
+      "mode": "elliptical",
+      "radius": 0.565,
+      "stops": [
+        { "color": "#00000000", "at": 0.42 },
+        { "color": "=alpha(withLightness(theme.artBackgroundPrimary, 0.02), clamp(0.9 * let.vignette / max(0.5, let.bgK), 0, 1))", "at": 1 }
+      ],
+      "frame": { "x": "50%", "y": "50%", "width": "110%", "height": "110%" },
+      "depth": 40
+    },
+    {
+      "type": "particles",
+      "id": "dust",
+      "visible": "=params.particles > 0",
+      "color": "=alpha(mix(theme.accent, #FFFFFF, 0.8), 0.6)",
+      "count": "=max(1, round(160 * params.particles))",
+      "seed": 3,
+      "speed": "=0.014 * motion.speed",
+      "size": 1,
+      "opacity": 0.42,
+      "scrollX": "=0.4 * let.scrollX",
+      "scrollY": "=0.4 * let.bgScrollY",
+      "filter": {
+        "type": "motionBlur",
+        "x": "=clamp(0.02 * let.scrollSpeedX, -60, 60)",
+        "y": "=clamp(0.02 * let.scrollSpeedY, -60, 60) + 0.3",
+        "samples": 10
+      },
+      "frame": { "x": "50%", "y": "50%", "width": "130%", "height": "130%" },
+      "depth": 1.5
+    },
+    {
+      "type": "particles",
+      "id": "motes",
+      "visible": "=params.particles > 0",
+      "color": "=alpha(mix(theme.accent, #FFFFFF, 0.55), 0.5)",
+      "count": "=max(1, round(44 * params.particles))",
+      "seed": 11,
+      "speed": "=0.008 * motion.speed",
+      "size": "=viewport.min * 0.0028",
+      "soft": "=viewport.min * 0.0016",
+      "opacity": 0.3,
+      "blendMode": "plusLighter",
+      "scrollX": "=1.3 * let.scrollX",
+      "scrollY": "=1.3 * let.bgScrollY",
+      "filter": {
+        "type": "motionBlur",
+        "x": "=clamp(0.065 * let.scrollSpeedX, -120, 120)",
+        "y": "=clamp(0.065 * let.scrollSpeedY, -120, 120) + 0.3",
+        "samples": 12
+      },
+      "frame": { "x": "50%", "y": "50%", "width": "130%", "height": "130%" },
+      "depth": -0.4
+    },
+    {
+      "type": "particles",
+      "id": "sparks",
+      "visible": "=params.particles > 0",
+      "lifetime": 5,
+      "count": "=max(1, round(24 * params.particles))",
+      "seed": 19,
+      "angle": -80,
+      "spread": 70,
+      "speed": "=viewport.min * 0.025",
+      "trail": 0.5,
+      "size": 0.9,
+      "turbulence": "=viewport.min * 0.02",
+      "wander": 0.8,
+      "colors": ["=mix(theme.accent, #FFFFFF, 0.9)", "=withLightness(saturate(theme.accent, 1.5), 0.7)"],
+      "blendMode": "plusLighter",
+      "opacity": 0.45,
+      "scrollX": "=0.75 * let.scrollX",
+      "scrollY": "=0.75 * let.bgScrollY",
+      "filter": {
+        "type": "motionBlur",
+        "x": "=clamp(0.0375 * let.scrollSpeedX, -80, 80)",
+        "y": "=clamp(0.0375 * let.scrollSpeedY, -80, 80) + 0.3",
+        "samples": 10
+      },
+      "frame": { "x": "50%", "y": "50%", "width": "130%", "height": "130%" },
+      "depth": 0.3
+    }
+  ]
+}

@@ -28,6 +28,7 @@
 		A0100000000000000000000D /* LegalDocuments in Resources */ = {isa = PBXBuildFile; fileRef = B0100000000000000000000D /* LegalDocuments */; };
 		A0100000000000000000000E /* zichao-preview.mp4 in Resources */ = {isa = PBXBuildFile; fileRef = B0100000000000000000000E /* zichao-preview.mp4 */; };
 		A0100000000000000000000F /* zichao-preview-poster.jpg in Resources */ = {isa = PBXBuildFile; fileRef = B0100000000000000000000F /* zichao-preview-poster.jpg */; };
+		A01000000000000000000010 /* BundledSkins in Resources */ = {isa = PBXBuildFile; fileRef = B01000000000000000000010 /* BundledSkins */; };
 		DA0000000000000000000001 /* kmgccc_playerTests/PromptSystemTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA0000000000000000000011 /* kmgccc_playerTests/PromptSystemTests.swift */; };
 		B437C0F1E10A4C68AAB31001 /* kmgccc_playerTests/SidebarSetBarConfigurationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B437C0F1E10A4C68AAB31002 /* kmgccc_playerTests/SidebarSetBarConfigurationTests.swift */; };
 		C02000000000000000000001 /* kmgccc_playerTests/MetadataMatchScorerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C02000000000000000000011 /* kmgccc_playerTests/MetadataMatchScorerTests.swift */; };
@@ -133,6 +134,7 @@
 		B0100000000000000000000D /* LegalDocuments */ = {isa = PBXFileReference; lastKnownFileType = folder; name = LegalDocuments; path = kmgccc_player/LegalDocuments; sourceTree = "<group>"; };
 		B0100000000000000000000E /* zichao-preview.mp4 */ = {isa = PBXFileReference; lastKnownFileType = file.mp4; name = "zichao-preview.mp4"; path = "kmgccc_player/Resources/FeatureDiscovery/zichao-preview.mp4"; sourceTree = "<group>"; };
 		B0100000000000000000000F /* zichao-preview-poster.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; name = "zichao-preview-poster.jpg"; path = "kmgccc_player/Resources/FeatureDiscovery/zichao-preview-poster.jpg"; sourceTree = "<group>"; };
+		B01000000000000000000010 /* BundledSkins */ = {isa = PBXFileReference; lastKnownFileType = folder; name = BundledSkins; path = kmgccc_player/Resources/BundledSkins; sourceTree = "<group>"; };
 		B437C0F1E10A4C68AAB31002 /* kmgccc_playerTests/SidebarSetBarConfigurationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = kmgccc_playerTests/SidebarSetBarConfigurationTests.swift; sourceTree = "<group>"; };
 		C02000000000000000000010 /* kmgccc_playerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = kmgccc_playerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		C02000000000000000000011 /* kmgccc_playerTests/MetadataMatchScorerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = kmgccc_playerTests/MetadataMatchScorerTests.swift; sourceTree = "<group>"; };
@@ -388,6 +390,7 @@
 				B0100000000000000000000D /* LegalDocuments */,
 				B0100000000000000000000E /* zichao-preview.mp4 */,
 				B0100000000000000000000F /* zichao-preview-poster.jpg */,
+				B01000000000000000000010 /* BundledSkins */,
 			);
 			name = "Runtime Resources";
 			sourceTree = "<group>";
@@ -643,6 +646,7 @@
 				A0100000000000000000000D /* LegalDocuments in Resources */,
 				A0100000000000000000000E /* zichao-preview.mp4 in Resources */,
 				A0100000000000000000000F /* zichao-preview-poster.jpg in Resources */,
+				A01000000000000000000010 /* BundledSkins in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

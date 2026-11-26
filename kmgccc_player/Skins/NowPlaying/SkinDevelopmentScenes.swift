@@ -14,7 +14,7 @@ enum SkinDevelopmentScenes {
             return PackagedSkin(
                 manifest: .init(descriptor: descriptor, nativePreset: renderer.id,
                                 parameters: renderer.parameterDefinitions, sceneV2: document),
-                origin: .bundled, renderer: renderer, programs: ["default": program]
+                origin: .bundled(nil), renderer: renderer, programs: ["default": program]
             )
         }
     }

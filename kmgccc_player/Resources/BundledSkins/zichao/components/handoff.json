@@ -1,0 +1,24 @@
+{
+  "type": "comet",
+  "id": "handoff",
+  "visible": "=params.comets && (props.line.handoff.r ?? 0) > 0 && props.line.index >= state.line.index - 1 && let.handoffP > 0 && let.handoffP < 1",
+  "orbit": "=[let.slotUnit * props.line.handoff.r, let.slotUnit * props.line.handoff.r * 0.42]",
+  "progress": "=let.handoffP",
+  "angle": "=abs(props.line.handoff.angle) > 90 ? 350 : 10",
+  "sweep": "=abs(props.line.handoff.angle) > 90 ? -500 : 500",
+  "rotation": "=props.line.handoff.angle",
+  "trail": 0.1,
+  "size": "=max(1.6, viewport.min * 0.0013 * params.cometSize)",
+  "width": "=max(1.6, viewport.min * 0.0013 * params.cometSize) * (params.brush > 0 ? params.brushWidth : 1)",
+  "brush": { "amount": "=params.brush", "dry": "=params.brushDry" },
+  "seed": "=props.line.index + 0.75",
+  "color": "=withLightness(saturate(mix(theme.accent, theme.lyricHarmony, props.line.handoff.c ?? 0), 1.5), 0.8)",
+  "blendMode": "plusLighter",
+  "hitTesting": false,
+  "frame": {
+    "x": "=viewport.width / 2 + let.slotUnit * (props.line.cam.x + props.line.handoff.x)",
+    "y": "=viewport.height / 2 + let.slotUnit * (props.line.cam.y + props.line.handoff.y)",
+    "width": "=min(viewport.max * 1.5, 5.6 * let.slotUnit * props.line.handoff.r + 40)",
+    "height": "=min(viewport.max * 1.5, 5.6 * let.slotUnit * props.line.handoff.r + 40)"
+  }
+}

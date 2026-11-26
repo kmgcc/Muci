@@ -1,0 +1,32 @@
+{
+  "type": "layer",
+  "id": "stage",
+  "visible": "=let.lyricsShown && lyrics.available && lyrics.lineCount > 0 && state.stageHidden == 0 && let.queueOut < 0.99",
+  "opacity": "=(1 - let.queueOut) * let.stageFade",
+  "enter": { "type": "fade", "token": "backgroundTransition" },
+  "transition": { "type": "fade", "token": "backgroundTransition" },
+  "hitTesting": false,
+  "frame": { "x": "50%", "y": "50%", "width": "100%", "height": "100%" },
+  "filter": { "type": "fov", "distortion": "=let.distortion", "chromatic": "=let.aberration", "blur": "=let.edgeBlur", "start": "=let.edgeStart" },
+  "camera": {
+    "x": "=let.camX",
+    "y": "=let.camY",
+    "zoom": "=let.camZoom",
+    "rotation": "=let.camRoll",
+    "rotationX": "=let.camTiltX",
+    "rotationY": "=let.camTiltY",
+    "perspective": "=params.perspective",
+    "rasterize": true
+  },
+  "children": [
+    { "type": "use", "name": "decor", "props": { "line": "=state.slots[0] ?? {}" } },
+    { "type": "use", "name": "decor", "props": { "line": "=state.slots[1] ?? {}" } },
+    { "type": "use", "name": "decor", "props": { "line": "=state.slots[2] ?? {}" } },
+    { "type": "use", "name": "comet", "props": { "line": "=state.slots[0] ?? {}" } },
+    { "type": "use", "name": "comet", "props": { "line": "=state.slots[1] ?? {}" } },
+    { "type": "use", "name": "comet", "props": { "line": "=state.slots[2] ?? {}" } },
+    { "type": "use", "name": "handoff", "props": { "line": "=state.slots[0] ?? {}" } },
+    { "type": "use", "name": "handoff", "props": { "line": "=state.slots[1] ?? {}" } },
+    { "type": "use", "name": "handoff", "props": { "line": "=state.slots[2] ?? {}" } }
+  ]
+}

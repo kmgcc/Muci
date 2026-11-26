@@ -66,6 +66,7 @@ enum SkinRegistry {
         for renderer in renderers {
             catalog.registerBundled(renderer)
         }
+        catalog.packages.loadShipped()
         if customizationEnabled {
             catalog.packages.loadInstalled()
             catalog.developmentDirectories.restore()

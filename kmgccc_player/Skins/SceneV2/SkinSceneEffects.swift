@@ -319,11 +319,25 @@ struct SkinSceneLight: View {
     let color: Color
     let core: Double
     let centre: UnitPoint
+    /// The node's `lut` filter, graded in the light's own shader on its float profile.
+    var grade: SkinValue?
+    @Environment(\.skinPackageResources) private var root
 
     var body: some View {
+        // Read here, in the body, so a grade that finishes loading redraws the light.
+        let lut = grade.flatMap { SkinColorLUTFilter($0, root: root) }.flatMap { filter in
+            SkinColorLUTLibrary.shared.lut(for: filter.resource).map { (filter.amount, $0) }
+        }
         GeometryReader { proxy in
-            Rectangle().fill(.white)
-                .colorEffect(ShaderLibrary.default.skinFxLight(.float2(proxy.size), .color(color), .float(core), .float2(centre.x, centre.y)))
+            let library = ShaderLibrary.default
+            if let (amount, lut) = lut {
+                Rectangle().fill(.white)
+                    .colorEffect(library.skinFxLightGraded(.float2(proxy.size), .color(color), .float(core), .float2(centre.x, centre.y),
+                                                           .image(lut.image), .float(amount)))
+            } else {
+                Rectangle().fill(.white)
+                    .colorEffect(library.skinFxLight(.float2(proxy.size), .color(color), .float(core), .float2(centre.x, centre.y)))
+            }
         }
         .allowsHitTesting(false)
     }

@@ -102,19 +102,29 @@ static float skinFbm(float2 p) {
 /// The `lut` filter: a 3D colour grade stored as a strip of blue slices (`n` slices of `n` × `n`,
 /// red across, green down), read with two bilinear taps and a blend between slices, mixed in by
 /// `amount`. Colours are unpremultiplied for the lookup.
-[[stitchable]] half4 skinFxLUT(float2 position, half4 color, texture2d<half> lut, float amount) {
-    float alpha = float(color.a);
-    if (alpha <= 0.0005) { return color; }
+static float3 skinLUTGrade(float3 rgb, texture2d<half> lut) {
     constexpr sampler strip(filter::linear, address::clamp_to_edge);
-    float3 rgb = clamp(float3(color.rgb) / alpha, float3(0), float3(1));
     float n = float(lut.get_height());
     float blue = rgb.b * (n - 1.0);
     float b0 = floor(blue), b1 = min(b0 + 1.0, n - 1.0);
     float x = rgb.r * (n - 1.0) + 0.5, y = (rgb.g * (n - 1.0) + 0.5) / n;
     float3 low = float3(lut.sample(strip, float2((x + b0 * n) / (n * n), y)).rgb);
     float3 high = float3(lut.sample(strip, float2((x + b1 * n) / (n * n), y)).rgb);
-    float3 graded = mix(low, high, blue - b0);
-    return half4(half3(mix(rgb, graded, amount) * alpha), color.a);
+    return mix(low, high, blue - b0);
+}
+
+/// Triangular noise of one 8-bit step, added before the layer's 8-bit write.
+static float skinDither(float2 position) {
+    return (skinHash(position + 0.37) + skinHash(position.yx + 11.3) - 1.0) / 255.0;
+}
+
+[[stitchable]] half4 skinFxLUT(float2 position, half4 color, texture2d<half> lut, float amount) {
+    float alpha = float(color.a);
+    if (alpha <= 0.0005) { return color; }
+    float3 rgb = clamp(float3(color.rgb) / alpha, float3(0), float3(1));
+    float3 graded = skinLUTGrade(rgb, lut);
+    float3 result = mix(rgb, graded, amount) * alpha + skinDither(position) * alpha;
+    return half4(half3(clamp(result, float3(0), float3(alpha))), color.a);
 }
 
 /// A slow liquid sway of `amplitude` points.
@@ -138,17 +148,35 @@ static float skinFbm(float2 p) {
 /// The `light` gradient, as a GPU layer draws it: inverse-square falloff softened inside `core`
 /// (a share of the half size), encoded for the display, windowed to zero at the frame's edge,
 /// whitened at the core and dithered so the long ramp never bands. `light` is premultiplied.
-[[stitchable]] half4 skinFxLight(float2 position, half4 color, float2 size, half4 light, float core, float2 centre) {
+static float4 skinLightProfile(float2 position, float2 size, half4 light, float core, float2 centre) {
     float2 q = (position / max(size, float2(1)) - centre) * 2.0;
     float d = length(q);
-    if (d >= 1.0) { return half4(0); }
+    if (d >= 1.0) { return float4(0); }
     float k = max(core, 1e-3);
     float intensity = 1.0 / (1.0 + (d / k) * (d / k));
     float encoded = intensity <= 0.0031308 ? intensity * 12.92 : 1.055 * pow(intensity, 1.0 / 2.4) - 0.055;
     float window = 1.0 - d * d * d * d;
     float4 lit = float4(light) * encoded * window * window;
     lit.rgb = mix(lit.rgb, float3(lit.a), 0.5 * intensity * intensity * intensity * intensity);
-    float dither = (skinHash(position + 0.37) + skinHash(position.yx + 11.3) - 1.0) / 255.0;
-    lit.rgb += dither * lit.a;
+    return lit;
+}
+
+[[stitchable]] half4 skinFxLight(float2 position, half4 color, float2 size, half4 light, float core, float2 centre) {
+    float4 lit = skinLightProfile(position, size, light, core, centre);
+    lit.rgb += skinDither(position) * lit.a;
+    return half4(lit * float(color.a));
+}
+
+/// `skinFxLight` with a `lut` grade applied here, on the float profile. A separate grade pass
+/// would read the halo back from an 8-bit premultiplied layer, where the faint tail's colour
+/// (rgb / alpha) is a ratio of a few levels and the grade turns its steps into rings of tint.
+[[stitchable]] half4 skinFxLightGraded(float2 position, half4 color, float2 size, half4 light, float core, float2 centre,
+                                       texture2d<half> lut, float amount) {
+    float4 lit = skinLightProfile(position, size, light, core, centre);
+    if (lit.a <= 0.0005) { return half4(0); }
+    float3 rgb = clamp(lit.rgb / lit.a, float3(0), float3(1));
+    float3 graded = mix(rgb, skinLUTGrade(rgb, lut), amount);
+    lit.rgb = graded * lit.a + skinDither(position) * lit.a;
+    lit.rgb = clamp(lit.rgb, float3(0), float3(lit.a));
     return half4(lit * float(color.a));
 }

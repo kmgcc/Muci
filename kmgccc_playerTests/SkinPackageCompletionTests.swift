@@ -60,6 +60,120 @@ final class SkinPackageCompletionTests: XCTestCase {
     }
 
     @MainActor
+    func testShippedPackagesLoadFromTheAppBundle() throws {
+        let sandbox = try makeSandbox()
+        defer { try? FileManager.default.removeItem(at: sandbox) }
+
+        let catalog = SkinCatalog(skins: [])
+        NativeSkinComponents.register(in: catalog.components)
+        let store = SkinPackageStore(catalog: catalog, root: sandbox.appendingPathComponent("installed", isDirectory: true))
+        store.loadShipped()
+
+        let fullscreenIDs = catalog.skins(for: .fullscreen).map(\.id)
+        for id in ["am", "user.zichao"] {
+            let skin = try XCTUnwrap(catalog.registeredSkin(for: id) as? PackagedSkin, "Missing shipped skin \(id)")
+            XCTAssertTrue(skin.origin.isShippedPackage)
+            XCTAssertTrue(skin.isExportable)
+            XCTAssertFalse(skin.programs.isEmpty)
+            XCTAssertTrue(fullscreenIDs.contains(id))
+            XCTAssertNoThrow(try store.reloadPackage(id))
+        }
+        XCTAssertEqual(catalog.registeredSkin(for: "am")?.name, "AM")
+        XCTAssertEqual(catalog.registeredSkin(for: "user.zichao")?.name, "字潮")
+        XCTAssertThrowsError(try store.removePackage("user.zichao"))
+    }
+
+    /// One skin ID: a linked folder sits in front of an import, which sits in front of the shipped package.
+    @MainActor
+    func testSameIDPrecedenceIsShippedThenImportedThenLinked() async throws {
+        let sandbox = try makeSandbox()
+        defer { try? FileManager.default.removeItem(at: sandbox) }
+        let suiteName = "SkinPackageCompletionTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let skinID = "test.precedence.\(UUID().uuidString.lowercased())"
+        let shipped = sandbox.appendingPathComponent("shipped", isDirectory: true)
+        try FileManager.default.createDirectory(at: shipped.appendingPathComponent("pkg"), withIntermediateDirectories: true)
+        try manifestData(id: skinID, name: "Shipped").write(to: shipped.appendingPathComponent("pkg/manifest.json"))
+        let linked = sandbox.appendingPathComponent("linked", isDirectory: true)
+        try FileManager.default.createDirectory(at: linked, withIntermediateDirectories: true)
+        try manifestData(id: skinID, name: "Linked").write(to: linked.appendingPathComponent("manifest.json"))
+
+        let catalog = SkinCatalog(skins: [])
+        NativeSkinComponents.register(in: catalog.components)
+        catalog.developmentDirectories = SkinDevelopmentDirectories(catalog: catalog, defaults: defaults)
+        let store = SkinPackageStore(catalog: catalog, root: sandbox.appendingPathComponent("installed", isDirectory: true))
+        store.loadShipped(from: shipped)
+        XCTAssertEqual(catalog.registeredSkin(for: skinID)?.name, "Shipped")
+
+        // An import replaces the shipped package in place and keeps the ID.
+        let archive = try makeArchive(manifest: manifestData(id: skinID, name: "Imported"), assets: [:], in: sandbox)
+        let importedID = try await store.importPackage(archive)
+        XCTAssertEqual(importedID, skinID)
+        XCTAssertEqual(catalog.registeredSkin(for: skinID)?.name, "Imported")
+
+        // A linked folder goes in front; a later import with the same ID waits behind it.
+        try catalog.developmentDirectories.attach(linked)
+        XCTAssertEqual(catalog.registeredSkin(for: skinID)?.name, "Linked")
+        let newer = try makeArchive(manifest: manifestData(id: skinID, name: "Imported Again"), assets: [:], in: sandbox)
+        let replacedID = try await store.importPackage(newer, disposition: .replace)
+        XCTAssertEqual(replacedID, skinID)
+        XCTAssertEqual(catalog.registeredSkin(for: skinID)?.name, "Linked")
+
+        // Each removal hands the ID to the next one down.
+        try store.removePackage(skinID)
+        XCTAssertEqual(catalog.registeredSkin(for: skinID)?.name, "Imported Again")
+        try store.removePackage(skinID)
+        XCTAssertEqual(catalog.registeredSkin(for: skinID)?.name, "Shipped")
+        XCTAssertThrowsError(try store.removePackage(skinID))
+
+        // Restart order gives the same result.
+        let restarted = SkinCatalog(skins: [])
+        NativeSkinComponents.register(in: restarted.components)
+        let restartedStore = SkinPackageStore(catalog: restarted, root: sandbox.appendingPathComponent("installed", isDirectory: true))
+        restartedStore.loadShipped(from: shipped)
+        _ = try await restartedStore.importPackage(archive)
+        restartedStore.loadInstalled()
+        XCTAssertEqual(restarted.registeredSkin(for: skinID)?.name, "Imported")
+    }
+
+    @MainActor
+    func testRestoringARenamedDevelopmentFolderKeepsOneLink() throws {
+        let sandbox = try makeSandbox()
+        defer { try? FileManager.default.removeItem(at: sandbox) }
+        let suiteName = "SkinPackageCompletionTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let skinID = "test.linked.\(UUID().uuidString.lowercased())"
+        let original = sandbox.appendingPathComponent("old-name", isDirectory: true)
+        try FileManager.default.createDirectory(at: original, withIntermediateDirectories: true)
+        try manifestData(id: skinID, name: "Linked").write(to: original.appendingPathComponent("manifest.json"))
+        let key = "skin.developmentDirectories.v2"
+        defaults.set([try original.bookmarkData(options: [.withSecurityScope], includingResourceValuesForKeys: nil, relativeTo: nil)], forKey: key)
+        let renamed = sandbox.appendingPathComponent("new-name", isDirectory: true)
+        try FileManager.default.moveItem(at: original, to: renamed)
+
+        let catalog = SkinCatalog(skins: [])
+        NativeSkinComponents.register(in: catalog.components)
+        let links = SkinDevelopmentDirectories(catalog: catalog, defaults: defaults)
+        links.restore()
+        links.restore()
+
+        XCTAssertNotNil(catalog.registeredSkin(for: skinID))
+        let saved = defaults.array(forKey: key) as? [Data] ?? []
+        XCTAssertEqual(saved.count, 1)
+        var stale = false
+        let resolved = try URL(resolvingBookmarkData: try XCTUnwrap(saved.first), options: [.withoutUI], bookmarkDataIsStale: &stale)
+        XCTAssertEqual(resolved.standardizedFileURL.resolvingSymlinksInPath().path, renamed.standardizedFileURL.resolvingSymlinksInPath().path)
+        links.detach(skinID)
+        XCTAssertEqual((defaults.array(forKey: key) as? [Data] ?? []).count, 0)
+    }
+
+    @MainActor
     func testExportedResourcesSurviveSourceRemovalAndRestartDiscovery() async throws {
         let sandbox = try makeSandbox()
         defer { try? FileManager.default.removeItem(at: sandbox) }

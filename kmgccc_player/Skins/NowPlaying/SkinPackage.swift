@@ -101,9 +101,42 @@ struct SkinCardSidebar: Codable, Equatable {
 }
 
 enum SkinPackageOrigin {
-    case bundled
+    /// Shipped with the App. A package directory inside the App bundle, or nil for a native preset.
+    case bundled(URL?)
     case installed(URL)
     case development(URL)
+
+    /// Where the package's relative paths resolve.
+    var resourceRoot: URL? {
+        switch self {
+        case .bundled(let directory): directory ?? Bundle.main.resourceURL
+        case .installed(let url), .development(let url): url
+        }
+    }
+
+    /// The package folder on disk; nil for a native preset.
+    var packageDirectory: URL? {
+        switch self {
+        case .bundled(let directory): directory
+        case .installed(let url), .development(let url): url
+        }
+    }
+
+    /// A package directory shipped inside the App.
+    var isShippedPackage: Bool {
+        if case .bundled(let directory) = self { return directory != nil }
+        return false
+    }
+
+    /// Precedence among packages sharing one skin ID: shipped, then imported, then a linked
+    /// development folder. Native presets have none and are never replaced.
+    var precedence: Int? {
+        switch self {
+        case .bundled(let directory): directory == nil ? nil : 0
+        case .installed: 1
+        case .development: 2
+        }
+    }
 }
 
 /// Built-in and imported definitions use the same adapter; origin only controls management.
@@ -113,9 +146,8 @@ struct PackagedSkin: NowPlayingSkin {
     let renderer: (any NowPlayingSkin)?
     var programs: [String: SkinSceneProgram] = [:]
 
-    var isExportable: Bool {
-        switch origin { case .installed, .development: true; case .bundled: false }
-    }
+    /// Package folders (shipped, imported or linked) can be exported, reloaded and revealed.
+    var isExportable: Bool { origin.packageDirectory != nil }
 
     var descriptor: SkinDescriptor { manifest.descriptor }
     /// Components the compiled scenes mount; settings show the host options these rely on.

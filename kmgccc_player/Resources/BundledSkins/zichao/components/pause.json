@@ -1,0 +1,196 @@
+{
+  "type": "layer",
+  "id": "pause",
+  "visible": "=state.gap.on == 1 && (host.lyricsVisible || let.lyricsDone) && !let.endCard && !host.queueVisible && !host.detailVisible",
+  "key": "=state.gap.count",
+  "transition": { "type": "fade+scale", "token": "backgroundTransition", "scale": 0.9 },
+  "hitTesting": false,
+  "frame": {
+    "x": "=viewport.width * 0.5",
+    "y": "=viewport.height * 0.5",
+    "width": "=viewport.min * 0.8",
+    "height": "=viewport.min * 0.5"
+  },
+  "camera": {
+    "x": "=viewport.min * (sin(time * motion.speed * 0.31) * 0.012 + sin(time * motion.speed * 0.13 + 1.7) * 0.008) + let.gapBreathX",
+    "y": "=viewport.min * (sin(time * motion.speed * 0.23 + 1) * 0.01 + sin(time * motion.speed * 0.097 + 0.3) * 0.006) + let.gapBreathY",
+    "zoom": "=(1 + 0.035 * sin(time * motion.speed * 0.19)) * let.gapBreathZoom",
+    "rotation": "=sin(time * motion.speed * 0.13) * 1.4 + let.gapBreathRoll",
+    "sharedMotion": true
+  },
+  "children": [
+    {
+      "type": "gradient",
+      "id": "halo",
+      "mode": "light",
+      "radius": 0.14,
+      "stops": [{ "color": "=alpha(withLightness(saturate(theme.accent, 1.4), 0.6), 0.3)", "at": 0 }],
+      "blendMode": "plusLighter",
+      "filter": { "type": "lut", "file": "=params.lut", "amount": "=params.lutAmount" },
+      "opacity": "=0.7 + 0.3 * sin(time * motion.speed * 0.9)",
+      "hitTesting": false,
+      "frame": { "x": "50%", "y": "50%", "size": "=viewport.min * 0.62" },
+      "depth": 1.2
+    },
+    {
+      "type": "shape",
+      "id": "dot1",
+      "shape": "circle",
+      "visible": "=state.gap.kind == 0",
+      "color": "=mix(theme.accent, #FFFFFF, 0.85)",
+      "filter": { "type": "lut", "file": "=params.lut", "amount": "=params.lutAmount" },
+      "scale": "=0.55 + 0.45 * (0.5 + 0.5 * sin(time * motion.speed * 2.6))",
+      "opacity": "=0.45 + 0.55 * (0.5 + 0.5 * sin(time * motion.speed * 2.6))",
+      "blur": "=viewport.min * 0.005 * (0.5 - 0.5 * sin(time * motion.speed * 2.6))",
+      "frame": { "x": "=viewport.min * 0.4 - viewport.min * 0.05", "y": "50%", "size": "=viewport.min * 0.022" }
+    },
+    {
+      "type": "shape",
+      "id": "dot2",
+      "shape": "circle",
+      "visible": "=state.gap.kind == 0",
+      "color": "=mix(theme.accent, #FFFFFF, 0.85)",
+      "filter": { "type": "lut", "file": "=params.lut", "amount": "=params.lutAmount" },
+      "scale": "=0.55 + 0.45 * (0.5 + 0.5 * sin(time * motion.speed * 2.6 - 0.9))",
+      "opacity": "=0.45 + 0.55 * (0.5 + 0.5 * sin(time * motion.speed * 2.6 - 0.9))",
+      "blur": "=viewport.min * 0.005 * (0.5 - 0.5 * sin(time * motion.speed * 2.6 - 0.9))",
+      "frame": { "x": "50%", "y": "50%", "size": "=viewport.min * 0.022" }
+    },
+    {
+      "type": "shape",
+      "id": "dot3",
+      "shape": "circle",
+      "visible": "=state.gap.kind == 0",
+      "color": "=mix(theme.accent, #FFFFFF, 0.85)",
+      "filter": { "type": "lut", "file": "=params.lut", "amount": "=params.lutAmount" },
+      "scale": "=0.55 + 0.45 * (0.5 + 0.5 * sin(time * motion.speed * 2.6 - 1.8))",
+      "opacity": "=0.45 + 0.55 * (0.5 + 0.5 * sin(time * motion.speed * 2.6 - 1.8))",
+      "blur": "=viewport.min * 0.005 * (0.5 - 0.5 * sin(time * motion.speed * 2.6 - 1.8))",
+      "frame": { "x": "=viewport.min * 0.4 + viewport.min * 0.05", "y": "50%", "size": "=viewport.min * 0.022" }
+    },
+    {
+      "type": "component",
+      "id": "capsules",
+      "component": "visualizer.capsuleSpectrum",
+      "visible": "=state.gap.kind == 1",
+      "props": { "count": 9, "scale": "=let.capsuleScale" },
+      "frame": { "x": "50%", "y": "50%", "width": "=let.capsuleRowW", "height": "=viewport.min * 0.11" }
+    },
+    {
+      "type": "component",
+      "id": "capsulesReflection",
+      "component": "visualizer.capsuleSpectrum",
+      "visible": "=state.gap.kind == 1",
+      "props": { "count": 9, "scale": "=let.capsuleScale" },
+      "scaleY": -1,
+      "opacity": 0.16,
+      "blur": "=viewport.min * 0.0033",
+      "frame": { "x": "50%", "y": "=viewport.min * 0.36", "width": "=let.capsuleRowW", "height": "=viewport.min * 0.11" }
+    },
+    {
+      "type": "component",
+      "id": "meter",
+      "component": "visualizer.led",
+      "visible": "=state.gap.kind == 2",
+      "props": {
+        "count": 15,
+        "dotSize": "=viewport.min * 0.017",
+        "spacing": "=viewport.min * 0.011",
+        "levels": 6,
+        "direction": "centerOut",
+        "pill": false,
+        "statusLight": false,
+        "bright": true,
+        "color": "=mix(theme.accent, #FFFFFF, 0.5)"
+      },
+      "frame": { "x": "50%", "y": "=viewport.min * 0.22", "width": "=viewport.min * 0.62", "height": "=viewport.min * 0.06" }
+    },
+    {
+      "type": "component",
+      "id": "meterReflection",
+      "component": "visualizer.led",
+      "visible": "=state.gap.kind == 2",
+      "props": {
+        "count": 15,
+        "dotSize": "=viewport.min * 0.017",
+        "spacing": "=viewport.min * 0.011",
+        "levels": 6,
+        "direction": "centerOut",
+        "pill": false,
+        "statusLight": false,
+        "bright": true,
+        "color": "=mix(theme.accent, #FFFFFF, 0.5)"
+      },
+      "scaleY": -1,
+      "opacity": 0.16,
+      "blur": "=viewport.min * 0.0033",
+      "frame": { "x": "50%", "y": "=viewport.min * 0.29", "width": "=viewport.min * 0.62", "height": "=viewport.min * 0.06" }
+    },
+    {
+      "type": "repeat",
+      "id": "satellites",
+      "layout": "free",
+      "items": "=state.gap.kind == 3 ? range(state.gap.dots) : []",
+      "limit": 8,
+      "hitTesting": false,
+      "frame": { "x": "50%", "y": "50%", "width": "100%", "height": "100%" },
+      "template": {
+        "type": "shape",
+        "id": "satellite",
+        "shape": "circle",
+        "color": "=mix(theme.accent, #FFFFFF, 0.88)",
+        "blendMode": "plusLighter",
+        "filter": { "type": "lut", "file": "=params.lut", "amount": "=params.lutAmount" },
+        "scale": "=0.55 + 0.45 * let.pulse",
+        "opacity": "=0.3 + 0.7 * let.pulse",
+        "blur": "=viewport.min * 0.004 * (1 - let.pulse)",
+        "zIndex": "=sin(let.orbitPhase)",
+        "hitTesting": false,
+        "frame": {
+          "x": "=viewport.min * (0.4 + cos(let.orbitPhase) * let.titleSpan)",
+          "y": "=viewport.min * (0.25 + sin(let.orbitPhase) * (0.05 + 0.03 * let.titleSpan))",
+          "size": "=viewport.min * 0.016"
+        }
+      }
+    },
+    {
+      "type": "text",
+      "id": "title",
+      "visible": "=state.gap.kind == 3",
+      "text": "=track.title",
+      "font": "=let.fontCJK",
+      "weight": "=let.fontWeight",
+      "subpixel": true,
+      "fontSize": "=min(viewport.min * 0.055, viewport.min * 0.62 * 100 / max(1, measureText(track.title, 100, let.fontWeight, let.fontCJK)))",
+      "lineLimit": 1,
+      "minScale": 0.8,
+      "alignment": "center",
+      "color": "=mix(theme.accent, #FFFFFF, 0.9)",
+      "filter": { "type": "lut", "file": "=params.lut", "amount": "=params.lutAmount" },
+      "zIndex": 0,
+      "frame": { "x": "50%", "y": "=viewport.min * 0.235", "width": "=viewport.min * 0.68" },
+      "glyphMotion": {
+        "y": "=sin(time * motion.speed * 1.3 - glyph.index * min(0.55, 7.5 / max(1, glyph.count))) * glyph.fontSize * 0.08",
+        "opacity": "=0.55 + 0.45 * (0.5 + 0.5 * sin(time * motion.speed * 1.3 - glyph.index * min(0.55, 7.5 / max(1, glyph.count)) + 1.2))",
+        "blur": "=(0.5 - 0.5 * sin(time * motion.speed * 1.3 - glyph.index * min(0.55, 7.5 / max(1, glyph.count)) + 1.2)) * glyph.fontSize * 0.04"
+      }
+    },
+    {
+      "type": "text",
+      "id": "artist",
+      "visible": "=state.gap.kind == 3",
+      "text": "=track.artist",
+      "fontSize": "=viewport.min * 0.017",
+      "weight": "medium",
+      "lineLimit": 1,
+      "minScale": 0.6,
+      "alignment": "center",
+      "tracking": "=viewport.min * 0.003",
+      "subpixel": true,
+      "color": "=alpha(mix(theme.accent, #FFFFFF, 0.8), 0.7)",
+      "filter": { "type": "lut", "file": "=params.lut", "amount": "=params.lutAmount" },
+      "opacity": "=0.6 + 0.4 * (0.5 + 0.5 * sin(time * motion.speed * 0.4))",
+      "frame": { "x": "50%", "y": "=viewport.min * 0.29", "width": "=viewport.min * 0.5" }
+    }
+  ]
+}

@@ -1,0 +1,656 @@
+{
+  "formatVersion": 2,
+  "hostAPIVersion": 2,
+  "version": "1.4.0",
+  "author": "kmg",
+  "sidebar": {"showsAuthor": true},
+  "preview": {"image": "preview.png", "themed": true},
+  "descriptor": {
+    "id": "am",
+    "name": "AM",
+    "systemImage": "ipad.landscape",
+    "surfaces": [
+      "fullscreen"
+    ]
+  },
+  "requires": [
+    "scene@2",
+    "theme@1",
+    "host@1",
+    "clock.playback@1",
+    "like@1",
+    "output@1",
+    "track.audio@1",
+    "queue.items@1"
+  ],
+  "scene": {
+    "state": {
+      "scrubbing": false,
+      "scrub": 0,
+      "adjustingVolume": false
+    },
+    "root": {
+      "type": "layer",
+      "controls": ["fullscreen", "lyricsToggle", "quickPanel", "queue", "playPause", "previous", "next"],
+      "enter": { "type": "fade+scale", "scale": 0.985, "token": "backgroundTransition" },
+      "children": [
+        {
+          "type": "switch",
+          "frame": { "x": 0, "y": 0, "anchor": "topLeading", "width": "100%", "height": "=host.layout.window.height" },
+          "cases": [
+            {
+              "type": "component",
+              "component": "background.amllMesh",
+              "when": "=params.backdrop == 'mesh'",
+              "frame": { "width": "100%", "height": "100%" }
+            }
+          ],
+          "default": {
+            "type": "component",
+            "component": "background.artworkBlur",
+            "props": { "blur": 80 },
+            "saturation": 1.2,
+            "frame": { "width": "100%", "height": "100%" }
+          }
+        },
+        {
+          "type": "component",
+          "component": "background.dimming",
+          "props": { "intensity": "=params.dimming" },
+          "frame": { "x": 0, "y": 0, "anchor": "topLeading", "width": "100%", "height": "=host.layout.window.height" }
+        },
+        {
+          "type": "component",
+          "component": "menu.player",
+          "props": {
+            "include": ["info", "track", "external", "quickPanel"],
+            "showsLike": false,
+            "showsDislike": false
+          },
+          "frame": { "x": 0, "y": 0, "anchor": "topLeading", "width": "100%", "height": "=host.layout.window.height" },
+          "children": [
+            {
+              "type": "shape",
+              "shape": "rectangle",
+              "color": "#00000000",
+              "frame": { "width": "100%", "height": "100%" }
+            }
+          ]
+        },
+        {
+          "type": "component",
+          "component": "lyrics.native",
+          "visible": "=host.lyricsVisible && !host.queueVisible",
+          "props": {
+            "userSettings": ["spring"],
+            "highlight": "=params.highlight",
+            "hierarchy": "opacity",
+            "activeColor": "#FFFFFF",
+            "inactiveLevel": 0.28,
+            "translationLevel": 0.28,
+            "topFadeRange": 0.15,
+            "bottomFadeRange": 0.15,
+            "topEdgeOpacity": 0,
+            "bottomEdgeOpacity": 0,
+            "fontSize": "=clamp(vh(6.4), 32, 72) * params.lyricScale",
+            "fontWeight": 700,
+            "translationFontWeight": 600,
+            "enableBlur": "=params.lyricBlur",
+            "enableScale": true,
+            "enableGlow": false,
+            "alignAnchor": "center",
+            "alignPosition": "=viewport.isFullscreen ? 0.32 : 0.46"
+          },
+          "mask": {
+            "type": "gradient",
+            "start": "top",
+            "end": "bottom",
+            "stops": [
+              { "color": "#00000000", "at": 0 },
+              { "color": "#000000", "at": 0.15 },
+              { "color": "#000000", "at": 0.85 },
+              { "color": "#00000000", "at": 1 }
+            ]
+          },
+          "frame": { "x": "=vw(71.25)", "y": "50%", "width": "=vw(45.5)", "height": "100%" }
+        },
+        {
+          "type": "layer",
+          "id": "queue",
+          "visible": "=host.queueVisible && queue.available",
+          "transition": { "type": "fade+fromBottom", "distance": 18, "token": "layout" },
+          "frame": {
+            "x": "=vw(71.25)",
+            "y": "=viewport.isFullscreen ? (vh(71.8) - min(vw(32), vh(44))) / 2 : (vh(100) - min(vw(36), vh(62))) / 2",
+            "width": "=min(vw(40), 460)",
+            "height": "=viewport.isFullscreen ? min(vw(32), vh(44)) + vh(30.6) : min(vw(36), vh(62))",
+            "anchor": "top"
+          },
+          "children": [
+            {
+              "type": "text",
+              "text": "继续播放",
+              "fontSize": 18,
+              "weight": "bold",
+              "color": "#FFFFFF",
+              "lineLimit": 1,
+              "frame": { "x": 8, "y": 16, "width": "60%", "height": 30, "anchor": "leading", "align": "leading" }
+            },
+            {
+              "type": "text",
+              "text": "=concat(queue.count, ' 首')",
+              "fontSize": 13,
+              "weight": "medium",
+              "color": "#FFFFFF80",
+              "alignment": "trailing",
+              "lineLimit": 1,
+              "frame": { "x": "=parent.width - 8", "y": 17, "width": "30%", "height": 20, "anchor": "trailing", "align": "trailing" }
+            },
+            {
+              "type": "text",
+              "visible": "=queue.count == 0",
+              "text": "队列为空",
+              "fontSize": 15,
+              "color": "#FFFFFF73",
+              "frame": { "x": "50%", "y": "40%", "width": "80%", "height": 24 }
+            },
+            {
+              "type": "scroll",
+              "scrollTo": "=queue.currentIndex",
+              "clip": true,
+              "frame": { "x": "50%", "y": "=(parent.height + 40) / 2", "width": "100%", "height": "=parent.height - 40" },
+              "mask": {
+                "type": "gradient",
+                "start": "top",
+                "end": "bottom",
+                "stops": [
+                  { "color": "#00000000", "at": 0 },
+                  { "color": "#000000", "at": 0.05 },
+                  { "color": "#000000", "at": 0.9 },
+                  { "color": "#00000000", "at": 1 }
+                ]
+              },
+              "children": [
+                {
+                  "type": "repeat",
+                  "items": "=queue.items",
+                  "limit": 1024,
+                  "spacing": 0,
+                  "template": {
+                    "type": "layer",
+                    "id": "row",
+                    "background": "=item.isCurrent ? hex('#FFFFFF1C') : self.hovered ? hex('#FFFFFF12') : hex('#FFFFFF00')",
+                    "cornerRadius": 10,
+                    "animation": "microInteraction",
+                    "frame": { "width": "100%", "height": 52 },
+                    "on": { "tap": { "do": "queue.play", "value": "=item.index" } },
+                    "children": [
+                      {
+                        "type": "artwork",
+                        "track": "=item.id",
+                        "fit": "fill",
+                        "cornerRadius": 6,
+                        "frame": { "x": 8, "y": "50%", "width": 38, "height": 38, "anchor": "leading" }
+                      },
+                      {
+                        "type": "text",
+                        "text": "=item.title",
+                        "fontSize": 14,
+                        "weight": "medium",
+                        "color": "#FFFFFF",
+                        "lineLimit": 1,
+                        "frame": { "x": 56, "y": 18, "width": "=parent.width - 120", "height": 18, "anchor": "leading", "align": "leading" }
+                      },
+                      {
+                        "type": "text",
+                        "text": "=item.artist",
+                        "fontSize": 12,
+                        "color": "#FFFFFF8C",
+                        "lineLimit": 1,
+                        "frame": { "x": 56, "y": 35, "width": "=parent.width - 120", "height": 16, "anchor": "leading", "align": "leading" }
+                      },
+                      {
+                        "type": "symbol",
+                        "name": "speaker.wave.2.fill",
+                        "visible": "=item.isCurrent",
+                        "color": "#FFFFFFD9",
+                        "frame": { "x": "=parent.width - 14", "y": "50%", "width": 17, "height": 14, "anchor": "trailing" }
+                      },
+                      {
+                        "type": "text",
+                        "visible": "=!item.isCurrent",
+                        "text": "=formatTime(item.duration)",
+                        "fontSize": 12,
+                        "design": "rounded",
+                        "color": "#FFFFFF73",
+                        "alignment": "trailing",
+                        "frame": { "x": "=parent.width - 14", "y": "50%", "width": 52, "height": 18, "anchor": "trailing", "align": "trailing" }
+                      },
+                      {
+                        "type": "shape",
+                        "shape": "rectangle",
+                        "visible": "=!item.isCurrent && !self.hovered && item.index < queue.count - 1",
+                        "color": "#FFFFFF17",
+                        "frame": { "x": 56, "y": "=parent.height - 0.5", "width": "=parent.width - 64", "height": 0.5, "anchor": "leading" }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "layer",
+          "id": "column",
+          "offsetX": "=host.lyricsVisible || host.queueVisible ? 0 : vw(27.65)",
+          "animation": { "token": "layout", "duration": 0.6, "bounce": 0.08 },
+          "frame": { "x": "=vw(22.35)", "y": "50%", "width": "=viewport.isFullscreen ? min(vw(32), vh(44)) : min(vw(36), vh(62))", "height": "100%" },
+          "children": [
+            {
+              "type": "shape",
+              "shape": "capsule",
+              "visible": "=viewport.isFullscreen",
+              "color": "=self.hovered ? hex('#FFFFFFB3') : hex('#FFFFFF5C')",
+              "scaleX": "=self.hovered ? 1.15 : 1",
+              "animation": "microInteraction",
+              "frame": { "x": "50%", "y": "=(vh(71.8) - parent.width) / 2 - vh(2.8)", "width": "=vh(4.4)", "height": 5, "padding": 12 },
+              "on": { "tap": "fullscreen.exit" },
+              "help": "退出全屏"
+            },
+            {
+              "type": "component",
+              "component": "menu.player",
+              "props": {
+                "include": ["info", "track", "external", "quickPanel"],
+                "showsLike": false,
+                "showsDislike": false
+              },
+              "scale": "=playback.isPlaying || !params.shrinkOnPause ? 1 : 0.86",
+              "animation": { "token": "emphasis", "duration": 0.6, "bounce": 0.2 },
+              "frame": {
+                "x": "50%",
+                "y": "=vh(viewport.isFullscreen ? 35.9 : 50)",
+                "width": "=parent.width",
+                "height": "=parent.width"
+              },
+              "children": [
+                {
+                  "type": "artwork",
+                  "fit": "fill",
+                  "cornerRadius": "=parent.width * 0.021",
+                  "shadow": { "color": "#00000040", "radius": 34, "y": 16 },
+                  "frame": { "width": "100%", "height": "100%" }
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "text": "=track.title",
+              "visible": "=viewport.isFullscreen",
+              "fontSize": "=clamp(vh(2.4), 18, 24)",
+              "weight": "semibold",
+              "lineLimit": 1,
+              "color": "#FFFFFF",
+              "frame": { "x": 0, "y": "=(vh(71.8) + parent.width) / 2 + vh(6.2)", "width": "=parent.width - clamp(vh(3.9), 26, 46) * 2 - vh(3)", "height": "=clamp(vh(2.4), 18, 24) * 1.3", "anchor": "leading", "align": "leading" }
+            },
+            {
+              "type": "text",
+              "text": "=track.artist",
+              "visible": "=viewport.isFullscreen",
+              "fontSize": "=clamp(vh(1.8), 13, 17)",
+              "lineLimit": 1,
+              "color": "=self.hovered ? hex('#FFFFFFD1') : hex('#FFFFFF99')",
+              "animation": "microInteraction",
+              "frame": { "x": 0, "y": "=(vh(71.8) + parent.width) / 2 + vh(9.2)", "width": "=parent.width - clamp(vh(3.9), 26, 46) * 2 - vh(3)", "height": "=clamp(vh(1.8), 13, 17) * 1.3", "anchor": "leading", "align": "leading" },
+              "on": { "tap": "artist.show" },
+              "help": "查看艺人"
+            },
+            {
+              "type": "symbol",
+              "name": "=like.isLiked ? 'star.fill' : 'star'",
+              "visible": "=viewport.isFullscreen && like.available",
+              "color": "#FFFFFF",
+              "background": "=self.hovered ? hex('#FFFFFF4D') : hex('#FFFFFF2E')",
+              "shape": "circle",
+              "scale": "=like.isLiked ? 1.06 : 1",
+              "animation": { "token": "emphasis", "bounce": 0.4 },
+              "frame": {
+                "x": "=parent.width - clamp(vh(3.9), 26, 46) * 1.5 - vh(2)",
+                "y": "=(vh(71.8) + parent.width) / 2 + vh(7.7)",
+                "width": "=clamp(vh(3.9), 26, 46) * 0.44",
+                "height": "=clamp(vh(3.9), 26, 46) * 0.44",
+                "padding": "=clamp(vh(3.9), 26, 46) * 0.28"
+              },
+              "on": { "tap": "toggleLike" },
+              "help": "=like.isLiked ? '取消喜欢' : '喜欢'"
+            },
+            {
+              "type": "symbol",
+              "name": "ellipsis",
+              "visible": "=viewport.isFullscreen",
+              "color": "#FFFFFF",
+              "background": "=self.hovered ? hex('#FFFFFF4D') : hex('#FFFFFF2E')",
+              "shape": "circle",
+              "animation": "microInteraction",
+              "frame": {
+                "x": "=parent.width - clamp(vh(3.9), 26, 46) / 2",
+                "y": "=(vh(71.8) + parent.width) / 2 + vh(7.7)",
+                "width": "=clamp(vh(3.9), 26, 46) * 0.44",
+                "height": "=clamp(vh(3.9), 26, 46) * 0.44",
+                "padding": "=clamp(vh(3.9), 26, 46) * 0.28"
+              },
+              "on": { "tap": "quickPanel.open" },
+              "help": "快速外观"
+            },
+            {
+              "type": "layer",
+              "id": "progress",
+              "visible": "=viewport.isFullscreen",
+              "frame": { "x": "50%", "y": "=(vh(71.8) + parent.width) / 2 + vh(12.6)", "width": "100%", "height": 26 },
+              "on": {
+                "dragStart": [{ "do": "state.set", "key": "scrubbing", "value": true }],
+                "drag": { "do": "state.set", "key": "scrub", "value": "=gesture.fractionX" },
+                "dragEnd": [
+                  { "do": "seek", "value": "=gesture.fractionX * playback.duration" },
+                  { "do": "state.set", "key": "scrubbing", "value": false }
+                ]
+              },
+              "children": [
+                {
+                  "type": "layer",
+                  "shape": "capsule",
+                  "clip": true,
+                  "animation": "control",
+                  "frame": { "x": "50%", "y": "50%", "width": "100%", "height": "=state.scrubbing ? 12 : 7" },
+                  "children": [
+                    {
+                      "type": "shape",
+                      "shape": "rectangle",
+                      "color": "#FFFFFF38",
+                      "frame": { "x": "50%", "y": "50%", "width": "100%", "height": "100%" }
+                    },
+                    {
+                      "type": "shape",
+                      "shape": "rectangle",
+                      "visible": "=(state.scrubbing ? state.scrub : clock.progress) > 0",
+                      "color": "=state.scrubbing ? hex('#FFFFFF') : hex('#FFFFFFBF')",
+                      "frame": {
+                        "x": 0,
+                        "y": "50%",
+                        "width": "=parent.width * (state.scrubbing ? state.scrub : clock.progress)",
+                        "height": "100%",
+                        "anchor": "leading"
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "visible": "=viewport.isFullscreen",
+              "text": "=formatTime(state.scrubbing ? state.scrub * playback.duration : clock.position)",
+              "fontSize": "=clamp(vh(1.3), 10, 13)",
+              "weight": "semibold",
+              "design": "rounded",
+              "color": "#FFFFFF80",
+              "frame": { "x": 0, "y": "=(vh(71.8) + parent.width) / 2 + vh(15.2)", "width": "30%", "height": 20, "anchor": "leading", "align": "leading" }
+            },
+            {
+              "type": "text",
+              "visible": "=viewport.isFullscreen && track.audio.isLossless",
+              "text": "=track.audio.isHiRes ? '高解析度无损' : '无损'",
+              "fontSize": "=clamp(vh(1.1), 9, 11)",
+              "weight": "bold",
+              "color": "#FFFFFF80",
+              "alignment": "center",
+              "frame": { "x": "50%", "y": "=(vh(71.8) + parent.width) / 2 + vh(15.2)", "width": "40%", "height": 20 }
+            },
+            {
+              "type": "text",
+              "visible": "=viewport.isFullscreen",
+              "text": "=state.scrubbing ? concat('-', formatTime(playback.duration * (1 - state.scrub))) : concat('-', formatTime(max(0, playback.duration - clock.position)))",
+              "fontSize": "=clamp(vh(1.3), 10, 13)",
+              "weight": "semibold",
+              "design": "rounded",
+              "alignment": "trailing",
+              "color": "#FFFFFF80",
+              "frame": { "x": "100%", "y": "=(vh(71.8) + parent.width) / 2 + vh(15.2)", "width": "30%", "height": 20, "anchor": "trailing", "align": "trailing" }
+            },
+            {
+              "type": "layer",
+              "id": "transport",
+              "visible": "=viewport.isFullscreen",
+              "motion": { "microInteraction": { "duration": 0.22 }, "emphasis": { "bounce": 0.24 } },
+              "frame": { "x": "50%", "y": "=(vh(71.8) + parent.width) / 2 + vh(21.6)", "width": "100%", "height": "=vh(9)" },
+              "children": [
+                {
+                  "type": "symbol",
+                  "name": "shuffle",
+                  "color": "=(playback.isLocal ? playback.orderMode == 'shuffle' : playback.appleMusicMode == 'shuffle') ? hex('#1C1C1ECC') : hex('#FFFFFFD9')",
+                  "background": "=(playback.isLocal ? playback.orderMode == 'shuffle' : playback.appleMusicMode == 'shuffle') ? hex('#FFFFFFD9') : self.hovered ? hex('#FFFFFF1F') : hex('#FFFFFF00')",
+                  "cornerRadius": "=vh(0.8)",
+                  "opacity": "=playback.canSetOrderMode ? 1 : 0.35",
+                  "animation": "microInteraction",
+                  "frame": { "x": 0, "y": "50%", "width": "=vh(2.4)", "height": "=vh(2.4)", "padding": "=vh(0.7)", "anchor": "leading" },
+                  "on": {
+                    "tap": [
+                      { "do": "setOrderMode", "when": "=playback.isLocal", "value": "=playback.orderMode == 'shuffle' ? 'sequence' : 'shuffle'" },
+                      { "do": "setAppleMusicMode", "when": "=!playback.isLocal", "value": "=playback.appleMusicMode == 'shuffle' ? 'sequence' : 'shuffle'" }
+                    ]
+                  },
+                  "help": "随机播放"
+                },
+                {
+                  "type": "component",
+                  "component": "control.previous",
+                  "props": { "size": "=vh(8)", "symbolSize": "=vh(8.4)", "color": "#FFFFFF", "disabledColor": "#FFFFFF59" },
+                  "frame": { "x": "26%", "y": "50%", "width": "=vh(8)", "height": "=vh(8)" }
+                },
+                {
+                  "type": "component",
+                  "component": "control.playPause",
+                  "props": { "size": "=vh(8)", "symbolSize": "=vh(5.4)", "color": "#FFFFFF", "disabledColor": "#FFFFFF59" },
+                  "frame": { "x": "50%", "y": "50%", "width": "=vh(8)", "height": "=vh(8)" }
+                },
+                {
+                  "type": "component",
+                  "component": "control.next",
+                  "props": { "size": "=vh(8)", "symbolSize": "=vh(8.4)", "color": "#FFFFFF", "disabledColor": "#FFFFFF59" },
+                  "frame": { "x": "74%", "y": "50%", "width": "=vh(8)", "height": "=vh(8)" }
+                },
+                {
+                  "type": "symbol",
+                  "name": "=(playback.isLocal ? playback.orderMode == 'repeatOne' : playback.appleMusicMode == 'repeatOne') ? 'repeat.1' : 'repeat'",
+                  "color": "=(playback.isLocal ? playback.orderMode == 'repeatOne' : playback.appleMusicMode == 'repeatOne' || playback.appleMusicMode == 'repeatAll') ? hex('#1C1C1ECC') : hex('#FFFFFFD9')",
+                  "background": "=(playback.isLocal ? playback.orderMode == 'repeatOne' : playback.appleMusicMode == 'repeatOne' || playback.appleMusicMode == 'repeatAll') ? hex('#FFFFFFD9') : self.hovered ? hex('#FFFFFF1F') : hex('#FFFFFF00')",
+                  "cornerRadius": "=vh(0.8)",
+                  "opacity": "=playback.canSetOrderMode ? 1 : 0.35",
+                  "animation": "microInteraction",
+                  "frame": { "x": "100%", "y": "50%", "width": "=vh(2.4)", "height": "=vh(2.4)", "padding": "=vh(0.7)", "anchor": "trailing" },
+                  "on": {
+                    "tap": [
+                      { "do": "setOrderMode", "when": "=playback.isLocal", "value": "=playback.orderMode == 'repeatOne' ? 'sequence' : 'repeatOne'" },
+                      {
+                        "do": "setAppleMusicMode",
+                        "when": "=!playback.isLocal",
+                        "value": "=playback.appleMusicMode == 'repeatAll' ? 'repeatOne' : playback.appleMusicMode == 'repeatOne' ? 'sequence' : 'repeatAll'"
+                      }
+                    ]
+                  },
+                  "help": "重复播放"
+                }
+              ]
+            },
+            {
+              "type": "layer",
+              "id": "volume",
+              "visible": "=viewport.isFullscreen",
+              "opacity": "=playback.canSetVolume ? 1 : 0.35",
+              "frame": { "x": "50%", "y": "=(vh(71.8) + parent.width) / 2 + vh(29.8)", "width": "100%", "height": 26 },
+              "children": [
+                {
+                  "type": "symbol",
+                  "name": "speaker.fill",
+                  "color": "#FFFFFF99",
+                  "frame": { "x": 0, "y": "50%", "width": "=vh(1.5)", "height": "=vh(1.5)", "anchor": "leading" },
+                  "on": { "tap": { "do": "setVolume", "value": 0 } },
+                  "help": "静音"
+                },
+                {
+                  "type": "layer",
+                  "frame": { "x": "50%", "y": "50%", "width": "=parent.width - vh(7.4)", "height": 24 },
+                  "on": {
+                    "dragStart": [{ "do": "state.set", "key": "adjustingVolume", "value": true }],
+                    "drag": { "do": "setVolume", "value": "=gesture.fractionX" },
+                    "dragEnd": [{ "do": "state.set", "key": "adjustingVolume", "value": false }],
+                    "scroll": { "do": "setVolume", "value": "=clamp(playback.volume + gesture.deltaY * 0.004, 0, 1)" }
+                  },
+                  "children": [
+                    {
+                      "type": "layer",
+                      "shape": "capsule",
+                      "clip": true,
+                      "animation": "control",
+                      "frame": { "x": "50%", "y": "50%", "width": "100%", "height": "=state.adjustingVolume ? 12 : 7" },
+                      "children": [
+                        {
+                          "type": "shape",
+                          "shape": "rectangle",
+                          "color": "#FFFFFF38",
+                          "frame": { "x": "50%", "y": "50%", "width": "100%", "height": "100%" }
+                        },
+                        {
+                          "type": "shape",
+                          "shape": "rectangle",
+                          "visible": "=playback.volume > 0",
+                          "color": "=state.adjustingVolume ? hex('#FFFFFF') : hex('#FFFFFFBF')",
+                          "frame": {
+                            "x": 0,
+                            "y": "50%",
+                            "width": "=parent.width * playback.volume",
+                            "height": "100%",
+                            "anchor": "leading"
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "symbol",
+                  "name": "speaker.wave.3.fill",
+                  "color": "#FFFFFF99",
+                  "frame": { "x": "100%", "y": "50%", "width": "=vh(2.3)", "height": "=vh(1.6)", "anchor": "trailing" },
+                  "on": { "tap": { "do": "setVolume", "value": 1 } },
+                  "help": "最大音量"
+                }
+              ]
+            },
+            {
+              "type": "component",
+              "component": "control.outputDevice",
+              "visible": "=viewport.isFullscreen",
+              "props": { "color": "#FFFFFFBF", "fontSize": "=clamp(vh(1.4), 11, 14)", "spacing": 8 },
+              "frame": { "x": 0, "y": "=(vh(71.8) + parent.width) / 2 + vh(34.6)", "width": "80%", "height": "=vh(3.4)", "anchor": "leading", "align": "leading" }
+            }
+          ]
+        },
+        {
+          "type": "symbol",
+          "name": "quote.bubble.fill",
+          "visible": "=viewport.isFullscreen",
+          "color": "=host.lyricsVisible && !host.queueVisible ? hex('#1C1C1ECC') : hex('#FFFFFFD9')",
+          "background": "=host.lyricsVisible && !host.queueVisible ? hex('#FFFFFFD9') : self.hovered ? hex('#FFFFFF1F') : hex('#FFFFFF00')",
+          "cornerRadius": "=vh(1)",
+          "zIndex": 10,
+          "animation": "microInteraction",
+          "frame": { "x": "=vw(87.6)", "y": "=(vh(71.8) + min(vw(32), vh(44))) / 2 + vh(34.6)", "width": "=vh(2.3)", "height": "=vh(2.3)", "padding": "=vh(1)" },
+          "on": {
+            "tap": [
+              { "do": "queue.hide", "when": "=host.queueVisible" },
+              { "do": "lyrics.toggle", "when": "=!host.queueVisible" }
+            ]
+          },
+          "help": "=host.lyricsVisible && !host.queueVisible ? '隐藏歌词' : '显示歌词'"
+        },
+        {
+          "type": "symbol",
+          "name": "list.bullet",
+          "visible": "=viewport.isFullscreen && queue.available",
+          "color": "=host.queueVisible ? hex('#1C1C1ECC') : hex('#FFFFFFD9')",
+          "background": "=host.queueVisible ? hex('#FFFFFFD9') : self.hovered ? hex('#FFFFFF1F') : hex('#FFFFFF00')",
+          "cornerRadius": "=vh(1)",
+          "zIndex": 10,
+          "animation": "microInteraction",
+          "frame": { "x": "=vw(93.9)", "y": "=(vh(71.8) + min(vw(32), vh(44))) / 2 + vh(34.6)", "width": "=vh(2.3)", "height": "=vh(2.3)", "padding": "=vh(1)" },
+          "on": { "tap": "queue.toggle" },
+          "help": "=host.queueVisible ? '隐藏播放队列' : '显示播放队列'"
+        }
+      ]
+    }
+  },
+  "parameters": [
+    {
+      "id": "backdrop",
+      "section": "背景",
+      "title": "背景",
+      "defaultValue": "mesh",
+      "control": {
+        "type": "choice",
+        "choices": [
+          { "id": "mesh", "title": "流光" },
+          { "id": "blur", "title": "封面模糊" }
+        ]
+      },
+      "isUserVisible": true
+    },
+    {
+      "id": "dimming",
+      "section": "背景",
+      "title": "背景压暗",
+      "defaultValue": 0.2,
+      "control": { "type": "range", "min": 0, "max": 0.5, "step": 0.05 },
+      "isUserVisible": true
+    },
+    {
+      "id": "lyricScale",
+      "section": "歌词",
+      "title": "歌词字号",
+      "defaultValue": 1,
+      "control": { "type": "range", "min": 0.8, "max": 1.3, "step": 0.05 },
+      "isUserVisible": true
+    },
+    {
+      "id": "highlight",
+      "section": "歌词",
+      "title": "高亮方式",
+      "defaultValue": "smooth",
+      "control": {
+        "type": "choice",
+        "choices": [
+          { "id": "smooth", "title": "扫光" },
+          { "id": "discrete", "title": "逐字" }
+        ]
+      },
+      "isUserVisible": true
+    },
+    {
+      "id": "lyricBlur",
+      "section": "歌词",
+      "title": "远处歌词模糊",
+      "defaultValue": true,
+      "control": { "type": "toggle" },
+      "isUserVisible": true
+    },
+    {
+      "id": "shrinkOnPause",
+      "section": "封面",
+      "title": "暂停时缩小封面",
+      "defaultValue": true,
+      "control": { "type": "toggle" },
+      "isUserVisible": true
+    }
+  ]
+}

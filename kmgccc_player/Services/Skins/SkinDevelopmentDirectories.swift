@@ -48,13 +48,19 @@ final class SkinDevelopmentDirectories {
         do {
             let package = try catalog.packages.validateDirectory(directory)
             if let existing = catalog.registeredSkin(for: package.id) {
-                guard let existing = existing as? PackagedSkin, case .development(let current) = existing.origin, current == directory else {
+                // A linked folder stands in front of a shipped or imported package with the same ID while it stays linked.
+                let origin = (existing as? PackagedSkin)?.origin
+                let isSameLink: Bool = { if case .development(let current)? = origin { return current == directory }; return false }()
+                guard isSameLink || (origin?.precedence ?? 2) < 2 else {
                     throw SkinPackageError.invalidManifest("已有相同 ID 的皮肤")
                 }
             }
             let bookmark = try directory.bookmarkData(options: [.withSecurityScope], includingResourceValuesForKeys: nil, relativeTo: nil)
-            var bookmarks = defaults.array(forKey: key) as? [Data] ?? []
-            if !bookmarks.contains(bookmark) { bookmarks.append(bookmark); defaults.set(bookmarks, forKey: key) }
+            // A fresh bookmark replaces every older one for the same folder, including one saved
+            // under the folder's earlier name, so restoring at launch never adds a second link.
+            var bookmarks = (defaults.array(forKey: key) as? [Data] ?? []).filter { Self.path(of: $0) != Self.path(of: directory) }
+            bookmarks.append(bookmark)
+            defaults.set(bookmarks, forKey: key)
             tasks[package.id]?.cancel()
             if let old = scopes.removeValue(forKey: package.id) { old.stopAccessingSecurityScopedResource() }
             if scoped { scopes[package.id] = directory }
@@ -71,13 +77,22 @@ final class SkinDevelopmentDirectories {
         tasks.removeValue(forKey: id)?.cancel()
         if let url = scopes.removeValue(forKey: id) { url.stopAccessingSecurityScopedResource() }
         let retained = (defaults.array(forKey: key) as? [Data] ?? []).filter { data in
-            var stale = false
-            guard let url = try? URL(resolvingBookmarkData: data, options: [.withoutUI, .withoutMounting], bookmarkDataIsStale: &stale),
-                  let package = catalog.registeredSkin(for: id) as? PackagedSkin,
+            guard let package = catalog.registeredSkin(for: id) as? PackagedSkin,
                   case .development(let directory) = package.origin else { return true }
-            return url != directory
+            return Self.path(of: data) != Self.path(of: directory)
         }
         defaults.set(retained, forKey: key)
+    }
+
+    /// The folder a saved bookmark points to now, following renames and moves; nil when it no longer resolves.
+    private static func path(of bookmark: Data) -> String? {
+        var stale = false
+        guard let url = try? URL(resolvingBookmarkData: bookmark, options: [.withoutUI, .withoutMounting], bookmarkDataIsStale: &stale) else { return nil }
+        return path(of: url)
+    }
+
+    private static func path(of directory: URL) -> String {
+        directory.standardizedFileURL.resolvingSymlinksInPath().path
     }
 
     private func watch(_ directory: URL, id: String) {

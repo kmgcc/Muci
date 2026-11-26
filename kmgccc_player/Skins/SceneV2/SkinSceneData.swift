@@ -711,6 +711,7 @@ enum SkinHostCapabilities {
         "shader@1", "particles@1", "video@1", "fonts@1", "animation@1", "keyframes@1",
         "state@1", "events@1", "gestures@1", "actions@1", "components@1", "templates@1",
         "audio.spectrum@1", "lyrics.native@1", "glyphMotion@1", "fog@1", "camera@1", "stroke@1",
+        "scripts@1", "comet@1", "render.gpu@1", "filters.lut@1", "filters.bokeh@1", "filters.fov@1",
     ]
 
     static var all: Set<String> {
