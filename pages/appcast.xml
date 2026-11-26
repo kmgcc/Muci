@@ -2,18 +2,50 @@
 IMPORTANT: This file was signed by Sparkle. Any modifications to this file requires re-signing this file with generate_appcast or sign_update! The signed signature will be embedded at the end of this file.
 --><rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" xmlns:dc="http://purl.org/dc/elements/1.1/" version="2.0">
   <channel>
-    <title>kmgccc_player</title>
+    <title>Muci</title>
     <item>
-      <title>kmgccc_player 2.4.4</title>
-      <sparkle:version>21</sparkle:version>
-      <sparkle:shortVersionString>2.4.4</sparkle:shortVersionString>
+      <title>Muci 2.5.0</title>
+      <sparkle:version>27</sparkle:version>
+      <sparkle:shortVersionString>2.5.0</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
-      <sparkle:releaseNotesLink>https://kmgcc.github.io/kmgccc_player/release-notes/v2.4.4.md</sparkle:releaseNotesLink>
-      <pubDate>2026-10-27T00:00:00Z</pubDate>
-      <enclosure url="https://github.com/kmgcc/kmgccc_player/releases/download/v2.4.4/kmgccc_player_2.4.4_21.dmg" length="97409017" type="application/x-apple-diskimage" sparkle:version="21" sparkle:shortVersionString="2.4.4" sparkle:edSignature="VYvuNJneLIrjj+BXLnZDy+v7dJmucm2wCVCba8dpoEJzs388+dOXtbQEIbXJ2aXm/RioYLLLj3/jCAIiB1kECQ=="></enclosure>
+      <sparkle:releaseNotesLink>https://kmgcc.github.io/Muci/release-notes/v2.5.0.md</sparkle:releaseNotesLink>
+      <description sparkle:descriptionFormat="plain-text">## [v2.5.0] nymphaea
+
+🎉 播放器更名为 **Muci**，启用全新的 App 图标。
+
+"It took me time to understand my water lilies. I had planted them for the pleasure of it; I grew them without ever thinking of painting them." —— Claude Monet
+译：我花了很多时间才读懂我的睡莲。起初种下只为欢愉，从未想过要将它们入画。—— 克劳德·莫奈
+
+### Added
+
+- **✨🌸全新「字潮」全屏皮肤**。让字如潮水涌来，让光影呼吸，让心怡的音乐铺满每一片夜空。
+- **全新「AM」全屏皮肤**。像素级复刻 apple music 体验。
+- 自定义皮肤系统（beta），开发文档可在`docs`查看，支持高自由度定制皮肤。处在 beta 阶段，行为可能变化。
+- **设置搜索**。输入关键词或拼音首字母，可直接跳到对应设置项。主页座右铭也可在外观设置中自定义。
+- **更多音乐格式**。新增 APE、WavPack、TTA、Opus 和 DSD 等格式，支持将 CUE 整轨和 SACD ISO 按曲目入库。
+- **视频导入**。可将 MP4、M4V 或 MOV 导入为歌曲，并用原视频作为动态封面。
+- **专辑曲序**。导入时可通过联网比对，按音乐目录中的发行曲序整理专辑。
+
+### Improved
+
+- **频谱**。重新调校分析算法，频段响应和起伏更接近 Apple 的频谱效果。部分皮肤可调整频段数量。
+- 改善窗口全屏进出动画。
+- 侧边栏的艺人与专辑列表新增缩略图和搜索。
+- 优化手动搜索歌词、封面与歌曲资料的匹配结果，以及动态封面与音乐的同步。
+
+### Fixed
+
+- 修复重新扫描来源或重开资料库后，部分导入结果丢失的问题。
+- 修复移除资料库根目录时的异常，并改善外置资料库暂时离线时的恢复。
+
+### Files
+
+DMG 为安装包；`.symbols.zip` 用于崩溃报告符号化，日常使用无需下载；`.sha256` 为安装包和符号包的校验文件。</description>
+      <pubDate>2026-11-26T00:00:00Z</pubDate>
+      <enclosure url="https://github.com/kmgcc/Muci/releases/download/v2.5.0/Muci_2.5.0_27.dmg" length="123288121" type="application/x-apple-diskimage" sparkle:version="27" sparkle:shortVersionString="2.5.0" sparkle:edSignature="qfP76XQuN1ibjELLRhonvSNzTVmpYMmy8BgILiI7E5ZY01flO2gAwl4BCMtLQvfaAFhNc+L9vab8Cc2xWJ2IBA=="></enclosure>
     </item>
   </channel>
 </rss><!-- sparkle-signatures:
-edSignature: Tp3YgKLDsuuFbkB0BELCl93ZOj+CFQ8s6ugcqb2MIZjO4PA/Is674Z1jkbWfrAHqILFEUX/LtgH3NiGiNJK4AQ==
-length: 1252
+edSignature: +Ujn0gEtpxEVWlsAiJovcStg5oEXWyORxRUQIrRb+yOhru/m8zQCcU5/i9Es1W8hKW2+9PG43o2tLM3zLyx3Cw==
+length: 3218
 -->
