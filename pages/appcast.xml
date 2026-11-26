@@ -28,6 +28,7 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
 
 ### Improved
 
+- **光碟皮肤**。重新打磨盘面比例、透明盘心与镜面环带细节，外观更真实精致。
 - **频谱**。重新调校分析算法，频段响应和起伏更接近 Apple 的频谱效果。部分皮肤可调整频段数量。
 - 改善窗口全屏进出动画。
 - 侧边栏的艺人与专辑列表新增缩略图和搜索。
@@ -46,6 +47,6 @@ DMG 为安装包；`.symbols.zip` 用于崩溃报告符号化，日常使用无�
     </item>
   </channel>
 </rss><!-- sparkle-signatures:
-edSignature: +Ujn0gEtpxEVWlsAiJovcStg5oEXWyORxRUQIrRb+yOhru/m8zQCcU5/i9Es1W8hKW2+9PG43o2tLM3zLyx3Cw==
-length: 3218
+edSignature: b0Pf95xMXqyV7Pp6rW2lZpKyP1Emia9Rrarez6VoFcxQgHYdZvNW3dLmYIm53TFqjn7id26vMDQH83TODNQ2BA==
+length: 3327
 -->
