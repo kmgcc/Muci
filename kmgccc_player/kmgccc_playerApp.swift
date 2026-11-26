@@ -347,13 +347,13 @@ struct KmgcccPlayerApp: App {
                 }
 
                 Button(NSLocalizedString("menu.submit_feedback", comment: "Submit Feedback")) {
-                    if let url = URL(string: "https://github.com/kmgcc/kmgccc_player/issues") {
+                    if let url = URL(string: "https://github.com/kmgcc/Muci/issues") {
                         NSWorkspace.shared.open(url)
                     }
                 }
 
                 Button(NSLocalizedString("menu.github", comment: "GitHub")) {
-                    if let url = URL(string: "https://github.com/kmgcc/kmgccc_player") {
+                    if let url = URL(string: "https://github.com/kmgcc/Muci") {
                         NSWorkspace.shared.open(url)
                     }
                 }

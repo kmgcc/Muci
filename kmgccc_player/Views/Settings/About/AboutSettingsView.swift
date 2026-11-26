@@ -225,8 +225,8 @@ struct AboutSettingsView: View {
                 Text("settings.about.source_code_desc")
                     .settingsDescriptionStyle()
                 Link(
-                    "https://github.com/kmgcc/kmgccc_player",
-                    destination: URL(string: "https://github.com/kmgcc/kmgccc_player")!
+                    "https://github.com/kmgcc/Muci",
+                    destination: URL(string: "https://github.com/kmgcc/Muci")!
                 )
                 .font(.system(size: SettingsStyleTokens.descriptionFontSize))
             }

@@ -45,7 +45,7 @@ WavPack 混合模式的 `.wvc` 校正文件应与 `.wv` 放在同一目录并保
 
 打开下载的 DMG，将 `Muci.app` 拖入「应用程序」。已安装旧版的用户可通过播放器内的更新功能升级，原有资料库仍从原位置打开。
 
-- [下载安装包](https://github.com/kmgcc/kmgccc_player/releases/latest)
+- [下载安装包](https://github.com/kmgcc/Muci/releases/latest)
 - [接入 MCP、CLI 或 Agent Skill](docs/automation-mcp.md)
 
 ## 系统要求
@@ -56,8 +56,8 @@ WavPack 混合模式的 `.wvc` 校正文件应与 `.wv` 放在同一目录并保
 ## 从源码构建
 
 ```sh
-git clone --recurse-submodules https://github.com/kmgcc/kmgccc_player.git
-cd kmgccc_player
+git clone --recurse-submodules https://github.com/kmgcc/Muci.git
+cd Muci
 ./scripts/bootstrap.sh
 ./scripts/verify.sh
 open kmgccc_player.xcodeproj
@@ -120,7 +120,7 @@ git submodule update --init --recursive
 
 ## 参与贡献
 
-缺陷和功能建议可提交到 [GitHub Issues](https://github.com/kmgcc/kmgccc_player/issues)。请先搜索已有 Issue，附上 macOS 版本、Mac 架构、复现步骤和预期结果。安全问题不要发公开 Issue，请按 `SECURITY.md` 的私密渠道报告。
+缺陷和功能建议可提交到 [GitHub Issues](https://github.com/kmgcc/Muci/issues)。请先搜索已有 Issue，附上 macOS 版本、Mac 架构、复现步骤和预期结果。安全问题不要发公开 Issue，请按 `SECURITY.md` 的私密渠道报告。
 
 贡献代码前请阅读 `CONTRIBUTING.md`。
 

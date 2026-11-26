@@ -108,7 +108,7 @@ actor MusicBrainzAutomationProvider {
         session = URLSession(configuration: configuration)
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
             ?? "development"
-        userAgent = "myPlayer2/\(version) (https://github.com/kmgcc/kmgccc_player)"
+        userAgent = "Muci/\(version) (https://github.com/kmgcc/Muci)"
     }
 
     func search(

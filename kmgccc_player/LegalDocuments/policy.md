@@ -70,4 +70,4 @@ Muci 是一款本地音乐播放与管理工具，提供本地音乐播放、歌
 开发者：kmg
 网页表单：https://player.kmgccc.cn/help/submit
 联系邮箱：apoptosise@outlook.com
-项目地址：https://github.com/kmgcc/kmgccc_player
+项目地址：https://github.com/kmgcc/Muci

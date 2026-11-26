@@ -228,7 +228,7 @@ manifest `tracks[].audioPath`，先相对 bundle 根目录解析；metadata 导�
 
 正常操作只依赖 MCP tools、resources 和内置说明，不假设用户电脑上存在项目源码。只有遇到机制不明、
 异常无法由现有工具诊断，或存在无法安全处理的数据风险时，才可临时查阅官方开源仓库：
-[kmgccc/kmgccc_player](https://github.com/kmgcc/kmgccc_player)。查阅后立即删除下载的源码和临时工程文件。
+[kmgcc/Muci](https://github.com/kmgcc/Muci)。查阅后立即删除下载的源码和临时工程文件。
 
 ## DSP 与完整预设
 

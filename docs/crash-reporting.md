@@ -144,7 +144,7 @@ jq '.threads[]
 
 ## 发布和保留 Release 符号
 
-正式版本及其符号归档由项目维护者在发布时一并准备。每个 [GitHub Release](https://github.com/kmgcc/kmgccc_player/releases) 会附带与该构建完全匹配的 `.symbols.zip`，其中包含主 App dSYM 和 manifest，方便贡献者和维护者分析本机保存的报告。诊断环境保存报告和可选的小型符号化结果。公开 Release 资产用于协作分析，两份私有归档则用于长期保留和备份。
+正式版本及其符号归档由项目维护者在发布时一并准备。每个 [GitHub Release](https://github.com/kmgcc/Muci/releases) 会附带与该构建完全匹配的 `.symbols.zip`，其中包含主 App dSYM 和 manifest，方便贡献者和维护者分析本机保存的报告。诊断环境保存报告和可选的小型符号化结果。公开 Release 资产用于协作分析，两份私有归档则用于长期保留和备份。
 
 Release 构建必须同时提供两个不同的私有归档目录：
 

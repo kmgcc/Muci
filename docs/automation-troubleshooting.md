@@ -105,5 +105,5 @@ secret、writer lock、pending transaction 或 migration journal 来绕过错误
 evidence，而不是猜测。
 
 MCP troubleshooting 通常只需调用 tools、resources 和内置说明。不要假设用户电脑有本地源码。若现有
-能力无法解释异常或安全处理数据，再临时查阅 [官方开源仓库](https://github.com/kmgcc/kmgccc_player)，
+能力无法解释异常或安全处理数据，再临时查阅 [官方开源仓库](https://github.com/kmgcc/Muci)，
 并在查阅后立即删除下载源码和临时工程文件。

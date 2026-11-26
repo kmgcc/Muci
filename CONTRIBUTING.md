@@ -17,8 +17,8 @@ git switch -c your-branch-name
 ## 搭建开发环境
 
 ```sh
-git clone --recurse-submodules https://github.com/kmgcc/kmgccc_player.git
-cd kmgccc_player
+git clone --recurse-submodules https://github.com/kmgcc/Muci.git
+cd Muci
 ./scripts/bootstrap.sh
 ./scripts/verify.sh
 open kmgccc_player.xcodeproj
@@ -50,7 +50,7 @@ open kmgccc_player.xcodeproj
 
 正式版本发生崩溃后，再次启动 App 会显示报告弹窗。点击“保存报告…”即可把经过客户端脱敏的 `.crash-report.json` 保存到本机；保存不会发送报告，也不会关闭弹窗，之后仍可选择取消或发送。弹窗内已经填写的操作说明会一并写入本地副本。
 
-从对应的 [GitHub Release](https://github.com/kmgcc/kmgccc_player/releases) 下载 `kmgccc_player_<version>_<build>_<uuid-prefix>.symbols.zip`，确认 version、build、architecture 与 UUID 相符后，就可以在本地符号化。贡献者自己复现问题时也使用这套流程，无需访问项目的诊断后台。报告字段阅读、UUID 校验和 `atos` 命令见 [崩溃报告与分析](docs/crash-reporting.md)。公开 Issue 适合附上定位问题所需的最小报告内容；如果报告中带有操作说明，发布前可以再检查一次。
+从对应的 [GitHub Release](https://github.com/kmgcc/Muci/releases) 下载 `kmgccc_player_<version>_<build>_<uuid-prefix>.symbols.zip`，确认 version、build、architecture 与 UUID 相符后，就可以在本地符号化。贡献者自己复现问题时也使用这套流程，无需访问项目的诊断后台。报告字段阅读、UUID 校验和 `atos` 命令见 [崩溃报告与分析](docs/crash-reporting.md)。公开 Issue 适合附上定位问题所需的最小报告内容；如果报告中带有操作说明，发布前可以再检查一次。
 
 ## 提交 Pull Request
 

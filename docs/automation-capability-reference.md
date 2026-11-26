@@ -5,7 +5,7 @@ Automation contract。适配器只负责 transport、参数解析和结果渲染
 PlaybackCoordinator、Repository、Source reconciler 和 Job coordinator 仍然是唯一的
 业务 owner。
 
-仓库：<https://github.com/kmgcc/kmgccc_player>
+仓库：<https://github.com/kmgcc/Muci>
 
 ## Domain semantics
 

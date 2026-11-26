@@ -607,7 +607,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				D60000000000000000000003 /* XCLocalSwiftPackageReference "Tools/PopupLab" */,
-				D20000000000000000000002 /* XCLocalSwiftPackageReference "../MelismaKit" */,
+				D20000000000000000000002 /* XCRemoteSwiftPackageReference "melismakit" */,
 				AA0000000000000000000001 /* XCRemoteSwiftPackageReference "WhatsNewKit" */,
 				AA0000000000000000000003 /* XCRemoteSwiftPackageReference "plcrashreporter" */,
 				AA0000000000000000000005 /* XCRemoteSwiftPackageReference "Sparkle" */,
@@ -1085,7 +1085,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 23;
+				CURRENT_PROJECT_VERSION = 27;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = TYU73KR9WW;
 				ENABLE_APP_SANDBOX = NO;
@@ -1141,7 +1141,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 23;
+				CURRENT_PROJECT_VERSION = 27;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = TYU73KR9WW;
 				ENABLE_APP_SANDBOX = NO;
@@ -1262,10 +1262,6 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Dependencies/PlayerAutomation;
 		};
-		D20000000000000000000002 /* XCLocalSwiftPackageReference "../MelismaKit" */ = {
-			isa = XCLocalSwiftPackageReference;
-			relativePath = ../MelismaKit;
-		};
 		D50000000000000000000003 /* XCLocalSwiftPackageReference "Dependencies/MotionKit" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Dependencies/MotionKit;
@@ -1301,6 +1297,14 @@
 				version = 2.9.4;
 			};
 		};
+		D20000000000000000000002 /* XCRemoteSwiftPackageReference "melismakit" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/kmgcc/melismakit.git";
+			requirement = {
+				kind = revision;
+				revision = 14e82d2274813dde5d42f61f1c4184dab51d846e;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -1331,7 +1335,7 @@
 		};
 		D20000000000000000000003 /* MelismaKit */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = D20000000000000000000002 /* XCLocalSwiftPackageReference "../MelismaKit" */;
+			package = D20000000000000000000002 /* XCRemoteSwiftPackageReference "melismakit" */;
 			productName = MelismaKit;
 		};
 		D50000000000000000000002 /* MotionKit */ = {

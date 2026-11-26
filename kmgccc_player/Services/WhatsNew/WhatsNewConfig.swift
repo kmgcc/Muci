@@ -10,7 +10,7 @@ import WhatsNewKit
 
 enum WhatsNewConfig {
 
-    static let targetBuild = AppBuild(23)
+    static let targetBuild = AppBuild(27)
     static let whatsNewVersion = WhatsNew.Version(major: 2, minor: 5, patch: 0)
 
     private static let lastSeenBuildKey = "kmgccc_player.lastSeenWhatsNewBuild"
