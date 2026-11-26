@@ -153,6 +153,11 @@ struct AboutSettingsView: View {
                     license: "AGPL-3.0"
                 )
                 complianceItem(
+                    name: "apple-like-waves",
+                    url: "https://github.com/kmgcc/apple-like-waves",
+                    license: "MIT"
+                )
+                complianceItem(
                     name: "LDDC",
                     url: "https://github.com/chenmozhijin/LDDC",
                     license: "GPL-3.0"
@@ -197,11 +202,6 @@ struct AboutSettingsView: View {
                 )
             }
 
-            if let licenses = Bundle.main.resourceURL?.appendingPathComponent("AudioCodecs/Licenses") {
-                Link("音频组件许可证", destination: licenses)
-                    .settingsRowLabelStyle()
-            }
-
             VStack(alignment: .leading, spacing: 12) {
                 Text(NSLocalizedString("settings.about.inspiration", comment: ""))
                     .settingsRowLabelStyle()
@@ -214,11 +214,6 @@ struct AboutSettingsView: View {
                         name: "Folia",
                         url: "https://github.com/chthollyphile/folia-major",
                         badge: NSLocalizedString("settings.about.inspiration.design", comment: "")
-                    )
-                    inspirationItem(
-                        name: "apple-audio-visualization",
-                        url: "https://github.com/taterboom/apple-audio-visualization",
-                        badge: NSLocalizedString("settings.about.inspiration.algorithm", comment: "")
                     )
                 }
             }

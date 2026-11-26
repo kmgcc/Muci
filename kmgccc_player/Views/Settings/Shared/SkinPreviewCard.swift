@@ -35,7 +35,7 @@ struct SkinPreviewCard<Preview: View>: View {
     @Environment(\.settingsAppForegroundColors) private var appColors
 
     private var selectionAccentColor: Color {
-        FullscreenSelectionAccentStyle.adjustedAccentColor(from: themeStore.accentNSColor)
+        presentationStyle.skinSelectionAccent(themeStore)
     }
 
     private var outerShape: RoundedRectangle {
@@ -175,6 +175,17 @@ struct SkinPreviewCard<Preview: View>: View {
             return appColors.secondary
         }
         return colorScheme == .dark ? Color.white.opacity(0.82) : Color.black.opacity(0.62)
+    }
+}
+
+extension FullscreenSettingsPresentationStyle {
+    /// Accent for a selected skin card. The fullscreen overlay tunes it to sit on artwork;
+    /// app pages keep the theme accent, which already reads on their own surfaces.
+    @MainActor
+    func skinSelectionAccent(_ themeStore: ThemeStore) -> Color {
+        usesUnifiedOverlayForeground
+            ? FullscreenSelectionAccentStyle.adjustedAccentColor(from: themeStore.accentNSColor)
+            : themeStore.accentColor
     }
 }
 

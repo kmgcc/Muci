@@ -33,6 +33,13 @@ final class EmbeddedFullscreenTransition {
     /// mini player comes into view as it rises instead of behind the surface.
     private static let miniPlayerReturnProgress = 0.82
 
+    /// Exit aims this share of the travel beyond the window bottom, so the
+    /// edge crossing falls near the spring's peak speed.
+    private static let exitOvershoot = 2.0
+    /// Exit push, in spring-target distances per second. The surface leaves
+    /// at about 40% of its final speed instead of from rest.
+    private static let exitInitialVelocity = 0.6
+
     func isAttached(to window: NSWindow) -> Bool { self.window === window }
 
     func beginEntry(in window: NSWindow, completion: @escaping () -> Void) {
@@ -143,7 +150,7 @@ final class EmbeddedFullscreenTransition {
         // Entry settles at the top without overshoot. Exit runs the departure
         // spring past the window bottom and ends while still moving.
         entrySpec = resolved.resolve(tokens.phaseSpec(for: .navigation, duration: 0.46, bounce: 0, blendDuration: 0.04))
-        exitSpec = resolved.resolve(tokens.phaseSpec(for: .navigation, duration: 1.0, bounce: 0, blendDuration: 0.04))
+        exitSpec = resolved.resolve(tokens.phaseSpec(for: .navigation, duration: 1.5, bounce: 0, blendDuration: 0.04))
         spatial = resolved == .full
     }
 
@@ -176,7 +183,16 @@ final class EmbeddedFullscreenTransition {
             addSpring(spec, layer: layer, keyPath: "cornerRadius", from: startRadius, to: 0)
             onMiniPlayerRetractedChange?(true)
         } else {
-            let departure = MotionDeparture(spec: spec, from: Double(presentedY), edge: -Double(travel))
+            // Aimed far past the edge with an initial push: the surface starts
+            // moving at once, keeps gaining speed, and crosses the window
+            // bottom near its fastest instead of easing off before it.
+            let departure = MotionDeparture(
+                spec: spec,
+                from: Double(presentedY),
+                edge: -Double(travel),
+                overshoot: Self.exitOvershoot,
+                initialVelocity: Self.exitInitialVelocity
+            )
             layer.setValue(departure.target, forKeyPath: translationKey)
             layer.add(departure.coreAnimation(keyPath: translationKey), forKey: "embedded.\(translationKey)")
             // The transaction completes with its longest animation, so the

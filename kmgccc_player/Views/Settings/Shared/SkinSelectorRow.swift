@@ -64,9 +64,7 @@ struct SkinSelectorRow: View {
     }
 
     private var selector: some View {
-        let selectionAccentColor = FullscreenSelectionAccentStyle.adjustedAccentColor(
-            from: themeStore.accentNSColor
-        )
+        let selectionAccentColor = presentationStyle.skinSelectionAccent(themeStore)
 
         return HorizontalFadeScrollContainer(
             spacing: itemSpacing,
