@@ -36,7 +36,7 @@
 | --- | --- |
 | [产品文案与界面规范](product-ui-guidelines.md) | 极简书面语风格、自然长句、禁用装饰点号、胶囊按钮、设置行规范与视觉层级 |
 | [弹窗标准](popup-standards.md) | `PopupKit` 共享视觉标准、长内容边缘淡出与悬浮动作区、交互式玻璃点击命中顺序与单一退出入口规则 |
-| [原生皮肤开发](skin-authoring-native.md) | 开发中的原生场景 v2、数据绑定、效果、包管理与样例 |
+| [原生皮肤开发](skin-authoring-native.md) | Beta 阶段的原生场景 v2：版本与能力、数据绑定、脚本、效果、包管理与样例 |
 | [皮肤包 JSON Schema v2](skin-package-v2.schema.json) | 皮肤清单与场景节点的编辑器补全及结构定义 |
 | [皮肤包示例](examples/skins/) | 唱片、浮光、字里行间与流彩四个完整打包示例 |
 

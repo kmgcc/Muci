@@ -132,6 +132,7 @@ git submodule update --init --recursive
 
 - **[applemusic-like-lyrics (AMLL)](https://github.com/amll-dev/applemusic-like-lyrics)** — 歌词背景网格动效，通过项目维护的 [integration fork](https://github.com/kmgcc/applemusic-like-lyrics-kmgcccplayer-integration) 集成
 - **[MelismaKit](https://github.com/kmgcc/melismakit)** — 原生 Swift 歌词排版与动效渲染引擎
+- **[apple-like-waves](https://github.com/kmgcc/apple-like-waves)** — 胶囊音频频谱与物理波形可视化算法
 - **[LDDC](https://github.com/chenmozhijin/LDDC)** — 歌词获取与匹配
 - **[FFmpeg](https://ffmpeg.org)** — 通用音频解封装、解码与 DSD/DST 转 PCM
 - **[WavPack](https://www.wavpack.com)** — WavPack 无损、混合模式与校正文件读取
@@ -146,10 +147,9 @@ git submodule update --init --recursive
 
 ### 灵感与设计参考
 
-本项目在界面设计、动态歌词视觉与可视化算法上吸收了以下开源项目的灵感与思路：
+本项目在界面设计与动态歌词视觉上吸收了以下开源项目的灵感与思路：
 
 - **[Folia](https://github.com/chthollyphile/folia-major)** — 界面设计与沉浸式动态歌词动效灵感
-- **[apple-audio-visualization](https://github.com/taterboom/apple-audio-visualization)** — 音频频谱分析与可视化算法思路
 
 ## 美术素材版权声明
 

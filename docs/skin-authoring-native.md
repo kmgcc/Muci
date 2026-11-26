@@ -1,12 +1,37 @@
 # 原生皮肤开发
 
-皮肤包使用原生场景 v2，由 App 渲染布局、数据绑定、材质、交互和效果。包内可以包含图片、字体、循环视频和 Metal 源码。普通用户在播放页或全屏设置中导入 ZIP，再从列表选择皮肤。
+皮肤包使用原生场景 v2，由 App 渲染布局、数据绑定、材质、交互和效果。包内可以包含图片、字体、循环视频、Metal 源码与 JavaScript 脚本。普通用户在播放页或全屏设置中导入皮肤包，再从列表选择皮肤。
 
-本文描述开发中的 v2 接口。JSON v1 不再接受。
+## Beta 与版本
+
+自定义皮肤是 Beta 功能，包格式与宿主接口仍可能调整。本文描述当前实现的 v2 接口，JSON v1 已停止接受。
+
+版本分为三层，另有包自己的版本号：
+
+| 字段 | 含义 |
+| --- | --- |
+| `formatVersion` | 包格式版本，当前为 2 |
+| `hostAPIVersion` | 宿主接口版本，当前为 2 |
+| `requires` | 包用到的能力，每项写成“名称@主版本”，例如 `scene@2`、`lyrics.document@1`、`control.miniPlayer@1` |
+| `version` | 皮肤包自身的版本，由作者维护，默认 `1.0.0` |
+
+`formatVersion` 与 `hostAPIVersion` 须同为 2，否则包无法载入。`requires` 中有宿主未提供的能力时，编译报错并指出该项。数据字段、读取数据的函数、节点与组件各属一项能力：数据与函数的能力见[数据与表达式](#数据与表达式)，宿主组件的能力是组件名加 `@1`，例如 `panel.queue@1`；节点与通用写法的能力有 `scene@2`、`layout@1`、`scroll@1`、`text@1`、`image@1`、`shape@1`、`gradient@1`、`symbol@1`、`repeat@1`、`lyricLine@1`、`visualizer.spectrum@1`、`visualizer.waveform@1`、`visualizer.meter@1`、`material@1`、`glass@1`、`blend@1`、`mask@1`、`filters@1`、`effects@1`、`shader@1`、`particles@1`、`fog@1`、`video@1`、`fonts@1`、`camera@1`、`stroke@1`、`glyphMotion@1`、`animation@1`、`keyframes@1`、`state@1`、`events@1`、`gestures@1`、`actions@1`、`components@1`、`templates@1` 与 `lyrics.native@1`。以下几项各对应一种写法：`scripts@1` 对应包内 `scripts/*.js` 与 `script()`，`comet@1` 对应 `comet` 节点，`render.gpu@1` 对应 `render: "gpu"` 图层，`filters.lut@1`、`filters.bokeh@1`、`filters.fov@1` 分别对应 `lut`、`bokeh`、`fov` 滤镜，用到时一并写入 `requires`。`skin.capabilities` 列出当前 App 提供的全部能力，表达式中 `has("queue.items@1")` 判断宿主是否提供某项能力。
+
+兼容约定：同一能力在 1.x 之内只增加字段、参数与取值；含义改变时主版本加一，例如 `@2`，旧版本至少提前一个发布版本标记为弃用。Beta 期间仍可能出现不兼容的改动，届时在发布说明中列出。
+
+包应在 `requires` 中列出用到的全部能力，宿主缺少其中任一项时，载入即报错并指出该项。目前编译只核对已列出的能力，读到未列出的数据也能通过。
 
 ## 包结构
 
-ZIP 根目录包含 `manifest.json`。场景可直接写在 manifest 的 `scene` 中，也可写成包内 JSON 相对路径；`scenes.window` 和 `scenes.fullscreen` 可以提供各自布局。两个模式的选择与参数独立保存。
+包的根目录包含 `manifest.json`。场景可直接写在 manifest 的 `scene` 中，也可写成包内 JSON 相对路径；`scenes.window` 和 `scenes.fullscreen` 可以提供各自布局。两个模式的选择与参数独立保存。`descriptor.surfaces` 列出皮肤出现在哪些模式的列表中，取 `window` 与 `fullscreen`，默认两者都有。
+
+| 路径 | 内容 |
+| --- | --- |
+| `manifest.json` | 清单与场景 |
+| `components/*.json` | 作者模板，见[布局与节点](#布局与节点) |
+| `scripts/*.js` | 脚本，见[脚本](#脚本) |
+| `fonts` 列出的路径 | ttf、otf 或 ttc 字体 |
+| 其他相对路径 | 图片、`.cube` 调色文件、循环视频、Metal 源码与 `.metallib` |
 
 ```json
 {
@@ -54,6 +79,21 @@ ZIP 根目录包含 `manifest.json`。场景可直接写在 manifest 的 `scene`
 
 内容节点包括 `text`、`lyricLine`、`symbol`、`image`、`artwork`、`video`、`shape` 与 `gradient`。未写 `color` 的文字、符号和形状使用主题的主要前景色。
 
+| 节点 | 主要属性 |
+| --- | --- |
+| `row`、`column`、`stack` | `spacing`；`stack` 写 `"layout": "row"` 时横排，默认纵排 |
+| `grid` | `columns`（1 至 64，默认 2）与 `spacing` |
+| `spacer` | `size` 为最小长度 |
+| `symbol` | `name` 为 SF Symbols 名称 |
+| `image` | `path` 为包内常量路径，`fit` 为 `fit`（默认）或 `fill` |
+| `artwork` | 当前封面；`track` 为队列曲目 id 时显示该曲目的缩略图，此时 `fit` 同上 |
+| `video` | `path` 为包内常量路径，静音循环 |
+| `spectrum`、`waveform`、`meter` | `count`（1 至 512，默认 32）、`gain`（默认 1）、`color`（默认主题强调色），`waveform` 另有 `lineWidth`（默认 2） |
+
+通用属性还有：`zIndex` 决定同层的前后；`scaleX`、`scaleY` 分别缩放两个方向；`hitTesting` 为 false 时节点不接收指针；`cursor` 为指针移上时的光标，取 `pointingHand`、`openHand`、`closedHand`、`crosshair`、`resizeLeftRight`、`resizeUpDown` 或 `ibeam`；`help` 为悬停提示文字。
+
+场景展开后最多 2000 个节点，嵌套最多 64 层；`shader`、`particles` 与 `fog` 各最多 4 个，`video` 最多 2 个。同级节点的 `id` 不能重复。
+
 任一节点写上 `"adaptive": true`，宿主就读取它所在位置下方的背景明暗，为整棵子树选择可读的前景：未写颜色的文字、符号和形状随之变色，系统材质与配色方案随之翻转，`control.miniPlayer` 等原生控件改用相应的前景与玻璃。节点表达式可读 `self.backdrop`（`light` 或 `dark`）、`self.foreground` 与 `self.secondaryForeground`。判断以封面铺满视口为背景估计，并计入 `background.host` 与 `background.dimming` 的压暗；只在节点移动、封面或压暗变化时重算。文字可设 `font`、`fontSize`、`weight`、`design`（rounded、serif、monospaced）、`italic`、`tracking`、`lineSpacing`、`lineLimit`、`alignment` 与 `minScale`。`gradient` 的 `mode` 为 linear、radial、elliptical、angular 或 light；`stops` 写成 `{"color": …, "at": 0.4}` 的数组，未写时 `colors` 均匀分布；径向渐变以 `start` 为中心，`radius` 为相对节点长边的半径，在非正方形的框里会被短边截断；椭圆渐变随框拉伸，`radius` 为 0.5 时恰好在框边缘收尽，适合宽幅光晕。light 是一点光源，亮度随距离按平方反比衰减，颜色取第一个色标，`radius` 为光核占半个框的比例（默认 0.08）；光随框拉伸并在框边缘柔和收尽，扁长的框便是一道横向光芒；渐变带抖动，长距离的过渡保持平滑。形状支持矩形、圆、椭圆、胶囊和单位正方形坐标内的路径。路径命令使用大写 M/L/C/Q/H/V/Z，坐标为绝对值。
 
 `component` 通过 `component` 名称调用宿主组件，`props` 传参数。`lyrics` 是 `lyrics.native` 的简写。原生歌词（含 `lyrics.panel`）每个可实现布局最多一份，不能放入 repeat；自绘歌词没有这个限制。
@@ -95,7 +135,9 @@ ZIP 根目录包含 `manifest.json`。场景可直接写在 manifest 的 `scene`
 
 `background.host` 绘制宿主在该皮肤后方的背景：用户开启艺术背景且皮肤不自带背景时显示艺术背景，否则显示 `preset` 指定内置皮肤的背景，并沿用全屏压暗。`background.art` 直接调用艺术背景。
 
-`control.leadingCapsule` 与 `control.volumeCapsule` 须在同一布局中成对出现。行为组件包住 `children`：`behavior.autoHide` 在指针静止后隐藏内容，`delay` 为 0 时常显，`behavior.scrollVolume` 让滚轮调节音量，`behavior.windowDrag` 让拖动内容即可移动窗口。
+`control.leadingCapsule` 与 `control.volumeCapsule` 须在同一布局中成对出现。行为组件包住 `children`：`behavior.autoHide` 在指针静止 `delay` 秒（默认 3）后隐藏内容，`delay` 为 0 时常显；`behavior.scrollVolume` 让滚轮调节音量，`step` 为每点滚动的音量变化（默认 0.0025）；`behavior.windowDrag` 让拖动内容即可移动窗口；`behavior.lyricsEndAutoHide` 在播放中最后一行歌词结束 `delay` 秒（默认 3）后收起歌词。
+
+全屏时，宿主在右上角放置全屏、歌词与快速面板三个按钮。场景自己绘制其中某个时，在节点的 `controls` 中列出它，宿主便省去对应按钮；可列出 `fullscreen`、`lyricsToggle`、`quickPanel`、`playPause`、`previous`、`next` 与 `queue`。`control.fullscreen` 等宿主按钮、`control.actionStack` 与带歌词按钮的 `control.miniPlayer` 会自行登记。
 
 `menu.player` 给 `children` 附上迷你播放器的完整菜单，分为 `info`（音乐资料）、`track`（喜欢与不喜欢、添加到播放列表、查看详情、编辑歌曲信息、查看艺人与专辑、从资料库删除）、`external`（外部播放覆盖信息）、`order`（四种播放顺序）、`view`（播放队列、歌词、快速外观与全屏）和 `output`（输出设备）。`include` 选出其中几段；`trigger` 为 `click` 时单击即弹出，适合“更多”按钮，默认为右键。`menu.trackContext` 是同一菜单，默认只含前三段。全屏中不显示查看艺人与专辑。
 
@@ -129,24 +171,55 @@ ZIP 根目录包含 `manifest.json`。场景可直接写在 manifest 的 `scene`
 
 manifest 顶层的 `let` 为反复出现的表达式命名，例如 `"let": {"heroX": "=viewport.width / 2 + state.line.x"}`，任何表达式里写 `let.heroX` 即可使用。命名表达式在使用处展开，因此能读到当地的 `props`、`item`、`index` 与 `glyph`；它们可以互相引用，引用成环时检查报错。每处展开的 `follow()` 各有一份弹簧。
 
-包内 `scripts/*.js` 按文件名顺序载入同一个 JavaScriptCore 环境，每个文件最多 1 MiB。全局函数在表达式里以 `script("函数名", 参数…)` 调用；参数与结果是数、文字、布尔、列表与记录，颜色以十六进制文字传入。脚本里的 `host` 提供 `host.measureText(文字, 字号, 字重, 字体)`、`host.lineHeight(字体, 字重, 字号)` 与 `host.wordStarts(文字)`（系统分词给出的各词起点，以 UTF-16 计）；脚本没有网络、文件与定时器。`script()` 只在参数变化时运行，适合写在 `watch` 里，换行时算一次并存入 state。脚本出错时返回 null 并记一次日志，写成 `script(…) ?? state.line` 便保留旧值。`skin.check` 列出脚本中的函数，并核对 `script()` 引用的名称。
+包内 `scripts/*.js` 的全局函数在表达式里以 `script("函数名", 参数…)` 调用，写法、取值与限制见[脚本](#脚本)。
+
+固定函数表如下。除以零得 0，非有限的结果按 0 处理；生成列表的函数最多给出 1024 项。动效函数（`spring`、`follow` 等）、逐字缓动与文字测量见[交互与动画](#交互与动画)。
+
+| 分组 | 函数 |
+| --- | --- |
+| 数学 | `abs`、`floor`、`ceil`、`round(x, 步长)`、`sqrt`、`pow`、`exp`、`log`、`log2`、`log10`、`sin`、`cos`、`tan`、`asin`、`acos`、`atan`、`atan2`、`sign`、`fract`、`mod`（向下取整的余数）、`min`、`max`、`clamp(x, 下限, 上限)`、`step(边界, x)`、`smoothstep(下限, 上限, x)`、`remap(x, 原下限, 原上限, 新下限, 新上限, 是否截断)`、`deg`、`rad` |
+| 插值与随机 | `mix(a, b, t)` 与 `lerp`，数与颜色都可；`random(x)` 为 x 的确定散列，0 到 1；`noise(x)` 为一维平滑噪声，0 到 1 |
+| 时间 | `spin(每分钟转数, 相位)` 给出角度；`oscillate(周期, 相位)` 为 0 到 1 的正弦；`pulse(周期)` 为 0 到 1 的锯齿；三者读场景时间，所在属性逐帧更新。`formatTime(秒)` 写成 `m:ss` 或 `h:mm:ss` |
+| 颜色 | `rgb`、`rgba`（0 到 1 的分量）、`oklch(明度, 彩度, 色相度数)`、`hex(文字)`；`alpha(c, a)` 设不透明度，`opacity(c, a)` 乘以不透明度；`lighten`、`darken` 调 OKLCH 明度；`saturate(c, k)` 把彩度乘以 k，`desaturate(c, k)` 乘以 1 − k；`rotateHue(c, 度)`、`withLightness`、`withChroma`；`lightness`、`chroma`、`hue` 读出分量；`contrast(c)` 给出与 c 对比的前景色；`contrastRatio` 与 `readable` 见下文 |
+| 文字 | `upper`、`lower`、`trim`、`str`、`concat`、`format(数, 小数位)`（至多 6 位）、`replace`、`substring(文字, 起点, 长度)`、`contains`（文字或列表）、`split`、`join` |
+| 列表与记录 | `count` 与 `length`、`at`、`first`、`last`、`slice(列表, 起点, 数量)`、`reverse`、`range(起, 止, 步长)`、`sum`、`average`、`maxOf`、`minOf`、`indexOf`、`keys`；逐词排版用的 `cumsum`、`offsets`、`pluck` 等见[交互与动画](#交互与动画) |
+| 逻辑 | `if(条件, 是, 否)`、`isNull`、`default(值, 备用)`、`has(能力)` |
+| 视口 | `vw`、`vh`、`vmin`、`vmax`，参数为百分数 |
+| 音频 | `spectrum(数量, 低频, 高频)`：30 Hz 至 16 kHz 按对数分布的频段，至多 256 段；`waveform(数量)`：−1 至 1 的波形，至多 1024 点；`band(低频, 高频)`：一段频率的能量，0 到 1 |
+| 歌词 | `lyricLine(相对行号)` 与 `lyricAt(序号)` 返回行记录；`lyricProgress(序号)` 为该行的进度；`lyricTime(序号)` 为该行在播放时间中的起点，供跳转使用 |
+| 脚本 | `script(函数名, 参数…)`，见[脚本](#脚本) |
 
 自定义排版可读取 `track.description`（完整介绍）、`track.descriptionSource`（`track`、`album`、`artist` 或空字符串）和 `track.descriptionAttribution`（继承时的来源说明）。它们与 `text.trackDescription` 使用相同的继承规则；没有可用介绍时均为空字符串。可将文字节点放入 `scroll` 以阅读较长内容。
 
-常用数据域：
+常用数据域与它们所属的能力（`skin.capabilities` 的 `fields` 列出每个字段）：
 
-| 域 | 内容 |
+| 域 | 能力 | 内容 |
+| --- | --- | --- |
+| `track` | `track@1`、`track.enrichment@1`、`track.audio@1` | 跨来源曲目信息与来源、介绍；音乐资料；本地文件的音频格式 |
+| `artwork` | `artwork@1`、`artwork.motion@1` | 封面身份、尺寸、平均色与色板；动态封面可用状态 |
+| `playback`、`clock` | `playback@1`、`clock.playback@1`、`clock.lyrics@1` | 控制可用性、播放状态、音量、播放顺序；音频与歌词时钟 |
+| `time` | `time@1`、`time.flow@1` | 场景秒数；播放流 `playback.flow` 与 `time.free` |
+| `lyrics` | `lyrics.document@1`、`lyrics.derived@1`、`lyrics.prefs@1`、`lyrics.source@1` | 全文、逐词时间、翻译、罗马音、背景人声；当前行与间奏；用户的歌词设置；TTML 源文本 |
+| `theme` | `theme@1`、`theme.foreground@1`、`theme.analysis@1` | ThemeStore 的语义角色；各控件前景策略下的颜色；封面分析结果 |
+| `audio` | `audio.raw@1`、`audio.bands@1`、`audio.led@1`、`audio.spectrum@1` | 共享 PCM、FFT、RMS、峰值与可用状态；分频能量与鼓点；LED；`spectrum()` |
+| `viewport`、`motion` | `viewport@1`、`motion@1` | 实际视口、显示比例、可访问性；按用户动画速度换算的 token 时长 |
+| `host`、`prefs` | `host@1`、`host.pointer@1`、`prefs@1` | 宿主状态与布局、指针；用户设置 |
+| `like`、`library` | `like@1`、`like.state@1`、`library.playlists@1` | 喜欢状态（`like.state` 为 none、liked 或 disliked）、播放列表 |
+| `output` | `output@1` | 当前输出设备的名称与图标、是否跟随系统、可选设备列表 |
+| `queue` | `queue@1`、`queue.items@1` | 播放队列：数量、位置、接下来的曲目；完整队列 |
+| `params`、`state` | `params@1`、`state@1` | 持久皮肤参数与当前场景的临时状态 |
+
+`lyrics.lines` 的每一项、`lyrics.current`、`lyrics.previous`、`lyrics.next` 与 `lyricAt()` 都是同样的行记录，时间以秒计：
+
+| 成员 | 含义 |
 | --- | --- |
-| `track`、`artwork` | 跨来源曲目信息、来源、封面身份、色板及动态封面可用状态 |
-| `playback`、`clock` | 控制可用性、播放状态、音量、播放顺序、音频与歌词时钟 |
-| `lyrics` | 全文、逐词时间、翻译、罗马音、背景人声、当前行与间奏 |
-| `theme` | ThemeStore 的语义角色、分析结果与控件前景策略 |
-| `audio` | 共享 PCM、FFT、RMS、峰值、LED、频段与可用状态 |
-| `viewport`、`host` | 实际视口、显示比例、宿主、可访问性与可见性 |
-| `like`、`library` | 喜欢状态（`like.state` 为 none、liked 或 disliked）、播放列表 |
-| `output` | 当前输出设备的名称与图标、是否跟随系统、可选设备列表 |
-| `queue` | 播放队列：数量、位置、接下来的曲目，以及完整队列 |
-| `params`、`state` | 持久皮肤参数与当前场景的临时状态 |
+| `index`、`id` | 行序号与标识 |
+| `start`、`end`、`duration` | 起止时刻与时长 |
+| `text`、`words` | 行文字；逐词记录，含 `text`、`start`、`end`、`romanization`、`ruby` 与 `obscene` |
+| `translation`、`romanization` | 第一种译文与罗马音；全部译文与罗马音在 `translations`、`romanizations`，每项含 `language`、`text` 与 `words` |
+| `isWordTimed` | 是否有逐词时间 |
+| `isDuet`、`agent`、`isBackground`、`background` | 对唱、演唱者、是否背景人声，以及附在本行的背景人声行 |
+| `language`、`songPart`、`blockIndex` | 语言、段落名称与段落序号 |
 
 `host.layout` 给出内置宿主为皮肤安排的位置，单位为视口点：`artwork`、`lyrics`、`miniPlayer`、`canvas` 与 `window` 各含 x、y、width、height、midX、midY，`scale` 为宿主缩放。歌词显隐时随之更新。
 
@@ -173,6 +246,17 @@ manifest 顶层的 `let` 为反复出现的表达式命名，例如 `"let": {"he
 可调用播放、切歌、跳转、音量、播放顺序、喜欢、队列、歌词显隐、全屏、Quick Panel、设置、详情与编辑，以及皮肤重载、恢复和临时状态操作。操作由原有服务执行；来源不支持的控制应显示禁用状态。
 
 菜单里的每一项也都是操作：`toggleDislike` 与 `setLike`（value 为 none、liked 或 disliked），`playlist.add`（value 为 `library.playlists` 中的 id）与 `playlist.new`，`track.delete`（先请用户确认），`musicInfo.open`，`artist.show` 与 `album.show`（全屏时先退出全屏），`output.select`（value 为设备 id，空字符串表示跟随系统），以及 `queue.show`、`queue.hide`、`lyrics.show` 与 `lyrics.hide`。
+
+场景的临时状态写在 `scene.state` 中，与 `root` 并列，每项给出名称与初值，例如 `"state": {"line": {"index": -1, "items": []}, "expanded": false}`；初值的类型就是这项状态的类型，存放脚本结果的状态宜以同样结构的记录作初值。表达式以 `state.名称` 读取，未声明的名称编译报错。`state.set` 以 `key` 指定名称、`value` 给出新值，`state.toggle` 翻转一个开关值，`state.reset` 恢复全部初值；`params.set` 以 `key` 与 `value` 修改一个持久参数。任一操作可写 `when`，条件为假时跳过；数组中的操作依次执行。
+
+```json
+{"on": {"tap": [
+  {"do": "state.toggle", "key": "expanded"},
+  {"do": "params.set", "key": "layout", "value": "wide", "when": "=params.layout == 'compact'"}
+]}}
+```
+
+`scene.events` 让场景在宿主事件发生时执行操作，写法与 `on` 相同：`trackChange`、`artworkChange`、`motionArtworkReady`、`playbackStart`、`playbackPause`、`seek`、`volumeChange`、`orderChange`、`lyricsChange`、`lyricLineChange`、`interludeStart`、`interludeEnd`、`themeChange`、`viewportChange`、`visibilityChange`、`fullscreenHostChange`、`lyricsVisibilityChange` 与 `audioAvailabilityChange`。场景不可见时只响应 `visibilityChange`。
 
 `transition` 让节点随 `visible` 淡入淡出，可用 `+` 叠加 `scale`、`blur`、`fromTop`、`fromBottom`、`fromLeading`、`fromTrailing`，例如 `"transition": "fade+fromBottom"`；写成记录时可加 token、duration、bounce、distance、scale 与 blur。`glyphs` 用于文字：进入时每个字各自从模糊中显现，先后错落，`stagger` 为 0 到 1，越大越分散；离开时按其余写法整体退场，例如 `"glyphs+blur"` 让旧行整体模糊淡出。带 transition 的节点隐藏后仍保留，不接收点击；减弱动态效果时只保留淡入淡出。
 
@@ -232,7 +316,7 @@ token 可以是名称，也可以是与 `animation` 相同的记录。`spring` �
 | `lineAge` | 自本行第一个字开始以来的秒数 |
 | `fontSize` | 该节点的字号，位移可写成字号的倍数 |
 
-歌词行按逐词时间分配到字，没有逐词时间时按整行均分；普通文字以文字最近一次变化为起点，`progress` 恒为 1。静止时的字波与逐字进入可以合写：
+歌词行按逐词时间分配到字，没有逐词时间时按整行均分；普通文字以文字最近一次变化为起点，`progress` 恒为 1。超过 512 个字的文字不做逐字运动。静止时的字波与逐字进入可以合写：
 
 ```json
 {"glyphMotion":{
@@ -272,11 +356,78 @@ token 可以是名称，也可以是与 `animation` 相同的记录。`spring` �
 
 `contextMenu` 是带 title 与 do 的菜单项数组。宿主保留全局快捷键、空白处恢复菜单和全屏所需入口。
 
+## 脚本
+
+循环、搜索与成段的算法写成包内 JavaScript。`scripts/*.js` 按文件名顺序在同一个私有 JavaScriptCore 环境中各运行一次，之后表达式以 `script("函数名", 参数…)` 调用其中的全局函数，函数名之后最多 15 个参数。
+
+```js
+// scripts/layout.js
+function placeWords(words, size, gap) {
+  let x = 0
+  return (words || []).map((word) => {
+    const w = host.measureText(word.text, size, "heavy")
+    const box = { x: x, w: w }
+    x += w + gap
+    return box
+  })
+}
+```
+
+```json
+{"watch": [{
+  "value": "=lyrics.currentIndex",
+  "initial": true,
+  "do": {"do": "state.set", "key": "boxes", "value": "=script('placeWords', lyrics.current.words, 64, 12) ?? state.boxes"}
+}]}
+```
+
+`boxes` 须在 `scene.state` 中声明，初值可写 `[]`。
+
+可调用的是全局对象上的函数：顶层 `function` 声明与赋给 `var` 的函数。`const`、`let` 与 `class` 声明的名字留在脚本内部，适合放辅助函数。`script()` 的函数名写成常量时，编译核对它存在，包里没有 `scripts` 目录时报错；`skin.check` 的 `scripts` 列出可调用的函数。
+
+参数与结果按下表转换：
+
+| 表达式 | 脚本 |
+| --- | --- |
+| 数 | number；非有限值按 0 |
+| 文字、布尔、null | string、boolean、null |
+| 颜色 | `#RRGGBBAA` 形式的 sRGB 十六进制 string |
+| 列表、记录 | Array、普通 Object |
+
+结果按同样的对应转回。非有限的数按 0，`undefined`、函数与其他对象为 null；列表最多保留 4096 项，嵌套超过 32 层的部分为 null。返回的十六进制文字可以直接用作颜色。
+
+脚本里只有标准 JavaScript 与宿主提供的 `host`，不能读写文件、访问网络或使用定时器：
+
+```ts
+declare const host: {
+  /** 文字的排版宽度（点），与表达式的 measureText 相同。
+   *  weight 取 ultralight、thin、light、regular、medium、semibold、bold、heavy 或 black，省略时为 regular；
+   *  font 为字体名称，可用包内字体，省略时为系统字体。 */
+  measureText(text: string, size: number, weight?: string, font?: string): number
+  /** 该字体在 size 下的上伸、下伸与行间距之和（点）。 */
+  lineHeight(font: string, weight: string, size: number): number
+  /** 系统分词给出的每个词的起点，以 UTF-16 偏移计，与 JavaScript 字符串下标一致；中文与日文也切成词。 */
+  wordStarts(text: string): number[]
+}
+```
+
+运行规则：
+
+- 调用在主线程上同步执行。每次调用只做一段有界的工作，例如排好一行字或决定下一次镜头移动。
+- 调用之间不保留状态：把上一次的结果存进 `state`，下次作为参数传回，例如 `script('nextLine', state.line, …)`。重载皮肤会建立新的环境，全局变量随之清空。
+- `script()` 随参数读到的数据重算：参数只含按变化更新的数据时，在数据变化时运行；参数读到时钟、音频等逐帧数据时，每帧运行。写在 `watch` 的 `do` 里，就只在 value 变化时算一次。含 `script()` 的 `let` 在每处使用时各运行一次。
+- 每个文件最多 1 MiB。
+- 每个文件的首次运行限时 1 秒，超时即被停止，包载入失败，错误指出该文件；重载时失败则保留上一次可用的场景。
+- 每次 `script()` 调用限时 0.25 秒。超时的调用被停止，这个包的脚本全部停用，直到皮肤重新载入；其间场景照常绘制，`script()` 都返回 null。
+- 载入时的语法错误与异常使包载入失败，错误给出文件与行号。调用时抛出的错误让 `script()` 返回 null，同一条错误只记一次日志；写成 `script(…) ?? state.line` 便保留旧值。
+
 ## 材质、效果和素材
 
 `material` 支持 ultraThin、thin、regular、thick、ultraThick、bar。`glass` 支持 regular、clear、identity、tint、interactive、shape 与 cornerRadius；`glassGroup` 提供融合容器。
 
 通用效果有 opacity、rotation、scale、offsetX/Y、blur、brightness、contrast、saturation、grayscale、hueRotation、invert、blendMode、clip 与 mask。`blendMode` 可用 multiply、screen、overlay、darken、lighten、colorDodge、colorBurn、softLight、hardLight、difference、exclusion、hue、saturation、color、luminosity、plusLighter、plusDarker 与 destinationOut，任意节点都能使用，光斑常用 plusLighter。`"group": true` 先合成整个子树，内部的混合只作用于彼此，不影响下层。显式 border、shadow 是作者效果，不改变 App 设置的默认样式。
+
+`background` 以颜色铺底，`cornerRadius` 给出圆角并裁切内容；铺底、材质与玻璃沿用节点的 `shape`。`border` 写成 `{width, color}`；`shadow` 写成 `{color, radius, x, y}`，或这样的数组，按顺序叠加。`appGlass` 取 `regular`、`clear` 或 `normal`，与 App 播放条上的胶囊玻璃一致。`effects` 是 `{type, value}` 的数组，type 取 blur、brightness、contrast、saturation、grayscale、hueRotation、invert 或 blendMode。
 
 `filter` 给节点套上内置着色器，写成一个 `{type, ...}` 或按顺序叠加的数组：
 
@@ -314,7 +465,7 @@ token 可以是名称，也可以是与 `animation` 相同的记录。`spring` �
 
 `comet` 是绕目标飞行的单颗彗星，以节点中心为目标：`orbit` 为 [rx, ry] 椭圆，`progress` 从 0 到 1 表示飞行进度，通常由时钟算出；它从 `angle` 所指的一侧远处飞来，绕目标转过 `sweep` 度后飞离。`trail` 为拖尾占整段飞行的比例，`size` 为实心彗头半径，`width` 为拖尾最宽处。节点框需要容纳整段轨迹，约为椭圆的 5.6 倍。
 
-在 `render: "gpu"` 的图层里，`comet`、带 `trail` 的发射粒子，以及带 `stroke` 的圆、椭圆与 `path` 可写 `brush`，画成颜料笔触。`brush` 可以是 0 到 1 的数，也可以写成 `{amount, dry, wobble, warp, seed}`：`amount` 决定干笔油彩的质感：起伏而参差的轮廓、刷毛拖出的条纹与颜料的厚薄，每一笔的刷毛数与粗糙程度各不相同，0 保持平滑线条；`dry` 决定颜料向笔画末端干涸、露出飞白的程度；圆和椭圆保持原有轮廓，描边由许多交叠的短笔铺成，边缘带毛边，`wobble` 决定每笔的错位与斜度；`path` 的每一笔起笔略钝，收笔收成笔尖，毛分叉而干，粗细随运笔缓缓起伏，`wobble` 决定压力起伏与线条轻微的摆动；`warp`（默认同 `wobble`）让图形像手画一样走形：整体略微弯斜，线条细细抖动，闭合的图形收笔越过起点又错开，不严丝合缝。走形与笔触按图形自身的坐标固定，镜头移动时不变。彗星画成笔触时，`width` 即笔画半宽，不受彗头大小限制，笔画以圆润的湿笔头收尾，省去实心彗头；粒子的 `width` 按各自的彗头大小缩放。`shadow` 可以写成数组，按顺序叠加多层。`video.path` 加载静音循环视频，隐藏时停止；动态封面使用 `artwork`，沿用 App 的共享解码。
+在 `render: "gpu"` 的图层里，`comet`、带 `trail` 的发射粒子，以及带 `stroke` 的圆、椭圆与 `path` 可写 `brush`，画成颜料笔触。`brush` 可以是 0 到 1 的数，也可以写成 `{amount, dry, wobble, warp, seed}`：`amount` 决定干笔油彩的质感：起伏而参差的轮廓、刷毛拖出的条纹与颜料的厚薄，每一笔的刷毛数与粗糙程度各不相同，0 保持平滑线条；`dry` 决定颜料向笔画末端干涸、露出飞白的程度；圆和椭圆保持原有轮廓，描边由许多交叠的短笔铺成，边缘带毛边，`wobble` 决定每笔的错位与斜度；`path` 的每一笔起笔略钝，收笔收成笔尖，毛分叉而干，粗细随运笔缓缓起伏，`wobble` 决定压力起伏与线条轻微的摆动；`warp`（默认同 `wobble`）让图形像手画一样走形：整体略微弯斜，线条细细抖动，闭合的图形收笔越过起点又错开，不严丝合缝。走形与笔触按图形自身的坐标固定，镜头移动时不变。彗星画成笔触时，`width` 即笔画半宽，不受彗头大小限制，笔画以圆润的湿笔头收尾，省去实心彗头；粒子的 `width` 按各自的彗头大小缩放。`video.path` 加载静音循环视频，隐藏时停止；动态封面使用 `artwork`，沿用 App 的共享解码。
 
 `fonts` 列出包内 ttf、otf 或 ttc 路径。字体按可见场景持有，退出后释放登记。
 
@@ -354,7 +505,16 @@ float4 skinFragment(float2 uv, constant SkinUniforms& u, texture2d<float> artwor
 
 ## 参数、安装和开发
 
-`parameters` 声明 id、title、defaultValue、control，支持 toggle、range、choice 和 color。`isUserVisible` 为 true 的参数出现在设置的皮肤选项与全屏快速面板中，只为少量重要选项开启。`visibleWhen` 可以引用其他 params，支持参数联动。相邻且 `section` 相同的参数归在同一小标题下。普通用户不编辑位置。场景用到 `control.miniPlayer` 时，快速面板同时列出播放条的可视化、自动隐藏与材质；用到 `background.host` 时，窗口设置列出艺术背景开关。每个参数占一行：名称在左，range 为定宽滑块，数值在滑块末尾。
+`parameters` 声明 id、title、defaultValue、control，支持 toggle、range、choice 和 color。range 写 `min`、`max` 与 `step`（默认 1），choice 写 `choices`，每项含 `id` 与 `title`；`surfaces` 限定参数出现在哪个模式。
+
+```json
+"parameters": [
+  {"id": "size", "title": "字号", "defaultValue": 0.6, "control": {"type": "range", "min": 0, "max": 1, "step": 0.05}, "isUserVisible": true},
+  {"id": "layout", "title": "版式", "defaultValue": "compact", "control": {"type": "choice", "choices": [{"id": "compact", "title": "紧凑"}, {"id": "wide", "title": "舒展"}]}}
+]
+```
+
+`isUserVisible` 为 true 的参数出现在设置的皮肤选项与全屏快速面板中，只为少量重要选项开启。`visibleWhen` 可以引用其他 params，支持参数联动。相邻且 `section` 相同的参数归在同一小标题下。普通用户不编辑位置。场景用到 `control.miniPlayer` 时，快速面板同时列出播放条的可视化、自动隐藏与材质；用到 `background.host` 时，窗口设置列出艺术背景开关。每个参数占一行：名称在左，range 为定宽滑块，数值在滑块末尾。
 
 参数默认立即生效。皮肤只在换行时读取某个值（例如把字体或节奏写进整行的版面）时，给该参数加 `"applies": "nextLine"`；用户调整这些参数后，设置与快速面板的参数列表底部会临时出现一行小字，列出刚调整的参数，提示从下一行歌词起生效；几秒后淡出。立即生效的参数省略该字段。
 
@@ -368,18 +528,21 @@ float4 skinFragment(float2 uv, constant SkinUniforms& u, texture2d<float> artwor
 
 `lyricsLead` 是宿主识别的保留参数，单位为秒。声明后，它只把该皮肤的歌词时钟提前对应秒数，不改变原生歌词与其他皮肤；`clock.lyrics`、`lyrics.current` 与逐词进度都会一起前移。正值提前，默认 0.4 表示提前 400 毫秒。
 
-App 随附的字潮和 AM 可导出，原生皮肤仍由 App 管理。导入 ZIP 时先确认包内的脚本、着色器、字体和视频，再安装。同 ID 的已导入包可以替换或另存副本，失败时保留当前版本。同 ID 的关联目录优先，其次是已导入的包，再次是随附版本。移除当前包后，若有同 ID 的版本就继续使用该皮肤，否则切回默认皮肤。
+“导入皮肤包”接受 ZIP。安装前，App 列出包里用到的脚本、着色器、字体与视频，确认后才安装。脚本与着色器在 App 内运行，只安装来源可信的包。“关联目录”供作者开发使用，登记时不经确认。
 
-“关联目录”登记作者目录，并监听文件变更；选中存放多个皮肤包的文件夹时，其中每个含 `manifest.json` 的子目录都会关联。错误保留上一次可用场景；移除关联保留源码。右键刷新或设置内重载会重新编译当前包。
+App 原生的皮肤没有导出与删除。随 App 附带的皮肤包可以导出、重载与在访达中显示，不能删除。导入的包与已导入的包同 ID 时，可替换或另存副本；与原生皮肤同 ID 时另存为副本；与随附的皮肤包同 ID 时，以导入的版本为准。导入失败时保留当前版本。删除导入的包后，同 ID 的随附版本接替；没有可接替的版本时，相关模式切回默认皮肤，播放继续。
+
+“关联目录”登记作者目录，并监听文件变更；与导入或随附的包同 ID 时，关联期间显示目录中的版本，移除关联后由导入的版本或随附版本接替；与原生皮肤或另一个关联目录同 ID 时无法关联。选中存放多个皮肤包的文件夹时，其中每个含 `manifest.json` 的子目录都会关联。错误保留上一次可用场景；移除关联保留源码。右键刷新或设置内重载会重新编译当前包。
 
 从仓库根目录检查和打包：
 
 ```sh
 python3 scripts/check-skin-package.py --all-examples
+python3 scripts/check-skin-package.py /absolute/author/directory
 /usr/bin/ditto -c -k docs/examples/skins/vinyl /tmp/vinyl.zip
 ```
 
-结构检查不解析表达式。App 已运行且 Automation 获准时，使用现有 CLI 的通用调用：
+结构检查不解析表达式与脚本。App 已运行且 Automation 获准时，使用现有 CLI 的通用调用：
 
 ```sh
 muci-automation automation call skin.capabilities
@@ -388,7 +551,7 @@ muci-automation automation call skin.reload --params-json '{"skinID":"example.vi
 muci-automation automation call skin.runtime
 ```
 
-skin.check 的 `frameNodes` 按重建子节点数从多到少列出进入时间线的节点及其逐帧属性，据此把逐帧的值移到叶子节点上。skin.runtime 返回活动节点、帧求值次数与音频读取者计数；CPU、内存和帧时间仍需性能工具测量。
+skin.capabilities 列出格式与接口版本、全部能力、节点、组件、操作、数据字段与函数。skin.check 编译作者目录，不安装也不切换皮肤，返回各场景的节点数、读到的数据域与 `scripts` 中可调用的函数；Metal 源码在场景显示时才编译。skin.check 的 `frameNodes` 按重建子节点数从多到少列出进入时间线的节点及其逐帧属性，据此把逐帧的值移到叶子节点上。skin.runtime 返回活动节点、帧求值次数与音频读取者计数；CPU、内存和帧时间仍需性能工具测量。
 
 ## 样例
 
