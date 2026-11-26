@@ -81,13 +81,12 @@ struct AppearanceSettingsView: View {
 
             SettingsSection("常规") {
                 VStack(alignment: .leading, spacing: 14) {
-                    HStack(alignment: .top, spacing: 14) {
+                    HStack(alignment: .center, spacing: 14) {
                         artworkTintModePicker
                             .frame(maxWidth: .infinity)
 
                         Divider()
                             .frame(height: 18)
-                            .padding(.top, 2)
 
                         SettingsSwitchRow(
                             title: "HDR 效果",
@@ -207,8 +206,10 @@ struct AppearanceSettingsView: View {
         HStack(spacing: 8) {
             Text("动态取色")
                 .settingsRowLabelStyle()
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
                 .settingsInfoHint("简洁使用默认色，动态跟随播放封面，丰富为列表歌曲分别取色。")
-            Spacer(minLength: 6)
+            Spacer(minLength: 0)
             SettingsCapsuleSelector(
                 options: AppSettings.ArtworkTintMode.allCases,
                 selection: $artworkTintMode,
