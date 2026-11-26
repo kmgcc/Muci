@@ -9,14 +9,16 @@ MEDIAREMOTE_SOURCE="$SOURCES_DIR/mediaremote/$MEDIAREMOTE_COMMIT"
 MEDIAREMOTE_BUILD="$WORK_DIR/mediaremote/$MEDIAREMOTE_COMMIT"
 MEDIAREMOTE_PRODUCT="$PRODUCTS_DIR/mediaremote"
 MEDIAREMOTE_PATCH="$ROOT/Tools/MediaRemoteAdapter/unbuffered-output.patch"
+MEDIAREMOTE_MIN_OS=26.0
 
 mediaremote_stamp_value() {
-  printf 'source=%s\narchive=%s\npatch=%s\ncmake=%s\nxcode=%s\narch=arm64' \
+  printf 'source=%s\narchive=%s\npatch=%s\ncmake=%s\nxcode=%s\narch=arm64\nminimum-macos=%s' \
     "$MEDIAREMOTE_COMMIT" \
     "$MEDIAREMOTE_ARCHIVE_SHA256" \
     "$(sha256_file "$MEDIAREMOTE_PATCH")" \
     "$(cmake --version | /usr/bin/head -1)" \
-    "$(xcodebuild -version | /usr/bin/tr '\n' ' ')"
+    "$(xcodebuild -version | /usr/bin/tr '\n' ' ')" \
+    "$MEDIAREMOTE_MIN_OS"
 }
 
 mediaremote_ready() {
@@ -50,14 +52,16 @@ mediaremote_prepare() {
   run_logged "$MEDIAREMOTE_COMPONENT" "apply integration patch" 60 \
     /bin/bash -c 'cd "$1" && /usr/bin/patch -p1 < "$2"' _ "$MEDIAREMOTE_SOURCE" "$MEDIAREMOTE_PATCH"
   run_logged "$MEDIAREMOTE_COMPONENT" configure 180 \
-    cmake -G Xcode -S "$MEDIAREMOTE_SOURCE" -B "$MEDIAREMOTE_BUILD"
+    cmake -G Xcode -S "$MEDIAREMOTE_SOURCE" -B "$MEDIAREMOTE_BUILD" \
+      -DCMAKE_OSX_DEPLOYMENT_TARGET="$MEDIAREMOTE_MIN_OS"
   run_logged "$MEDIAREMOTE_COMPONENT" build 900 \
     xcodebuild -quiet \
       -project "$MEDIAREMOTE_BUILD/MediaRemoteAdapter.xcodeproj" \
       -configuration Release \
       -target MediaRemoteAdapter \
       -target MediaRemoteAdapterTestClient \
-      ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO build
+      ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO \
+      MACOSX_DEPLOYMENT_TARGET="$MEDIAREMOTE_MIN_OS" build
 
   staging="$WORK_DIR/mediaremote/product.$$"
   rm -rf "$staging"
