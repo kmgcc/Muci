@@ -4,6 +4,11 @@
 <dict>
 	<key>CFBundleName</key>
 	<string>$(APP_PRODUCT_NAME)</string>
+	<key>CFBundleAlternateNames</key>
+	<array>
+		<string>kmgccc</string>
+		<string>kmgccc_player</string>
+	</array>
 	<key>KMGProductionUpdatePublicEDKey</key>
 	<string>$(PRODUCTION_UPDATE_PUBLIC_ED_KEY)</string>
 	<key>KMGTestUpdateFallbackFeedURL</key>
