@@ -459,10 +459,15 @@ final class LibraryOpenService {
     private func resolveLibraryRoot(_ selectedURL: URL) async throws -> URL {
         let selected = selectedURL.standardizedFileURL
         if await fileOperator.itemExists(at: LibraryPaths(rootURL: selected).manifestURL) { return selected }
+        var unreadableRoot: URL?
         for name in [LibraryPaths.legacyRootDirectoryName, LibraryPaths.rootDirectoryName] {
             let child = selected.appendingPathComponent(name, isDirectory: true)
-            if await fileOperator.itemExists(at: LibraryPaths(rootURL: child).manifestURL) { return child }
+            let manifestURL = LibraryPaths(rootURL: child).manifestURL
+            guard await fileOperator.itemExists(at: manifestURL) else { continue }
+            if (try? MusicLibraryManifest.read(from: manifestURL)) != nil { return child }
+            if unreadableRoot == nil { unreadableRoot = child }
         }
+        if let unreadableRoot { return unreadableRoot }
         throw LibraryOpenError.libraryNotFound
     }
 }

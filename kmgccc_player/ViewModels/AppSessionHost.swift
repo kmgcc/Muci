@@ -1921,11 +1921,8 @@ final class AppSessionHost: ObservableObject {
         return nil
     }
 
-    /// Restores the startup invariant: when there is no active, reachable
-    /// library, the factory-default root is opened if present; otherwise an
-    /// empty library is created under `~/Music` before the main window is
-    /// shown. This keeps the normal empty-library shell available while the
-    /// setup wizard floats above it.
+    /// Reopens an existing library or creates the first or explicitly replaced
+    /// default library. Offline registrations keep their reconnect path.
     private func ensureFactoryDefaultLibraryIfNeeded(
         allowUnreachableActiveLibrary: Bool = false
     ) async -> LibraryContext? {
@@ -1984,6 +1981,13 @@ final class AppSessionHost: ObservableObject {
         let defaultCandidates = LibraryLocationStore.factoryDefaultRootURLs.filter { root in
             preferRegisteredLibraries || root == defaultRoot || root.path == replacementPath
         }
+        if preferRegisteredLibraries, let activeID = registry.activeLibraryID,
+           registry.library(id: activeID) != nil {
+            libraryStartupFailureMessage = LibraryOpenFailure.message(
+                for: RegisteredLibraryActivationError.reconnectRequired(activeID)
+            )
+            return nil
+        }
         if let existingRoot = LibraryLocationStore.existingFactoryDefaultRoot(in: defaultCandidates) {
             if registry.pendingFactoryDefaultReplacement == true {
                 guard let manifest = try? MusicLibraryManifest.read(from: LibraryPaths(rootURL: existingRoot).manifestURL),
@@ -2024,6 +2028,9 @@ final class AppSessionHost: ObservableObject {
         guard !Task.isCancelled,
               activeLibraryBinding.generation == observedGeneration else {
             return activeLibraryBinding.context
+        }
+        guard LibraryStartupFailurePolicy.permitsFactoryDefaultCreation(in: registry) else {
+            return nil
         }
         let parentURL = defaultRoot.deletingLastPathComponent()
         do {

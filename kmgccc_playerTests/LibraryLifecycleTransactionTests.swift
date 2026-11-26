@@ -90,6 +90,44 @@ final class LibraryLifecycleTransactionTests: XCTestCase {
         )
     }
 
+    func testInvalidLegacyRootDoesNotHideValidMuciRoot() async throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        let parent = fixture.root.appendingPathComponent("Music")
+        let legacyRoot = parent.appendingPathComponent(LibraryPaths.legacyRootDirectoryName)
+        let currentRoot = parent.appendingPathComponent(LibraryPaths.rootDirectoryName)
+        _ = try fixture.makeLibrary(at: legacyRoot, mode: .referenced)
+        let invalidManifest = LibraryPaths(rootURL: legacyRoot).manifestURL
+        try Data("invalid".utf8).write(to: invalidManifest)
+        let current = try fixture.makeLibrary(at: currentRoot, mode: .managed)
+
+        XCTAssertEqual(LibraryLocationStore.existingFactoryDefaultRoot(in: [legacyRoot, currentRoot]), currentRoot)
+        let opened = try await fixture.openService.open(selectedURL: parent)
+        XCTAssertEqual(opened.context.id, current.libraryID)
+        XCTAssertEqual(try Data(contentsOf: invalidManifest), Data("invalid".utf8))
+    }
+
+    func testOfflineRegisteredLibraryDoesNotPermitAutomaticEmptyLibrary() async throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        let root = fixture.root.appendingPathComponent("external")
+        let manifest = try fixture.makeLibrary(at: root, mode: .managed)
+        _ = try await fixture.openService.open(selectedURL: root)
+        try FileManager.default.removeItem(at: root)
+
+        let resolution = await LibraryStartupContextResolver(
+            registryStore: fixture.registry,
+            bookmarkResolver: fixture.bookmarks
+        ).resolve()
+        guard case .unavailable = resolution else { return XCTFail("Expected the reconnect path") }
+        var registry = await fixture.registry.snapshot()
+        XCTAssertEqual(registry.activeLibraryID, manifest.libraryID)
+        XCTAssertFalse(LibraryStartupFailurePolicy.permitsFactoryDefaultCreation(in: registry))
+        registry.pendingFactoryDefaultReplacement = true
+        XCTAssertTrue(LibraryStartupFailurePolicy.permitsFactoryDefaultCreation(in: registry))
+        XCTAssertTrue(LibraryStartupFailurePolicy.permitsFactoryDefaultCreation(in: MusicLibraryRegistry()))
+    }
+
     func testCreationInLegacyDefaultParentKeepsExistingLibraryUnchanged() async throws {
         let fixture = try Fixture()
         defer { fixture.cleanup() }

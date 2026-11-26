@@ -25,6 +25,9 @@ nonisolated enum LibraryLocationStore {
     }
 
     static func existingFactoryDefaultRoot(in candidates: [URL]) -> URL? {
-        candidates.first { FileManager.default.fileExists(atPath: $0.path) }
+        let existing = candidates.filter { FileManager.default.fileExists(atPath: $0.path) }
+        return existing.first {
+            (try? MusicLibraryManifest.read(from: LibraryPaths(rootURL: $0).manifestURL)) != nil
+        } ?? existing.first
     }
 }

@@ -168,6 +168,10 @@ nonisolated enum LibraryStartupResolution: Sendable, Equatable {
 /// the registered library untouched instead of silently creating and
 /// activating a second empty library at an alternate path.
 nonisolated enum LibraryStartupFailurePolicy {
+    static func permitsFactoryDefaultCreation(in registry: MusicLibraryRegistry) -> Bool {
+        registry.libraries.isEmpty || registry.pendingFactoryDefaultReplacement == true
+    }
+
     static func permitsFactoryDefaultFallback(after error: any Error) -> Bool {
         if error is LibraryWriterLeaseError || error is LibraryMetadataReadError
             || error is MusicLibraryRegistryError || error is CancellationError
