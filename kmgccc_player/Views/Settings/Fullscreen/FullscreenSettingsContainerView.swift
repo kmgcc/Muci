@@ -31,13 +31,7 @@ struct FullscreenSettingsPresentationStyle: Equatable {
     let headerIconSize: CGFloat
     let headerTitleFontSize: CGFloat
     let headerBottomPadding: CGFloat
-    let tabFontSize: CGFloat
-    let tabMinWidth: CGFloat
     let tabHeight: CGFloat
-    let tabHorizontalPadding: CGFloat
-    let tabVerticalPadding: CGFloat
-    let tabTrackHorizontalPadding: CGFloat
-    let tabTrackVerticalPadding: CGFloat
     let sectionTitleFontSize: CGFloat
     let rowFontSize: CGFloat
     let rowValueFontSize: CGFloat
@@ -49,11 +43,6 @@ struct FullscreenSettingsPresentationStyle: Equatable {
     let dividerVerticalPadding: CGFloat
     let pickerWidth: CGFloat
     let compactPickerWidth: CGFloat
-    let segmentedFontSize: CGFloat
-    let segmentedHorizontalPadding: CGFloat
-    let segmentedVerticalPadding: CGFloat
-    let segmentedTrackHorizontalPadding: CGFloat
-    let segmentedTrackVerticalPadding: CGFloat
     let skinCardSize: CGSize
     let skinPreviewSize: CGFloat
     let skinCornerRadius: CGFloat
@@ -91,13 +80,7 @@ struct FullscreenSettingsPresentationStyle: Equatable {
         headerIconSize: 20,
         headerTitleFontSize: 30,
         headerBottomPadding: 4,
-        tabFontSize: 13,
-        tabMinWidth: 72,
         tabHeight: 26,
-        tabHorizontalPadding: 0,
-        tabVerticalPadding: 3,
-        tabTrackHorizontalPadding: 3,
-        tabTrackVerticalPadding: 3,
         sectionTitleFontSize: SettingsStyleTokens.sectionTitleFontSize,
         rowFontSize: SettingsStyleTokens.rowFontSize,
         rowValueFontSize: SettingsStyleTokens.rowValueFontSize,
@@ -109,11 +92,6 @@ struct FullscreenSettingsPresentationStyle: Equatable {
         dividerVerticalPadding: 4,
         pickerWidth: 220,
         compactPickerWidth: 140,
-        segmentedFontSize: 11,
-        segmentedHorizontalPadding: 10,
-        segmentedVerticalPadding: 4,
-        segmentedTrackHorizontalPadding: 3,
-        segmentedTrackVerticalPadding: 3,
         skinCardSize: CGSize(width: 104, height: 124),
         skinPreviewSize: 80,
         skinCornerRadius: 12,
@@ -158,13 +136,7 @@ struct FullscreenSettingsPresentationStyle: Equatable {
             headerIconSize: 18 * scale,
             headerTitleFontSize: 22 * scale,
             headerBottomPadding: 2 * scale,
-            tabFontSize: 13.0 * scale,
-            tabMinWidth: 96 * scale,
             tabHeight: 30 * scale,
-            tabHorizontalPadding: 0,
-            tabVerticalPadding: 3 * scale,
-            tabTrackHorizontalPadding: 3 * scale,
-            tabTrackVerticalPadding: 3 * scale,
             sectionTitleFontSize: 14 * scale,
             rowFontSize: 13.5 * scale,
             rowValueFontSize: 13 * scale,
@@ -176,11 +148,6 @@ struct FullscreenSettingsPresentationStyle: Equatable {
             dividerVerticalPadding: 3 * scale,
             pickerWidth: 250 * scale,
             compactPickerWidth: 158 * scale,
-            segmentedFontSize: 12.5 * scale,
-            segmentedHorizontalPadding: 12 * scale,
-            segmentedVerticalPadding: 5 * scale,
-            segmentedTrackHorizontalPadding: 3.5 * scale,
-            segmentedTrackVerticalPadding: 3.5 * scale,
             skinCardSize: CGSize(width: 122 * scale, height: 136 * scale),
             skinPreviewSize: 84 * scale,
             skinCornerRadius: 14 * scale,
@@ -210,14 +177,6 @@ struct FullscreenSettingsPresentationStyle: Equatable {
 
     var captionFont: Font {
         .system(size: captionFontSize)
-    }
-
-    var tabLabelFont: Font {
-        .system(size: tabFontSize, weight: .medium)
-    }
-
-    var segmentedLabelFont: Font {
-        .system(size: segmentedFontSize, weight: .regular)
     }
 
     var usesCustomSectionCards: Bool {
@@ -255,22 +214,6 @@ struct FullscreenSettingsPresentationStyle: Equatable {
     var surfaceTintColor: Color {
         guard let overlayForegroundProfile else { return .clear }
         return overlayForegroundProfile.isDarkForeground ? .white : .black
-    }
-
-    var segmentedTrackColor: Color {
-        // Quick panel runs in a light hierarchy, but the capsule tracks should stay neutral-dark
-        // so they read consistently on top of ultraThinMaterial section surfaces.
-        if usesMaterialSectionCards {
-            return primaryTextColor.opacity(0.12)
-        }
-        return usesUnifiedOverlayForeground ? primaryTextColor.opacity(0.08) : Color.secondary.opacity(0.08)
-    }
-
-    var segmentedTrackStrokeColor: Color {
-        if usesMaterialSectionCards {
-            return primaryTextColor.opacity(0.16)
-        }
-        return .clear
     }
 
     func selectedTextColor(accentColor: Color) -> Color {

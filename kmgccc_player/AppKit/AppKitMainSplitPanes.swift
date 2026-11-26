@@ -192,6 +192,31 @@ private struct LibraryStartupRecoverySidebarPane: View {
     }
 }
 
+/// Slides the window mini player below the window edge while the embedded
+/// fullscreen surface rises, and springs it back as the surface leaves.
+/// The offset is visual only, so the reported mini player frame stays put.
+private struct EmbeddedFullscreenMiniPlayerRetraction: ViewModifier {
+    @Environment(\.motionTokens) private var motionTokens
+    let isRetracted: Bool
+
+    func body(content: Content) -> some View {
+        let retracted = isRetracted
+        content
+            .visualEffect { effect, proxy in
+                effect.offset(y: retracted ? proxy.size.height + 16 : 0)
+            }
+            .motionAnimation(spec, value: isRetracted)
+    }
+
+    /// Leaving runs alongside the rising surface; returning carries a light
+    /// rebound as the mini player lands back in place.
+    private var spec: MotionSpec {
+        isRetracted
+            ? motionTokens.phaseSpec(for: .navigation, duration: 0.32, bounce: 0)
+            : motionTokens.phaseSpec(for: .emphasis, duration: 0.48, bounce: 0.26)
+    }
+}
+
 struct AppKitMainContentPaneRoot: View {
     @ObservedObject var appSession: AppSessionHost
     @ObservedObject private var fullscreenWindowManager = FullscreenWindowManager.shared
@@ -397,6 +422,11 @@ struct AppKitMainContentPaneRoot: View {
                         .padding(.leading, GlassStyleTokens.miniPlayerHorizontalPadding)
                         .padding(.trailing, GlassStyleTokens.miniPlayerHorizontalPadding)
                         .padding(.bottom, 12)
+                        .modifier(
+                            EmbeddedFullscreenMiniPlayerRetraction(
+                                isRetracted: fullscreenWindowManager.isWindowMiniPlayerRetracted
+                            )
+                        )
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
                 }
             }

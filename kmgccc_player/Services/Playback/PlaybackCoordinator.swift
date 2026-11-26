@@ -489,6 +489,12 @@ final class PlaybackCoordinator {
         guard seconds.isFinite else { return }
         recordCrashPlaybackCommand(.seek)
         lyricsSeekRevision &+= 1
+        if playbackProgress.duration > 0 {
+            playbackProgress = PlaybackProgress(
+                currentTime: max(0, min(playbackProgress.duration, seconds)),
+                duration: playbackProgress.duration
+            )
+        }
         switch activeSource {
         case .local:
             localPlayback?.seek(to: seconds)

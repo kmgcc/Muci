@@ -8,7 +8,8 @@
 import Foundation
 
 nonisolated struct LibraryPaths: Sendable, Equatable {
-    static let rootDirectoryName = "kmgccc_player Library"
+    static let rootDirectoryName = "Muci Library"
+    static let legacyRootDirectoryName = "kmgccc_player Library"
     static let preferredTrackArtworkFileName = "artwork.jpg"
     static let legacyTrackArtworkFileName = "artwork.png"
 

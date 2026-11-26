@@ -1,29 +1,29 @@
 # Automation CLI Reference
 
-可执行文件位于 `Dependencies/PlayerAutomation`，正式 CLI 名称为 `player-automation`。
+可执行文件位于 `Dependencies/PlayerAutomation`，正式 CLI 名称为 `muci-automation`。
 
 ```sh
 cd Dependencies/PlayerAutomation
-swift run player-automation automation capabilities --json
-swift run player-automation library tracks \
+swift run muci-automation automation capabilities --json
+swift run muci-automation library tracks \
   --filter-json '{"all":[{"sourceID":"SOURCE"},{"hasLyrics":true}]}' \
   --sort-json '[{"field":"addedAt","direction":"desc"}]' --json
-swift run player-automation library tracks \
+swift run muci-automation library tracks \
   --params-json '{"filter":{"likeState":"liked","playCountMin":3},"includePreferenceStats":true}' --json
-player-automation library stats --json
-player-automation library report --limit 100 --offset 0 --json
-player-automation library selection-create TRACK-A TRACK-B \
+muci-automation library stats --json
+muci-automation library report --limit 100 --offset 0 --json
+muci-automation library selection-create TRACK-A TRACK-B \
   --expected-revision LIBRARY-REVISION --params-json '{"name":"待整理"}' --json
-player-automation library selection-create \
+muci-automation library selection-create \
   --params-json '{"name":"无歌词曲目","filter":{"hasLyrics":false}}' --json
-player-automation library selection-get SELECTION-ID --json
-player-automation playlist add-selection PLAYLIST-ID SELECTION-ID --dry-run --json
-player-automation playlist add-selection PLAYLIST-ID SELECTION-ID \
+muci-automation library selection-get SELECTION-ID --json
+muci-automation playlist add-selection PLAYLIST-ID SELECTION-ID --dry-run --json
+muci-automation playlist add-selection PLAYLIST-ID SELECTION-ID \
   --params-json '{"expectedSelectionRevision":"SELECTION-REVISION"}' --json
-player-automation playlist diff union PLAYLIST-A PLAYLIST-B --limit 100 --json
-player-automation queue upcoming --limit 20 --json
-player-automation history stats --dimension artist --from 2026-01-01T00:00:00Z --json
-player-automation history list --track-id 00000000-0000-0000-0000-000000000001 \
+muci-automation playlist diff union PLAYLIST-A PLAYLIST-B --limit 100 --json
+muci-automation queue upcoming --limit 20 --json
+muci-automation history stats --dimension artist --from 2026-01-01T00:00:00Z --json
+muci-automation history list --track-id 00000000-0000-0000-0000-000000000001 \
   --limit 50 --offset 50 --expected-revision v1-123 --json
 ```
 
@@ -64,13 +64,13 @@ descriptor 时加 `--json`。方法名写错时错误信息会给出最接近的
 `files export` 通过 App 文件夹选择器复制音频，保留资料库原件，并避免覆盖同名文件：
 
 ```sh
-player-automation files reveal TRACK-ID --json
-player-automation files export TRACK-ID OTHER-TRACK-ID --json
-player-automation automation call files.rename \
+muci-automation files reveal TRACK-ID --json
+muci-automation files export TRACK-ID OTHER-TRACK-ID --json
+muci-automation automation call files.rename \
   --params-json '{"operations":[{"trackID":"TRACK-ID","name":"new-name"}]}' --json
-player-automation automation call files.move \
+muci-automation automation call files.move \
   --params-json '{"dryRun":true,"operations":[{"trackID":"TRACK-ID","sourceID":"SOURCE-ID","relativePath":"folder/new-name.mp3"}]}' --json
-player-automation automation call files.delete \
+muci-automation automation call files.delete \
   --params-json '{"dryRun":true,"trackIDs":["TRACK-ID"]}' --json
 ```
 
@@ -96,10 +96,10 @@ Playlist 可独立分页（`--limit/--offset` 及 `--params-json` 中的 `playli
 不会复制 Source bookmark 或原始路径。先 dry-run 查看曲目数、体积和缺失文件，再确认并等待 Job：
 
 ```sh
-player-automation library bundle-export --dry-run --json
-player-automation library bundle-export --confirm --json
-player-automation jobs list --json
-player-automation jobs get JOB-ID --json
+muci-automation library bundle-export --dry-run --json
+muci-automation library bundle-export --confirm --json
+muci-automation jobs list --json
+muci-automation jobs get JOB-ID --json
 ```
 
 中断任务不会留下已完成包；部分不可读曲目会在 manifest 与 Job 结果中逐项报告。
@@ -113,23 +113,23 @@ player-automation jobs get JOB-ID --json
 新 capability。例如：
 
 ```sh
-player-automation automation call library.tracks \
+muci-automation automation call library.tracks \
   --params-json '{"filter":{"not":{"playlistID":"P"}},"limit":50}' --json
-player-automation automation call metadata.patch \
+muci-automation automation call metadata.patch \
   --params-json '{"trackIDs":["T"],"patch":{"genreTags":["jazz"]}}' --json
-player-automation automation call operations.batch \
+muci-automation automation call operations.batch \
   --params-json '{"operations":[{"method":"lyrics.apply","params":{"trackID":"T","ttmlText":"<tt>…</tt>"}}]}' --json
-player-automation jobs wait JOB-ID --params-json '{"timeoutMs":20000}' --json
-player-automation automation call lyrics.search \
+muci-automation jobs wait JOB-ID --params-json '{"timeoutMs":20000}' --json
+muci-automation automation call lyrics.search \
   --params-json '{"trackID":"T","background":true}' --json
-player-automation jobs get JOB-ID --json
-player-automation artwork get TRACK-ID --json
-player-automation artwork search TRACK-ID --params-json '{"limit":5}' --json
-player-automation artwork apply-candidate art-v1-CANDIDATE-DIGEST --dry-run --json
-player-automation artwork apply-candidate art-v1-CANDIDATE-DIGEST --json
-player-automation artwork apply TRACK-ID \
+muci-automation jobs get JOB-ID --json
+muci-automation artwork get TRACK-ID --json
+muci-automation artwork search TRACK-ID --params-json '{"limit":5}' --json
+muci-automation artwork apply-candidate art-v1-CANDIDATE-DIGEST --dry-run --json
+muci-automation artwork apply-candidate art-v1-CANDIDATE-DIGEST --json
+muci-automation artwork apply TRACK-ID \
   --params-json '{"imagePath":"/tmp/cover.jpg"}' --json
-player-automation artwork apply TRACK-ID \
+muci-automation artwork apply TRACK-ID \
   --params-json '{"clear":true}' --json
 ```
 
@@ -142,28 +142,28 @@ Metadata 和 Artwork 也可以直接以 Artist、Album 或 Playlist 为目标，
 Track。四种目标选择器一次只能使用一个：
 
 ```sh
-player-automation metadata get --artist-id ARTIST-ID --json
-player-automation metadata patch --artist-id ARTIST-ID \
+muci-automation metadata get --artist-id ARTIST-ID --json
+muci-automation metadata patch --artist-id ARTIST-ID \
   --params-json '{"description":"新的艺人介绍","genreTags":["jazz"]}' --json
-player-automation metadata get --album-key 'artist::album' --json
-player-automation metadata patch --album-key 'artist::album' \
+muci-automation metadata get --album-key 'artist::album' --json
+muci-automation metadata patch --album-key 'artist::album' \
   --params-json '{"releaseYear":2026,"labelOrCompany":"Example"}' --json
-player-automation metadata patch --playlist-id PLAYLIST-ID \
+muci-automation metadata patch --playlist-id PLAYLIST-ID \
   --params-json '{"name":"夜间精选","description":"Agent 整理"}' --json
-player-automation artwork search --artist-id ARTIST-ID --params-json '{"limit":5}' --json
-player-automation artwork apply --album-key 'artist::album' \
+muci-automation artwork search --artist-id ARTIST-ID --params-json '{"limit":5}' --json
+muci-automation artwork apply --album-key 'artist::album' \
   --params-json '{"imageBase64":"<reviewed-image-data>"}' --json
-player-automation artwork get --playlist-id PLAYLIST-ID --json
-player-automation artwork apply --playlist-id PLAYLIST-ID \
+muci-automation artwork get --playlist-id PLAYLIST-ID --json
+muci-automation artwork apply --playlist-id PLAYLIST-ID \
   --params-json '{"clear":true}' --json
 ```
 
 发现实体时可以先分页列出元数据：
 
 ```sh
-player-automation metadata get --entity-type artist --query '坂本' --limit 50 --json
-player-automation metadata get --entity-type album --offset 50 --limit 50 --json
-player-automation metadata get --entity-type playlist --json
+muci-automation metadata get --entity-type artist --query '坂本' --limit 50 --json
+muci-automation metadata get --entity-type album --offset 50 --limit 50 --json
+muci-automation metadata get --entity-type playlist --json
 ```
 
 `metadata.get` 返回目标的完整 App-owned 投影：Artist/Album 还包含 canonical key、统计量、
@@ -179,10 +179,10 @@ AVFoundation 读取，并标记当前不支持写入。写入当前限 MP3 ID3v2
 读回校验后原子替换，unsupported 文件保持原样。
 
 ```sh
-player-automation metadata embedded-get TRACK-ID --json
-player-automation metadata embedded-patch TRACK-ID --params-file tags.json --dry-run --json
-player-automation metadata embedded-patch TRACK-ID --params-file tags.json --yes --json
-player-automation jobs get JOB-ID --json
+muci-automation metadata embedded-get TRACK-ID --json
+muci-automation metadata embedded-patch TRACK-ID --params-file tags.json --dry-run --json
+muci-automation metadata embedded-patch TRACK-ID --params-file tags.json --yes --json
+muci-automation jobs get JOB-ID --json
 ```
 
 `tags.json` 格式为 `{"fields":{"title":"新标题","artist":"艺人"},"expectedRevisions":{"TRACK-ID":"TRACK-REVISION"}}`；
@@ -210,15 +210,15 @@ player-automation jobs get JOB-ID --json
 资料库生命周期也有专用 CLI alias；路径只作为 App picker 的导航提示，不能替代前台授权：
 
 ```sh
-player-automation library list --json
-player-automation library create referenced "测试资料库" /Volumes/SSD/Music/test2 \
+muci-automation library list --json
+muci-automation library create referenced "测试资料库" /Volumes/SSD/Music/test2 \
   --dry-run --json
-player-automation library open /Volumes/SSD/Music/test2 --yes --json
-player-automation library switch <library-id> --dry-run --json
-player-automation library rename <library-id> "新名称" --json
-player-automation library relocate <library-id> /Volumes/SSD/Music/archive \
+muci-automation library open /Volumes/SSD/Music/test2 --yes --json
+muci-automation library switch <library-id> --dry-run --json
+muci-automation library rename <library-id> "新名称" --json
+muci-automation library relocate <library-id> /Volumes/SSD/Music/archive \
   --dry-run --json
-player-automation library remove <library-id> --dry-run --json
+muci-automation library remove <library-id> --dry-run --json
 ```
 
 `library.create` 会创建并激活新资料库；`library.open` 会注册并激活已有资料库；
@@ -251,8 +251,8 @@ bookmark、扫描状态或歌单绑定。跨库导入需用 `sourceIDMap` 把导
 先用 `--dry-run` 查看变更；真实应用要求 `--confirm`、当前 revision 和 App 前台确认。
 
 ```sh
-player-automation source config-export --json
-player-automation source config-import --params-json '{"document":{"schemaVersion":1,"originLibraryID":"...","sources":[]}}' --dry-run --json
+muci-automation source config-export --json
+muci-automation source config-import --params-json '{"document":{"schemaVersion":1,"originLibraryID":"...","sources":[]}}' --dry-run --json
 ```
 
 导出响应中的 `document` 可直接传回 `source.config.import`；dry-run 响应提供随后调用所需的
@@ -267,10 +267,10 @@ Lyrics 的候选工作流可以拆成可组合的调用：`lyrics search`/`lyric
 Metadata 候选工作流聚合 bundled QQMusic helper 与 MusicBrainz：
 
 ```sh
-player-automation metadata search TRACK-ID --json
-player-automation metadata apply-candidate TRACK-ID CANDIDATE-ID \
+muci-automation metadata search TRACK-ID --json
+muci-automation metadata apply-candidate TRACK-ID CANDIDATE-ID \
   --expected-revision <revision> --dry-run --json
-player-automation metadata apply-candidate TRACK-ID CANDIDATE-ID \
+muci-automation metadata apply-candidate TRACK-ID CANDIDATE-ID \
   --params-json '{"overwriteExistingFields":true}' --json
 ```
 
@@ -284,11 +284,11 @@ player-automation metadata apply-candidate TRACK-ID CANDIDATE-ID \
 每次最多导出或导入 100 首；用 `--limit/--offset` 分页，并保留同一导出响应中的 document：
 
 ```sh
-player-automation metadata export --limit 100 --offset 0 --json > page.json
+muci-automation metadata export --limit 100 --offset 0 --json > page.json
 # 从 AutomationResponse 提取 result 后，在请求文件中包装为 {"document": ...}
 jq '{document: .result}' page.json > import-request.json
-player-automation metadata import --params-file import-request.json --dry-run --json
-player-automation metadata import --params-file import-request.json --confirm --json
+muci-automation metadata import --params-file import-request.json --dry-run --json
+muci-automation metadata import --params-file import-request.json --confirm --json
 ```
 
 跨资料库导入前，在请求文件中补齐 `trackIDMap`，把每个来源 Track ID 映射到目标库现有 Track ID。
@@ -333,7 +333,7 @@ App 打开设置页时会把随包技能同步到
 - Qoder：`~/.agents/skills`（opencode 与 Kimi Code 也会读这个通用目录）
 
 设置页的「复制安装指令」给出一段可直接交给 Agent 的说明，由它自己完成复制。技能里记录的
-命令行入口是 `~/Library/Application Support/<bundle-id>/Automation/bin/player-automation`，
+命令行入口是 `~/Library/Application Support/<bundle-id>/Automation/bin/muci-automation`，
 指向 App 包内的 CLI，App 移动位置后由下一次同步更新。
 
 ## Source creation
@@ -354,13 +354,13 @@ lyrics refresh -> jobs.get(Job ID) -> jobs.retry/jobs.cancel（必要时） -> �
 ## 导入音频与歌单归入
 
 ```sh
-player-automation library import /path/to/song.mp3 /path/to/song.ncm /path/to/folder \
+muci-automation library import /path/to/song.mp3 /path/to/song.ncm /path/to/folder \
   --playlist-id <playlist-id> --dry-run --json
-player-automation library import /path/to/folder --playlist-id <playlist-id> --json
-player-automation library import /path/to/folder \
+muci-automation library import /path/to/folder --playlist-id <playlist-id> --json
+muci-automation library import /path/to/folder \
   --params-json '{"enrichmentPolicy":"migration"}' --json
-player-automation jobs get <job-id> --json
-player-automation jobs retry <job-id> --params-json '{"filePaths":["/path/to/song.mp3"]}' --json
+muci-automation jobs get <job-id> --json
+muci-automation jobs retry <job-id> --params-json '{"filePaths":["/path/to/song.mp3"]}' --json
 ```
 
 `enrichmentPolicy` 默认 `standard`；迁移时设为 `migration`，导入会读取嵌入标签与歌词并跳过在线补全。
@@ -381,31 +381,31 @@ MCP 同名工具为 `library.import`，参数是 `filePaths`、可选 `targetPla
 ## DSP
 
 ```sh
-player-automation dsp schema
-player-automation dsp state
-player-automation dsp patch --params-json '{"operations":[{"op":"setMaster","value":true}]}'
-player-automation dsp presets list
-player-automation dsp presets save --params-json '{"name":"我的均衡器"}'
-player-automation dsp presets select --params-json '{"presetID":"<UUID>"}'
-player-automation dsp presets select --params-json '{"presetID":"<UUID>","copyForCurrentDevice":true}'
-player-automation dsp patch --params-json '{"operations":[{"op":"setEqualLoudness","value":{"enabled":true,"parameters":{"strength":0.8}}}]}'
-player-automation dsp wait --params-json '{"requestID":"<UUID>","timeoutMs":5000}'
-player-automation dsp errors get
-player-automation dsp patch --params-json '{"operations":[{"op":"setQuality","nodeID":"<UUID>","value":"oversampling4x"},{"op":"setChannelPolicy","nodeID":"<UUID>","value":"frontPair"}]}'
-player-automation dsp scripts get --params-json '{"nodeID":"<UUID>"}'
-player-automation dsp scripts update --params-json '{"nodeID":"<UUID>","source":"param gainDB(-24,12)=0; prepare { let gain=dbToGain(gainDB); } process { output=input*gain; }","values":{}}'
-player-automation dsp scripts compile --params-json '{"nodeID":"<UUID>"}'
-player-automation dsp scripts test --params-json '{"nodeID":"<UUID>","fixtures":[{"kind":"impulse","durationSeconds":0.1,"amplitude":0.5}]}'
-player-automation dsp nodes retry --params-json '{"nodeID":"<UUID>"}'
-player-automation dsp patch --params-json '{"operations":[{"op":"setOrder","nodeIDs":["<UUID>","<UUID>"]}]}'
-player-automation dsp load --params-json '{"sampleMs":2000}'
-player-automation dsp impulseResponses list
-player-automation dsp impulseResponses import --params-json '{"path":"~/Music/IR/room.wav","nodeID":"<UUID>"}'
-player-automation dsp presets export --params-json '{"presetID":"<UUID>"}'
-player-automation dsp presets import --dry-run --params-json '{"document":<presets export 的完整结果>}'
-player-automation dsp presets rename --params-json '{"presetID":"<UUID>","name":"夜间"}'
-player-automation dsp presets delete --params-json '{"presetID":"<UUID>"}'
-player-automation audio patch --params-json '{"values":{"outputDeviceID":"<设备 ID>"}}'
+muci-automation dsp schema
+muci-automation dsp state
+muci-automation dsp patch --params-json '{"operations":[{"op":"setMaster","value":true}]}'
+muci-automation dsp presets list
+muci-automation dsp presets save --params-json '{"name":"我的均衡器"}'
+muci-automation dsp presets select --params-json '{"presetID":"<UUID>"}'
+muci-automation dsp presets select --params-json '{"presetID":"<UUID>","copyForCurrentDevice":true}'
+muci-automation dsp patch --params-json '{"operations":[{"op":"setEqualLoudness","value":{"enabled":true,"parameters":{"strength":0.8}}}]}'
+muci-automation dsp wait --params-json '{"requestID":"<UUID>","timeoutMs":5000}'
+muci-automation dsp errors get
+muci-automation dsp patch --params-json '{"operations":[{"op":"setQuality","nodeID":"<UUID>","value":"oversampling4x"},{"op":"setChannelPolicy","nodeID":"<UUID>","value":"frontPair"}]}'
+muci-automation dsp scripts get --params-json '{"nodeID":"<UUID>"}'
+muci-automation dsp scripts update --params-json '{"nodeID":"<UUID>","source":"param gainDB(-24,12)=0; prepare { let gain=dbToGain(gainDB); } process { output=input*gain; }","values":{}}'
+muci-automation dsp scripts compile --params-json '{"nodeID":"<UUID>"}'
+muci-automation dsp scripts test --params-json '{"nodeID":"<UUID>","fixtures":[{"kind":"impulse","durationSeconds":0.1,"amplitude":0.5}]}'
+muci-automation dsp nodes retry --params-json '{"nodeID":"<UUID>"}'
+muci-automation dsp patch --params-json '{"operations":[{"op":"setOrder","nodeIDs":["<UUID>","<UUID>"]}]}'
+muci-automation dsp load --params-json '{"sampleMs":2000}'
+muci-automation dsp impulseResponses list
+muci-automation dsp impulseResponses import --params-json '{"path":"~/Music/IR/room.wav","nodeID":"<UUID>"}'
+muci-automation dsp presets export --params-json '{"presetID":"<UUID>"}'
+muci-automation dsp presets import --dry-run --params-json '{"document":<presets export 的完整结果>}'
+muci-automation dsp presets rename --params-json '{"presetID":"<UUID>","name":"夜间"}'
+muci-automation dsp presets delete --params-json '{"presetID":"<UUID>"}'
+muci-automation audio patch --params-json '{"values":{"outputDeviceID":"<设备 ID>"}}'
 ```
 
 `dsp validate` 和 `dsp patch --dry-run` 可预览完整配置或有序编辑。
@@ -423,9 +423,9 @@ player-automation audio patch --params-json '{"values":{"outputDeviceID":"<设�
 专辑是否共用一个增益由自动判定决定（排除未知专辑、未知或含未知的专辑艺人、合辑、格式或采样率不一致、无专辑艺人且主艺人三位以上），可用专辑元数据的 `loudnessUnified`（`true`、`false`，或 `null` 回到自动）覆盖；专辑读回同时给出 `loudnessUnifiedAutomatically` 与 `loudnessExclusion`。
 
 ```sh
-player-automation audio patch --params-json '{"fade":{"enabled":true},"loudness":{"enabled":true,"targetLUFS":-18}}'
-player-automation audio loudness get --params-json '{"trackIDs":["TRACK_UUID"]}'
-player-automation audio loudness analyze --params-json '{"trackIDs":["TRACK_UUID"]}'
+muci-automation audio patch --params-json '{"fade":{"enabled":true},"loudness":{"enabled":true,"targetLUFS":-18}}'
+muci-automation audio loudness get --params-json '{"trackIDs":["TRACK_UUID"]}'
+muci-automation audio loudness analyze --params-json '{"trackIDs":["TRACK_UUID"]}'
 ```
 
 扫描返回 `loudnessAnalysis` Job，使用 `jobs get|wait|cancel|retry` 观察与控制；它不占用资料库写入队列。后台结果供后续播放，当前曲目增益不随扫描更新，唯一例外是专辑增益首次就绪时在当前曲目内缓慢过渡。等响补偿是预设的固定阶段，经 `dsp patch` 的 `setEqualLoudness` 操作配置（`enabled`、部分 `parameters`、`calibration` 为 `null` 时清除）；标定保存在预设的 `equalLoudness.calibration` 中，只在记录它的输出路线上生效；补偿量只跟随实际输出设备的系统音量，`dsp state` 的 `equalLoudness` 报告设备、音量、曲线来源（默认或标定）与预期增益，`deviceProfiles` 列出各输出路线及其预设。
@@ -435,17 +435,17 @@ player-automation audio loudness analyze --params-json '{"trackIDs":["TRACK_UUID
 这些能力通过共享的 `automation call` 入口调用，也在 MCP 目录中开放：
 
 ```sh
-player-automation automation call metadata.enrichment.get --params-json '{"trackID":"TRACK_UUID","includeRaw":true}'
-player-automation automation call metadata.enrichment.refresh --params-json '{"trackID":"TRACK_UUID","background":true}'
-player-automation automation call metadata.enrichment.patch --params-json '{"trackID":"TRACK_UUID","fields":{"composerName":"Composer"},"dryRun":true}'
-player-automation automation call artwork.motion.search --params-json '{"trackID":"TRACK_UUID","title":"Song","artist":"Artist","background":true}'
-player-automation automation call artwork.motion.applyCandidate --params-json '{"candidateID":"CANDIDATE_ID","expectedRevision":"REVISION","background":true}'
-player-automation automation call artwork.motion.get --params-json '{"trackID":"TRACK_UUID"}'
-player-automation automation call artwork.motion.import --params-json '{"trackID":"TRACK_UUID","filePath":"/absolute/path/video.mov","background":true}'
-player-automation automation call artwork.motion.clear --params-json '{"trackID":"TRACK_UUID","resumeAutomatic":false}'
-player-automation automation call metadata.completion.status
-player-automation automation call metadata.completion.control --params-json '{"action":"enqueue"}'
-player-automation automation call metadata.completion.control --params-json '{"action":"pause"}'
+muci-automation automation call metadata.enrichment.get --params-json '{"trackID":"TRACK_UUID","includeRaw":true}'
+muci-automation automation call metadata.enrichment.refresh --params-json '{"trackID":"TRACK_UUID","background":true}'
+muci-automation automation call metadata.enrichment.patch --params-json '{"trackID":"TRACK_UUID","fields":{"composerName":"Composer"},"dryRun":true}'
+muci-automation automation call artwork.motion.search --params-json '{"trackID":"TRACK_UUID","title":"Song","artist":"Artist","background":true}'
+muci-automation automation call artwork.motion.applyCandidate --params-json '{"candidateID":"CANDIDATE_ID","expectedRevision":"REVISION","background":true}'
+muci-automation automation call artwork.motion.get --params-json '{"trackID":"TRACK_UUID"}'
+muci-automation automation call artwork.motion.import --params-json '{"trackID":"TRACK_UUID","filePath":"/absolute/path/video.mov","background":true}'
+muci-automation automation call artwork.motion.clear --params-json '{"trackID":"TRACK_UUID","resumeAutomatic":false}'
+muci-automation automation call metadata.completion.status
+muci-automation automation call metadata.completion.control --params-json '{"action":"enqueue"}'
+muci-automation automation call metadata.completion.control --params-json '{"action":"pause"}'
 ```
 
 外部播放目标用 `externalKey`，取自 `playback.state.externalStableKey`；省略目标时使用当前播放。
@@ -455,10 +455,10 @@ player-automation automation call metadata.completion.control --params-json '{"a
 皮肤方法同样经 `automation call` 调用，并在 MCP 目录中开放。capabilities、check 与 runtime 需 `settings.read`，check 另需 `files.read`；reload 需 `settings.write`。
 
 ```sh
-player-automation automation call skin.capabilities
-player-automation automation call skin.check --params-json '{"directory":"/absolute/author/directory"}'
-player-automation automation call skin.reload --params-json '{"skinID":"example.vinyl"}'
-player-automation automation call skin.runtime
+muci-automation automation call skin.capabilities
+muci-automation automation call skin.check --params-json '{"directory":"/absolute/author/directory"}'
+muci-automation automation call skin.reload --params-json '{"skinID":"example.vinyl"}'
+muci-automation automation call skin.runtime
 ```
 
 `skin.capabilities` 返回 `formatVersion`、`hostAPIVersion`，以及已实现的 `capabilities`、`nodes`、`components`、`actions`、`fields` 与 `functions` 名称表，适合生成补全或比对 `requires`。

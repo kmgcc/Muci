@@ -34,6 +34,8 @@ final class SkinManager {
         let windowSelected = settings.selectedNowPlayingSkinID == skinID
         let fullscreenSelected = settings.fullscreen.skinID == skinID
         try catalog.packages.removePackage(skinID)
+        // An imported or shipped package with the same ID may take its place; the selection then stays.
+        guard catalog.registeredSkin(for: skinID) == nil else { return }
         if windowSelected { settings.selectedNowPlayingSkinID = SkinRegistry.defaultSkinID }
         if fullscreenSelected { settings.fullscreen.setSkinID(SkinRegistry.defaultFullscreenSkinID) }
     }

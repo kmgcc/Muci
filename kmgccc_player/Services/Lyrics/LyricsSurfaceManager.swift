@@ -66,6 +66,9 @@ final class LyricsSurfaceManager {
 
     var currentPlaybackTime: Double { currentPlaybackSnapshot.currentTime }
     var currentPlaybackIsPlaying: Bool { currentPlaybackSnapshot.isPlaying }
+    /// Whether the current track's lyric document has content, for local and
+    /// external playback alike.
+    var hasPlaybackLyrics: Bool { !currentPlaybackSnapshot.lyricsTTML.isEmpty }
 
     enum TargetMode {
         case main

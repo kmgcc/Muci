@@ -13,8 +13,18 @@ enum SkinSceneActionRunner {
             case "stop": if p["playback.canControl"]?.isTruthy == true { actions.stop() }
             case "previous": if p["playback.canControl"]?.isTruthy == true { actions.previous() }
             case "next": if p["playback.canControl"]?.isTruthy == true { actions.next() }
-            case "seek": if p["playback.canSeek"]?.isTruthy == true { actions.seek(max(0, value.number())) }
-            case "seekAndResume": if p["playback.canSeek"]?.isTruthy == true { actions.seekAndResume(max(0, value.number())) }
+            case "seek":
+                if p["playback.canSeek"]?.isTruthy == true {
+                    let target = max(0, value.number())
+                    context.data.clock.update(position: target, isPlaying: p["playback.isPlaying"]?.isTruthy == true, duration: context.data.clock.duration, now: context.now, jump: true)
+                    actions.seek(target)
+                }
+            case "seekAndResume":
+                if p["playback.canSeek"]?.isTruthy == true {
+                    let target = max(0, value.number())
+                    context.data.clock.update(position: target, isPlaying: true, duration: context.data.clock.duration, now: context.now, jump: true)
+                    actions.seekAndResume(target)
+                }
             case "seekBy": if p["playback.canSeek"]?.isTruthy == true { actions.seek(max(0, context.data.clock.position(at: context.now) + value.number())) }
             case "seekToLyric":
                 let line = context.data.lyricsTimeline.lines
@@ -48,6 +58,7 @@ enum SkinSceneActionRunner {
             case "quickPanel.open": actions.openQuickPanel()
             case "settings.open": actions.openSettings()
             case "trackDetail.open": actions.openTrackDetail()
+            case "trackDetail.close": actions.closeTrackDetail()
             case "trackEdit.open": actions.openTrackEdit()
             case "externalInfo.open": actions.openExternalInfo()
             case "skin.reload": actions.reload()

@@ -15,11 +15,8 @@ final class SkinCatalog {
 
     func reload(_ skinID: String) throws {
         guard let skin = registeredSkin(for: skinID) else { return }
-        if let package = skin as? PackagedSkin {
-            switch package.origin {
-            case .installed, .development: try packages.reloadPackage(skinID)
-            case .bundled: revisions[skinID, default: 0] &+= 1
-            }
+        if let package = skin as? PackagedSkin, package.origin.packageDirectory != nil {
+            try packages.reloadPackage(skinID)
         } else {
             revisions[skinID, default: 0] &+= 1
         }
@@ -54,7 +51,7 @@ final class SkinCatalog {
         return register(PackagedSkin(
             manifest: .init(version: version, descriptor: renderer.descriptor,
                             nativePreset: renderer.id, parameters: renderer.parameterDefinitions),
-            origin: .bundled, renderer: renderer
+            origin: .bundled(nil), renderer: renderer
         ))
     }
 

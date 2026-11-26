@@ -223,6 +223,43 @@ nonisolated struct NCMConversionJournal: Codable, Sendable {
     var records: [NCMConversionRecord] = []
 }
 
+/// Which files an NCM conversion journal reserves at one moment: pending,
+/// output-ready and removed records reserve their source and output by file
+/// identity or path. Committed and failed records reserve nothing.
+nonisolated struct NCMReservationSnapshot: Sendable {
+    private let identities: Set<ReferencedFileIdentity>
+    private let paths: Set<String>
+
+    init(records: [NCMConversionRecord]) {
+        var identities = Set<ReferencedFileIdentity>()
+        var paths = Set<String>()
+        for record in records {
+            switch record.state {
+            case .pending, .outputReady, .removed:
+                if let sourceIdentity = record.sourceIdentity { identities.insert(sourceIdentity) }
+                if let outputIdentity = record.outputIdentity { identities.insert(outputIdentity) }
+                paths.insert(record.sourcePath)
+                paths.insert(record.expectedOutputPath)
+            case .committed:
+                // Once the transaction is committed, keep the NCM source in
+                // the source manifest. It is the canonical entry that lets a
+                // folder scan survive while the generated output is hidden
+                // by its source-folder marker.
+                break
+            case .failed:
+                break
+            }
+        }
+        self.identities = identities
+        self.paths = paths
+    }
+
+    func isReserved(url candidate: URL, identity: ReferencedFileIdentity?) -> Bool {
+        if let identity, identities.contains(identity) { return true }
+        return paths.contains(candidate.standardizedFileURL.path)
+    }
+}
+
 nonisolated enum NCMConversionRegistryError: Error, LocalizedError, Equatable {
     case unsupportedSchema(Int)
     case sourceAlreadyReserved(UUID)
@@ -598,29 +635,14 @@ actor NCMConversionRegistry {
     }
 
     func isReserved(url candidate: URL, identity: ReferencedFileIdentity?) throws -> Bool {
-        let path = candidate.standardizedFileURL.path
-        return try load().records.contains { record in
-            switch record.state {
-            case .pending, .outputReady:
-                if let identity, identity == record.sourceIdentity || identity == record.outputIdentity {
-                    return true
-                }
-                return record.sourcePath == path || record.expectedOutputPath == path
-            case .committed:
-                // Once the transaction is committed, keep the NCM source in
-                // the source manifest. It is the canonical entry that lets a
-                // folder scan survive while the generated output is hidden
-                // by its source-folder marker.
-                return false
-            case .removed:
-                if let identity, identity == record.sourceIdentity || identity == record.outputIdentity {
-                    return true
-                }
-                return record.sourcePath == path || record.expectedOutputPath == path
-            case .failed:
-                return false
-            }
-        }
+        try reservationSnapshot().isReserved(url: candidate, identity: identity)
+    }
+
+    /// Reads the journal once and freezes the reserved identities and paths,
+    /// so a scan can answer per-file lookups without reloading the journal.
+    /// A snapshot never refreshes: take a new one for each scan.
+    func reservationSnapshot() throws -> NCMReservationSnapshot {
+        NCMReservationSnapshot(records: try load().records)
     }
 
     private func update(

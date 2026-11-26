@@ -54,8 +54,15 @@ struct SkinParameterDefinition: Identifiable, Codable {
     var visibleWhen: String? = nil
     /// Rows that share a section are grouped under its title in settings and the quick panel.
     var section: String? = nil
+    /// When a change shows up. `nextLine` marks values the skin reads once per lyric line.
+    var applies: Applies = .immediately
 
-    private enum CodingKeys: String, CodingKey { case id, title, defaultValue, control, surfaces, isUserVisible, visibleWhen, section }
+    enum Applies: String, Codable {
+        case immediately
+        case nextLine
+    }
+
+    private enum CodingKeys: String, CodingKey { case id, title, defaultValue, control, surfaces, isUserVisible, visibleWhen, section, applies }
 }
 
 extension SkinParameterDefinition {
@@ -69,5 +76,6 @@ extension SkinParameterDefinition {
         isUserVisible = try keys.decodeIfPresent(Bool.self, forKey: .isUserVisible) ?? false
         visibleWhen = try keys.decodeIfPresent(String.self, forKey: .visibleWhen)
         section = try keys.decodeIfPresent(String.self, forKey: .section)
+        applies = try keys.decodeIfPresent(Applies.self, forKey: .applies) ?? .immediately
     }
 }

@@ -39,11 +39,13 @@ final class MotionAudioAlignmentCoordinator {
         checked.insert(cacheKey)
         let generation = generations[cacheKey, default: 0]
         guard !track.libraryRootSnapshot.isEmpty else { return nil }
-        let resolution = track.resolveFileURL()
-        guard let song = resolution.url else { resolution.lease.release(); return nil }
-        let lease = resolution.lease
         let file = file(root: track.libraryRootSnapshot, trackID: track.id)
+        // Views ask during their body update, so the song's file is resolved
+        // off the main thread along with the stored offset.
         Task { [weak self] in
+            let resolution = await track.resolveFileURLOffMain()
+            guard let song = resolution.url else { resolution.lease.release(); return }
+            let lease = resolution.lease
             let value = await Task.detached(priority: .utility) { () -> Double? in
                 defer { lease.release() }
                 guard let data = try? Data(contentsOf: file),

@@ -311,6 +311,27 @@ final class FullscreenLyricsCoordinator {
         )
     }
 
+    /// Seeking back above the final line on the same track undoes an ending
+    /// auto-hide, so the hide follows the playhead both ways. The restore point
+    /// sits half a second before the hide point; playing on hides again.
+    func evaluateAutoRestore(
+        _ snapshot: FullscreenLyricsAutoHideSnapshot,
+        delayAfterFinalLine: TimeInterval
+    ) -> Bool {
+        guard autoHiddenAfterEnding,
+              autoHiddenAfterEndingCanRestore,
+              snapshot.isRightPanelHidden,
+              snapshot.displayHasTrack,
+              snapshot.displayTrackID == autoHideTrackID,
+              let lastEnd = lastVisualEndTime ?? lastEndTime, lastEnd.isFinite,
+              snapshot.currentTime.isFinite,
+              snapshot.currentTime < lastEnd + delayAfterFinalLine - 0.5
+        else { return false }
+        autoHiddenAfterEnding = false
+        autoHiddenAfterEndingCanRestore = false
+        return true
+    }
+
     func cancelThemeWork() {
         cancel(.refresh)
         cancel(.reveal)

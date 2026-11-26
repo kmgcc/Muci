@@ -1,3 +1,4 @@
+import AppKit
 import MotionKit
 import SwiftUI
 
@@ -12,6 +13,10 @@ struct SkinSceneControlHost<Content: View>: View {
     let onToggleLyrics: () -> Void
     /// The skin's own foreground policy, as the built-in fullscreen host applies it.
     var controlForeground: SkinPresentationPolicy.ControlForeground = .chrome
+    /// Where the skin asks the Quick Panel to open.
+    var panelPlacement: SkinPresentationPolicy.PanelPlacement = .center
+    var trackDetailPresentation: SkinPresentationPolicy.TrackDetailPresentation = .host
+    var scrollVolume = false
     @ViewBuilder let content: () -> Content
 
     @Environment(PlaybackCoordinator.self) private var playback
@@ -31,8 +36,12 @@ struct SkinSceneControlHost<Content: View>: View {
     @State private var editingExternalInfo = false
     @State private var showingSettings = false
     @State private var detailTrack: Track?
+    @State private var detailDismissID: UUID?
     @State private var deletionRequest: TrackDeletionConfirmationRequest?
     @State private var showingMusicInfo = false
+    @State private var volumeHUDVisible = false
+    @State private var volumeHUDValue = AppSettings.defaultVolume
+    @State private var volumeHUDHideTask: Task<Void, Never>?
 
     private var nativeContext: SkinNativeControlsContext {
         let material: LiquidGlassPillMaterialStyle = settings.fullscreenMiniPlayerGlassMaterial == .normal ? .normal : .clear
@@ -76,11 +85,19 @@ struct SkinSceneControlHost<Content: View>: View {
 
     var body: some View {
         let native = nativeContext
+        let sceneDetail = trackDetailPresentation == .scene ? detailTrack : nil
         content()
             .environment(\.skinNativeControls, native)
             .environment(\.skinSceneHitRegions, hitRegions)
             .environment(\.skinSceneActions, actions)
+            .environment(\.skinSceneHostOverlays, SkinSceneHostOverlays(
+                quickPanelVisible: controls.isQuickAppearancePanelPresented, track: sceneDetail,
+                detail: sceneDetail.map { TrackDetailResolver.resolve(for: $0, libraryVM: library) }
+            ))
             .onPreferenceChange(SkinSceneControlsKey.self) { providedControls = $0 }
+            .overlay {
+                if scrollVolume { volumeLayer(native) }
+            }
             .overlay(alignment: .topTrailing) {
                 if surface == .fullscreen {
                     HStack(spacing: 12) {
@@ -97,7 +114,9 @@ struct SkinSceneControlHost<Content: View>: View {
             .overlay {
                 GeometryReader { proxy in
                     if controls.isQuickAppearancePanelPresented {
-                        let scale = max(0.1, min(1, (proxy.size.width - 32) / 560, (proxy.size.height - 32) / 690))
+                        let margin: CGFloat = 32
+                        let scale = max(0.1, min(1, (proxy.size.width - 2 * margin) / 560, (proxy.size.height - 2 * margin) / 690))
+                        let size = FullscreenQuickAppearancePanel.panelSize(for: scale)
                         Color.clear.contentShape(Rectangle())
                             .onTapGesture { controls.isQuickAppearancePanelPresented = false }
                             .skinControlRegion()
@@ -106,11 +125,37 @@ struct SkinSceneControlHost<Content: View>: View {
                             foregroundProfile: native.presentation.quickPanelForegroundProfile,
                             onDismiss: { controls.isQuickAppearancePanelPresented = false }
                         )
-                        .frame(width: 560 * scale, height: 690 * scale)
+                        .frame(width: size.width, height: size.height)
                         .skinControlRegion()
-                        .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
+                        .position(x: panelCenterX(width: proxy.size.width, panelWidth: size.width, margin: margin), y: proxy.size.height / 2)
+                        // Offset rather than scale keeps the AppKit-backed controls at a stable size.
+                        .transition(.opacity.combined(with: .offset(panelEntryOffset)))
                     }
                 }
+                .motionAnimation(.control, value: controls.isQuickAppearancePanelPresented)
+            }
+            .overlay {
+                // The track detail as the built-in fullscreen shows it: a glass card inside the window.
+                GeometryReader { proxy in
+                    if trackDetailPresentation == .host, let track = detailTrack {
+                        let detail = TrackDetailResolver.resolve(for: track, libraryVM: library)
+                        let scale = max(0.1, min(1, (proxy.size.width - 64) / 580, (proxy.size.height - 64) / 640))
+                        Color.black.opacity(0.001)
+                            .contentShape(Rectangle())
+                            .onTapGesture { detailTrack = nil }
+                            .skinControlRegion()
+                            .transition(.opacity)
+                        FullscreenDetailReaderPanel(
+                            title: detail.subtitle, attributionNote: detail.attributionNote, text: detail.text,
+                            scale: scale, foregroundProfile: native.presentation.quickPanelForegroundProfile,
+                            onDismiss: { detailTrack = nil }
+                        )
+                        .skinControlRegion()
+                        .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
+                        .transition(.opacity.combined(with: .offset(x: 0, y: 8)))
+                    }
+                }
+                .motionAnimation(.navigation, value: detailTrack?.id)
             }
             .overlayPreferenceValue(SkinControlRegionKey.self) { anchors in
                 GeometryReader { proxy in
@@ -136,22 +181,112 @@ struct SkinSceneControlHost<Content: View>: View {
                 ).environmentObject(theme)
             }
             .sheet(isPresented: $showingSettings, onDismiss: {
-                FeatureTipPresentationCoordinator.shared.setSuspended(false, reason: .settingsSheet)
+                AppPromptCoordinator.shared.setObstruction(.settingsSheet, active: false)
             }) {
                 SettingsView(hasActiveLibrarySession: true).environmentObject(theme)
             }
-            .sheet(item: $detailTrack) { track in
-                let detail = TrackDetailResolver.resolve(for: track, libraryVM: library)
-                FullscreenDetailReaderPanel(
-                    title: detail.subtitle, attributionNote: detail.attributionNote, text: detail.text,
-                    scale: 0.8, foregroundProfile: native.presentation.quickPanelForegroundProfile,
-                    onDismiss: { detailTrack = nil }
-                )
+            .onExitCommand(perform: detailTrack == nil ? nil : { detailTrack = nil })
+            // In fullscreen, Esc reaches the fullscreen manager first; it asks transient
+            // overlays to close before it leaves fullscreen.
+            .onChange(of: detailTrack?.id, initial: true) { _, id in
+                if id != nil, detailDismissID == nil {
+                    detailDismissID = FullscreenTransientDismissCoordinator.shared.register {
+                        guard detailTrack != nil else { return false }
+                        detailTrack = nil
+                        return true
+                    }
+                } else if id == nil, let registered = detailDismissID {
+                    FullscreenTransientDismissCoordinator.shared.unregister(registered)
+                    detailDismissID = nil
+                }
+            }
+            .onDisappear {
+                if let registered = detailDismissID { FullscreenTransientDismissCoordinator.shared.unregister(registered) }
+                detailDismissID = nil
             }
     }
 
+    /// The scroll wheel sets the volume anywhere over the scene, yielding to whatever else
+    /// under the pointer scrolls and to open panels.
+    private func volumeLayer(_ native: SkinNativeControlsContext) -> some View {
+        GeometryReader { proxy in
+            let scale = max(0.8, min(1.2, min(proxy.size.width, proxy.size.height) / 900))
+            let profile = native.presentation.miniPlayerForegroundProfile
+            ZStack {
+                PanoramicArtworkVolumeScrollArea(
+                    volume: Binding(get: { playback.presentation.volume }, set: { playback.setVolume($0) }),
+                    isEnabled: playback.stablePresentation.isVolumeControlEnabled,
+                    onAdjustment: adjustVolume,
+                    coversWholeArea: true,
+                    yields: { event in
+                        controls.isQuickAppearancePanelPresented || detailTrack != nil
+                            || SkinSceneScrollRegion.RegionView.claims(event) || SkinScrollYieldRegion.YieldView.claims(event)
+                            || Self.scrollsUnderPointer(event)
+                    }
+                )
+                if volumeHUDVisible {
+                    VolumeScrollHUD(
+                        volume: volumeHUDValue, scale: scale, foregroundProfile: profile,
+                        glassStyle: .init(colorScheme: profile.complementaryGlassColorScheme,
+                                          accentColor: native.presentation.glassStyle.accentColor,
+                                          materialStyle: native.presentation.glassStyle.materialStyle)
+                    )
+                    .transition(motionPolicy != .full ? .opacity : .opacity.combined(with: .scale(scale: 0.92)))
+                }
+            }
+            .frame(width: proxy.size.width, height: proxy.size.height)
+        }
+        .allowsHitTesting(false)
+        .motionAnimation(.microInteraction, value: volumeHUDVisible)
+    }
+
+    private func adjustVolume(_ adjustment: Double) {
+        let current = playback.presentation.volume
+        let next = VolumeControlBehavior.clamped(current + adjustment)
+        guard abs(next - current) > 0.0001 else { return }
+        volumeHUDValue = next
+        playback.setVolume(next)
+        volumeHUDHideTask?.cancel()
+        volumeHUDVisible = true
+        volumeHUDHideTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(900))
+            guard !Task.isCancelled else { return }
+            volumeHUDVisible = false
+            volumeHUDHideTask = nil
+        }
+    }
+
+    /// A list, text or other scroll view under the pointer keeps its own scrolling.
+    private static func scrollsUnderPointer(_ event: NSEvent) -> Bool {
+        guard let content = event.window?.contentView else { return false }
+        let point = content.superview?.convert(event.locationInWindow, from: nil) ?? event.locationInWindow
+        var view = content.hitTest(point)
+        while let current = view {
+            if current is NSScrollView { return true }
+            view = current.superview
+        }
+        return false
+    }
+
+    private func panelCenterX(width: CGFloat, panelWidth: CGFloat, margin: CGFloat) -> CGFloat {
+        switch panelPlacement {
+        case .center: width / 2
+        case .leading: margin + panelWidth / 2
+        case .trailing: width - margin - panelWidth / 2
+        }
+    }
+
+    /// The panel slides in from the edge it sits against; a centred panel rises slightly.
+    private var panelEntryOffset: CGSize {
+        switch panelPlacement {
+        case .center: CGSize(width: 0, height: 12)
+        case .leading: CGSize(width: -24, height: 0)
+        case .trailing: CGSize(width: 24, height: 0)
+        }
+    }
+
     private func presentSettings() {
-        FeatureTipPresentationCoordinator.shared.setSuspended(true, reason: .settingsSheet)
+        AppPromptCoordinator.shared.setObstruction(.settingsSheet, active: true)
         showingSettings = true
     }
 
@@ -178,6 +313,7 @@ struct SkinSceneControlHost<Content: View>: View {
                 playback.playTrackFromQueue(player.currentQueueTracks[index])
             },
             openTrackDetail: { detailTrack = playback.stablePresentation.localTrack },
+            closeTrackDetail: { detailTrack = nil },
             openTrackEdit: { editingTrack = playback.stablePresentation.localTrack },
             openExternalInfo: { if playback.stablePresentation.source != .local { editingExternalInfo = true } },
             play: { playback.resume() }, pause: { playback.pause() }, seekAndResume: { playback.seekAndResumeIfNeeded(to: $0) },

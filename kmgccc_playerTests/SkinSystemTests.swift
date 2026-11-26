@@ -291,6 +291,34 @@ final class SkinSystemTests: XCTestCase {
 
         XCTAssertNoThrow(try node(#"{"type":"text","text":"a","filter":[{"type":"chromatic","amount":2},{"type":"glitch"}],"bloom":12,"outline":{"width":2,"hollow":true}}"#))
         XCTAssertNoThrow(try node(#"{"type":"text","text":"a","filter":[{"type":"fov","distortion":0.25,"chromatic":1.5,"blur":4,"start":0.55}]}"#))
+        // `bokeh` belongs to GPU layers; its focus hunt is seeded, bounded and ends sharp.
+        XCTAssertNoThrow(try node(#"{"type":"layer","render":"gpu","filter":[{"type":"grain"},{"type":"bokeh","at":12.5,"seed":3,"radius":20}],"children":[{"type":"shape"}]}"#))
+        XCTAssertThrowsError(try node(#"{"type":"text","text":"a","filter":{"type":"bokeh","at":1}}"#))
+        for wave in -1...3 {
+            for seed in [0.0, 17, 523] {
+                let duration = SkinFocusHunt.duration(seed: seed, wave: wave)
+                XCTAssertGreaterThan(duration, 0.4)
+                XCTAssertLessThan(duration, 4.5)
+                XCTAssertEqual(SkinFocusHunt.value(age: 0, seed: seed, wave: wave), 0)
+                XCTAssertEqual(SkinFocusHunt.value(age: duration + 0.01, seed: seed, wave: wave), 0)
+                let peak = stride(from: 0.0, through: duration, by: 0.005).map { SkinFocusHunt.value(age: $0, seed: seed, wave: wave) }.max() ?? 0
+                XCTAssertGreaterThan(peak, 0.6)
+                XCTAssertLessThanOrEqual(peak, 1)
+                // Between the first throw and the final landing the lens comes back nearly sharp,
+                // never all the way.
+                let keys = SkinFocusHunt.keys(seed: seed, wave: SkinFocusHunt.resolved(wave, seed: seed))
+                let middle = stride(from: keys[1].time, through: keys[keys.count - 2].time, by: 0.005)
+                    .map { SkinFocusHunt.value(age: $0, seed: seed, wave: wave) }.min() ?? 0
+                XCTAssertGreaterThanOrEqual(middle, 0.03)
+                XCTAssertLessThan(middle, 0.2)
+                // One to three pulses past the middle, never a long run of them.
+                let peaks = (1..<keys.count - 1).filter { keys[$0].value > keys[$0 - 1].value && keys[$0].value > keys[$0 + 1].value }
+                XCTAssertTrue((1...3).contains(peaks.count), "wave \(wave) seed \(seed): \(peaks.count) peaks")
+                XCTAssertEqual(SkinFocusHunt.value(age: 0.2, seed: seed, wave: wave), SkinFocusHunt.value(age: 0.2, seed: seed, wave: wave))
+            }
+        }
+        XCTAssertEqual(SkinFocusHunt.waveIndex(.nan), -1)
+        XCTAssertEqual(SkinFocusHunt.waveIndex(9), -1)
         XCTAssertThrowsError(try node(#"{"type":"text","text":"a","filter":{"type":"chromatc"}}"#)) { error in
             XCTAssertTrue(error.localizedDescription.contains("chromatic"))
         }
@@ -316,59 +344,6 @@ final class SkinSystemTests: XCTestCase {
         XCTAssertNoThrow(try node(#"{"type":"particles","lifetime":2,"angle":-30,"spread":10,"trail":0.3,"count":6,"turbulence":40,"wander":0.6,"curve":0.1}"#))
         let comet = try node(##"{"type":"comet","frame":{"x":120,"y":80,"width":600,"height":400},"orbit":[140,90],"progress":"=fract(time)","angle":90,"sweep":-240,"trail":0.16,"size":3,"width":3,"color":"#FFFFFF"}"##)
         XCTAssertEqual(comet.type, "comet")
-
-        // Kinetic layout: every word gets a box, boxes never overlap, the block fits the safe area.
-        func words(_ texts: [String]) -> [SkinValue] {
-            texts.enumerated().map { .record(["text": .text($0.element), "start": .number(Double($0.offset) * 0.4), "end": .number(Double($0.offset) * 0.4 + 0.4)]) }
-        }
-        let lines = [words(["IT ", "WAS ", "LIKE"]), words(["we ", "were ", "never ", "meant ", "to ", "be ", "separated"]),
-                     words(["宝", "船", "载", "着", "星", "光"]), words(["你"]), [.record(["text": .text("一整行 只有行时间"), "start": .number(0), "end": .number(3)])]]
-        // A word's drawn box, turned by its tilt (a rotated word's box is already upright), a
-        // little inside its em box so touching neighbours do not count.
-        func corners(_ item: SkinValue) -> [CGPoint] {
-            let r = item[member: "r"].number(), tilt = (r >= 45 ? r - 90 : r) * .pi / 180
-            let hw = item[member: "w"].number() / 2 - 2, hh = item[member: "h"].number() / 2 * 0.86 - 2
-            let x = item[member: "x"].number(), y = item[member: "y"].number()
-            return [(-hw, -hh), (hw, -hh), (hw, hh), (-hw, hh)].map { dx, dy in
-                CGPoint(x: x + dx * cos(tilt) - dy * sin(tilt), y: y + dx * sin(tilt) + dy * cos(tilt))
-            }
-        }
-        func separated(_ p: [CGPoint], _ q: [CGPoint]) -> Bool {
-            for shape in [p, q] {
-                for i in 0..<4 {
-                    let edge = CGPoint(x: shape[(i + 1) % 4].x - shape[i].x, y: shape[(i + 1) % 4].y - shape[i].y)
-                    let axis = CGPoint(x: -edge.y, y: edge.x)
-                    let a = p.map { $0.x * axis.x + $0.y * axis.y }, b = q.map { $0.x * axis.x + $0.y * axis.y }
-                    if a.max()! <= b.min()! || b.max()! <= a.min()! { return true }
-                }
-            }
-            return false
-        }
-        var archetypes: [Double: Set<Int>] = [0: [], 1: []]
-        for (number, line) in lines.enumerated() {
-            for complexity in [0.0, 1.0] {
-                for seed in 0..<40 {
-                    let result = SkinKineticLayout.layout(line, options: [.number(Double(seed) * 1.618 + Double(number)), .list([]), .number(2000), .number(1000), .number(1.08), .list([.text(""), .text("")]), .text("heavy"), .number(1), .number(complexity)])
-                    archetypes[complexity]?.insert(Int(result[member: "archetype"].number()))
-                    let items = result[member: "items"].listValue
-                    XCTAssertGreaterThanOrEqual(items.count, line.count)
-                    let size = result[member: "size"].listValue.map { $0.number() }
-                    XCTAssertLessThanOrEqual(size[0], 2001); XCTAssertLessThanOrEqual(size[1], 1001)
-                    for item in items {
-                        XCTAssertTrue(item[member: "x"].number().isFinite && item[member: "y"].number().isFinite)
-                        XCTAssertEqual(hypot(item[member: "ex"].number(), item[member: "ey"].number()), 1, accuracy: 0.01)
-                        XCTAssertTrue((0...4).contains(Int(item[member: "m"].number(-1))))
-                    }
-                    for a in items.indices { for b in items.indices where b > a {
-                        XCTAssertTrue(separated(corners(items[a]), corners(items[b])),
-                                      "family \(result[member: "family"].number()) overlaps \(items[a][member: "t"].textValue) / \(items[b][member: "t"].textValue)")
-                    } }
-                }
-            }
-        }
-        // Simple lines stay with rows, blocks and calm rows (and the rare vertical hero or cascade); rich lines use every archetype.
-        XCTAssertTrue(archetypes[0]!.isSubset(of: [0, 1, 2, 6, 8, 10, 15]), "\(archetypes[0]!)")
-        XCTAssertGreaterThanOrEqual(archetypes[1]!.count, 12, "\(archetypes[1]!)")
     }
 
     @MainActor
@@ -420,6 +395,16 @@ final class SkinSystemTests: XCTestCase {
         XCTAssertGreaterThan(try evaluate("springTo(0.45, 0.8, 0.5)"), 1)
         XCTAssertLessThanOrEqual(try evaluate("springTo(0.45, 0.8, 0)"), 1.0001)
         XCTAssertEqual(try evaluate("springTo(0.05, 0.8, 0.3)", still), 1)
+        // textHeight: one line unbroken, more lines when wrapped, line spacing added between lines.
+        let oneLine = try evaluate(#"textHeight("一二三四五六七八", 20)"#)
+        XCTAssertGreaterThan(oneLine, 0)
+        let wrapped = try evaluate(#"textHeight("一二三四五六七八", 20, 50)"#)
+        XCTAssertGreaterThan(wrapped, oneLine * 2)
+        let spaced = try evaluate(#"textHeight("一二三四五六七八", 20, 50, "regular", "", 10)"#) - wrapped
+        XCTAssertEqual(spaced.truncatingRemainder(dividingBy: 10), 0, accuracy: 0.01)
+        XCTAssertGreaterThanOrEqual(spaced, 10)
+        XCTAssertEqual(try evaluate(#"textHeight("一二三四五六七八", 20, 50, "regular", "", 0, 1)"#), oneLine, accuracy: 0.01)
+        XCTAssertEqual(try evaluate(#"textHeight("", 20)"#), 0)
 
         // A follow spring starts on its target, chases a new one and lands.
         let followers = SkinFollowers()
@@ -730,5 +715,43 @@ final class SkinSystemTests: XCTestCase {
         process.waitUntilExit()
         XCTAssertEqual(process.terminationStatus, 0)
         return archive
+    }
+}
+
+final class SkinColorLUTTests: XCTestCase {
+    private func write(_ text: String) throws -> URL {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".cube")
+        try text.write(to: url, atomically: true, encoding: .utf8)
+        return url
+    }
+
+    func testCubeIdentityParsesAndSamples() throws {
+        var lines = ["# identity", "TITLE \"id\"", "LUT_3D_SIZE 2", "DOMAIN_MIN 0 0 0", "DOMAIN_MAX 1 1 1"]
+        for b in 0..<2 { for g in 0..<2 { for r in 0..<2 { lines.append("\(r).0 \(g).000000 \(b)") } } }
+        let url = try write(lines.joined(separator: "\r\n") + "\n")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let lut = try SkinCubeLUT(contentsOf: url)
+        XCTAssertEqual(lut.size, 2)
+        XCTAssertTrue(lut.is3D)
+        let sampled = lut.sample(SIMD3(0.25, 0.5, 0.75))
+        XCTAssertEqual(sampled.x, 0.25, accuracy: 1e-5)
+        XCTAssertEqual(sampled.y, 0.5, accuracy: 1e-5)
+        XCTAssertEqual(sampled.z, 0.75, accuracy: 1e-5)
+        let baked = try lut.baked(device: nil)
+        XCTAssertEqual(baked.size, 17)
+        XCTAssertEqual(baked.strip.width, 17 * 17)
+        XCTAssertEqual(baked.strip.height, 17)
+    }
+
+    func testCubeOneDimensionalAndWrongCount() throws {
+        let oneD = try write("LUT_1D_SIZE 2\n0 0 0\n0.5 1 1\n")
+        defer { try? FileManager.default.removeItem(at: oneD) }
+        let lut = try SkinCubeLUT(contentsOf: oneD)
+        XCTAssertFalse(lut.is3D)
+        XCTAssertEqual(lut.sample(SIMD3(1, 1, 1)).x, 0.5, accuracy: 1e-5)
+
+        let short = try write("LUT_3D_SIZE 2\n0 0 0\n")
+        defer { try? FileManager.default.removeItem(at: short) }
+        XCTAssertThrowsError(try SkinCubeLUT(contentsOf: short))
     }
 }

@@ -1,0 +1,15 @@
+{
+  "type": "shape",
+  "id": "grab",
+  "color": "#00000002",
+  "hitTesting": "=params.grab > 0",
+  "frame": { "x": "50%", "y": "=(56 + viewport.height) / 2", "width": "100%", "height": "=max(1, viewport.height - 56)" },
+  "on": {
+    "dragStart": { "do": "state.set", "key": "grab", "value": "={on: 1, x: 0, y: 0}" },
+    "drag": {
+      "do": "state.set", "key": "grab",
+      "value": "={on: 1, x: round(gesture.translationX / (0.6 * viewport.min + abs(gesture.translationX)), 0.02), y: round(gesture.translationY / (0.6 * viewport.min + abs(gesture.translationY)), 0.02)}"
+    },
+    "dragEnd": { "do": "state.set", "key": "grab", "value": "={on: 0, x: 0, y: 0}" }
+  }
+}

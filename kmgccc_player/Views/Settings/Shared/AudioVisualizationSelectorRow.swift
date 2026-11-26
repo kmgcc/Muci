@@ -12,6 +12,12 @@ struct AudioVisualizationSelectorRow: View {
     /// Mini Player sizes its LED meter from the available width, so it has no
     /// meaningful count choice to offer.
     var showsLEDCount: Bool = true
+    /// Mini Player spectrum width follows its available space, so only skin
+    /// surfaces offer a capsule count.
+    var showsSpectrumCount: Bool = true
+
+    @AppStorage(SkinSpectrumBandCount.storageKey)
+    private var spectrumBandCount = SkinSpectrumBandCount.defaultValue
 
     @EnvironmentObject private var themeStore: ThemeStore
     @Environment(\.fullscreenSettingsPresentationStyle) private var presentationStyle
@@ -33,8 +39,40 @@ struct AudioVisualizationSelectorRow: View {
                 LEDMeterSettingsView(showsCount: showsLEDCount)
                     .transition(.opacity)
             }
+
+            if selection == .spectrum && showsSpectrumCount {
+                spectrumCountRow
+                    .transition(.opacity)
+            }
         }
         .motionAnimation(.microInteraction, value: selection == .led)
+        .motionAnimation(.microInteraction, value: selection == .spectrum && showsSpectrumCount)
+    }
+
+    private var spectrumCountRow: some View {
+        let range = SkinSpectrumBandCount.range
+        let count = SkinSpectrumBandCount.clamped(spectrumBandCount)
+        return HStack(spacing: presentationStyle.scaled(8)) {
+            Text("段数")
+                .settingsRowLabelStyle()
+                .padding(.leading, presentationStyle.scaled(14))
+            Spacer()
+            Slider(
+                value: Binding(
+                    get: { Double(count) },
+                    set: { spectrumBandCount = SkinSpectrumBandCount.clamped(Int($0.rounded())) }
+                ),
+                in: Double(range.lowerBound)...Double(range.upperBound),
+                step: 1
+            )
+            .tint(knobColor)
+            .frame(width: presentationStyle.scaled(140))
+            Text("\(count)")
+                .font(presentationStyle.captionFont)
+                .foregroundStyle(presentationStyle.settingsSecondaryTextColor(appColors: appColors))
+                .monospacedDigit()
+                .frame(width: presentationStyle.scaled(20), alignment: .trailing)
+        }
     }
 
     private var selectorRow: some View {
@@ -43,53 +81,11 @@ struct AudioVisualizationSelectorRow: View {
                 .font(presentationStyle.rowLabelFont)
                 .foregroundStyle(presentationStyle.settingsPrimaryTextColor(appColors: appColors))
             Spacer()
-            SlidingSelector(
-                segments: AudioVisualizationKind.allCases,
+            SettingsCapsuleSelector(
+                options: AudioVisualizationKind.allCases,
                 selection: $selection,
-                hSpacing: 0,
-                background: { Color.clear },
-                knob: { Capsule().fill(knobColor.opacity(0.18)) },
-                content: { option, isSelected in
-                    Text(option.displayName)
-                        // Keep typography invariant across selection states.
-                        // In particular, "LED" has different advances at
-                        // regular and medium weights, which shifts the glyphs
-                        // and can perturb the capsule's intrinsic width.
-                        .font(presentationStyle.segmentedLabelFont)
-                        .padding(.horizontal, presentationStyle.segmentedHorizontalPadding)
-                        .padding(.vertical, presentationStyle.segmentedVerticalPadding)
-                        .foregroundStyle(
-                            isSelected
-                                ? presentationStyle.settingsSelectedTextColor(
-                                    accentColor: themeStore.accentColor,
-                                    appColors: appColors
-                                )
-                                : presentationStyle.settingsSecondaryTextColor(appColors: appColors)
-                        )
-                }
+                title: \.displayName
             )
-            .padding(.horizontal, presentationStyle.segmentedTrackHorizontalPadding)
-            .padding(.vertical, presentationStyle.segmentedTrackVerticalPadding)
-            .background(trackBackground)
-            .fixedSize(horizontal: true, vertical: false)
-        }
-    }
-
-    @ViewBuilder
-    private var trackBackground: some View {
-        if presentationStyle.usesGlassSectionCards {
-            Capsule()
-                .fill(Color.clear)
-                .liquidGlassPill(
-                    colorScheme: .dark,
-                    accentColor: nil,
-                    prominence: .standard,
-                    materialStyle: presentationStyle.glassMaterialStyle,
-                    isFloating: false
-                )
-                .overlay(Capsule().fill(Color.white.opacity(0.018)))
-        } else {
-            Capsule().fill(presentationStyle.settingsSegmentedTrackColor(appColors: appColors))
         }
     }
 }

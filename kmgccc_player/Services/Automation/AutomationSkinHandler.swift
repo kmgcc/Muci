@@ -28,8 +28,13 @@ struct AutomationSkinHandler {
                 return .success(for: request, result: .object([
                     "valid": .boolean(true), "skinID": .string(package.id),
                     "programs": .object(package.programs.mapValues { .object([
-                        "nodeCount": .number(Double($0.nodeCount)), "domains": strings(Set($0.domains.map(\.rawValue)))
-                    ]) })
+                        "nodeCount": .number(Double($0.nodeCount)), "domains": strings(Set($0.domains.map(\.rawValue))),
+                        "frameNodes": .array($0.root.frameReport().prefix(40).map { entry in
+                            .object(["node": .string(entry.node), "properties": .array(entry.properties.map(AutomationJSONValue.string)),
+                                     "rebuilds": .number(Double(entry.rebuilds))])
+                        })
+                    ]) }),
+                    "scripts": strings((package.programs.values.first?.scripts?.functions) ?? [])
                 ]))
             case AutomationMethod.skinReload:
                 let id = try parameters.string("skinID", required: true)!
@@ -37,9 +42,18 @@ struct AutomationSkinHandler {
                 try catalog.reload(id)
                 return .success(for: request, result: .object(["skinID": .string(id), "revision": .number(Double(catalog.revision(for: id)))]))
             case AutomationMethod.skinRuntime:
-                return .success(for: request, result: .array(SkinSceneRuntimeMetrics.shared.records.map { record in
-                    .object(["id": .string(record.key), "nodes": .number(Double(record.value.nodes)),
-                             "frameEvaluations": .number(Double(record.value.frames)), "audioReaders": .number(Double(record.value.audioReaders))])
+                let metrics = SkinSceneRuntimeMetrics.shared
+                return .success(for: request, result: .array(metrics.records.map { record in
+                    let layers = metrics.pacing.filter { $0.key.hasPrefix(record.key + "/") }.map { key, pacing -> AutomationJSONValue in
+                        .object(["layer": .string(String(key.dropFirst(record.key.count + 1))),
+                                 "frames": .number(Double(pacing.frames)), "late": .number(Double(pacing.late)),
+                                 "skipped": .number(Double(pacing.skipped)), "worstGapMs": .number(pacing.worstGap * 1000),
+                                 "drawableWaitMs": .number(pacing.waitTotal * 1000), "worstDrawableWaitMs": .number(pacing.worstWait * 1000),
+                                 "longDrawableWaits": .number(Double(pacing.longWaits))])
+                    }
+                    return .object(["id": .string(record.key), "nodes": .number(Double(record.value.nodes)),
+                                    "frameEvaluations": .number(Double(record.value.frames)), "audioReaders": .number(Double(record.value.audioReaders)),
+                                    "layers": .array(layers)])
                 }))
             default: throw AutomationParameterError.invalidValue("method")
             }

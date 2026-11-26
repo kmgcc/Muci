@@ -27,15 +27,19 @@ final class WhatsNewWindowManager: NSObject, NSWindowDelegate, ObservableObject 
         super.init()
     }
 
-    /// Show the What's New window if there's new content to display.
-    func showIfNeeded() {
-        guard !isPresented else { return }
-        guard WhatsNewConfig.shouldShowAnnouncement() else { return }
-        
-        let whatsNew = WhatsNewConfig.shouldShowWelcome
-            ? WhatsNewConfiguration.welcome
-            : WhatsNewConfiguration.current
-        show(whatsNew: whatsNew)
+    /// Asks the prompt coordinator to show the welcome overview (first launch)
+    /// or the release notes, when either has content this install has not seen.
+    func requestPresentationIfNeeded(coordinator: AppPromptCoordinator = .shared) {
+        guard !isPresented, WhatsNewConfig.shouldShowAnnouncement() else { return }
+        let isWelcome = WhatsNewConfig.shouldShowWelcome
+        coordinator.submit(AppPromptRequest(
+            id: .whatsNew,
+            tier: isWelcome ? .blocking : .release
+        ) { [weak self] in
+            guard let self, !self.isPresented else { return false }
+            self.show(whatsNew: isWelcome ? WhatsNewConfiguration.welcome : WhatsNewConfiguration.current)
+            return true
+        })
     }
 
     /// Show the What's New window with specific content.
@@ -47,7 +51,6 @@ final class WhatsNewWindowManager: NSObject, NSWindowDelegate, ObservableObject 
             }
         }
 
-        FeatureTipPresentationCoordinator.shared.setSuspended(true, reason: .whatsNew)
         let whatsNewView = WhatsNewView(whatsNew: whatsNew)
 
         let contentSize = NSSize(width: 520, height: 620)
@@ -124,8 +127,8 @@ final class WhatsNewWindowManager: NSObject, NSWindowDelegate, ObservableObject 
 
     func windowWillClose(_ notification: Notification) {
         WhatsNewConfig.markAsSeen()
-        FeatureTipPresentationCoordinator.shared.setSuspended(false, reason: .whatsNew)
         whatsNewWindow = nil
         isPresented = false
+        AppPromptCoordinator.shared.finish(.whatsNew)
     }
 }

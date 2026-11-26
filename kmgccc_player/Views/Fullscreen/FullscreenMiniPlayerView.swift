@@ -116,6 +116,7 @@ struct FullscreenMiniPlayerView: View {
 
     @Environment(PlaybackCoordinator.self) private var playbackCoordinator
     @Environment(LibraryViewModel.self) private var libraryVM
+    @Environment(PlayerViewModel.self) private var playerVM
     @Environment(LibraryCacheServices.self) private var cacheServices
     @Environment(AppSettings.self) private var settings
     @Environment(\.colorScheme) private var colorScheme
@@ -396,9 +397,9 @@ struct FullscreenMiniPlayerView: View {
             ledToneVariant: SkinRegistry.fullscreenSkin(for: settings.fullscreen.skinID).descriptor.presentation.controlForeground == .fixedLight
                 ? .appleStyleBright
                 : .miniPlayer,
-            // Fullscreen starts at seven capsules instead of six, and keeps
-            // growing with the bar width like the window mini player.
-            adaptsWideVisualizationSegments: true,
+            // Fullscreen keeps a fixed visualizer in every skin: five LEDs or
+            // seven capsules, whatever the screen width.
+            adaptsWideVisualizationSegments: false,
             spectrumBaselineCount: 7,
             progress: progressDisplayTime(for: presentation),
             duration: presentation.duration,
@@ -728,6 +729,8 @@ private struct FullscreenMiniPlayerLeftSection: View, Equatable {
     let onInteraction: () -> Void
 
     @Environment(PlaybackCoordinator.self) private var playbackCoordinator
+    @Environment(PlayerViewModel.self) private var playerVM
+    @Environment(LibraryViewModel.self) private var libraryVM
 
     // Layout derived from scale (mirrors FullscreenMiniPlayerView formulas)
     private var artworkSize: CGFloat { 60 * 0.73 * scale }
@@ -835,6 +838,7 @@ private struct FullscreenMiniPlayerLeftSection: View, Equatable {
         let _ = ContextMenuDiagnostics.end(token)
         let presentation = playbackCoordinator.stablePresentation
         if let track = presentation.localTrack {
+            let sourcePlaylist = libraryVM.queueSourcePlaylist(containing: track, source: playerVM.activeLibraryQueueSource)
             TrackActionMenuContent(
                 track: track,
                 onPlay: {
@@ -846,9 +850,13 @@ private struct FullscreenMiniPlayerLeftSection: View, Equatable {
                     onEditTrack(t)
                 },
                 onDeleteFromLibraryRequest: onDeleteTrack,
+                onRemoveFromCurrentPlaylist: sourcePlaylist.map { playlist in
+                    { track in Task { await libraryVM.removeTracksFromPlaylist([track], playlist: playlist) } }
+                },
                 onShowDetails: onShowDetails,
                 showsPlay: false,
                 showsNavigation: false,
+                removeFromPlaylistName: sourcePlaylist?.name,
                 diagnosticSurface: "MiniPlayerContextMenu"
             )
             Divider()

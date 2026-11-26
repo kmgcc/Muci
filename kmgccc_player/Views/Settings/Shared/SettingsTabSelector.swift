@@ -7,13 +7,12 @@
 
 import SwiftUI
 
-/// A lightweight tab selector for settings pages with capsule-style buttons.
-/// Matches the Liquid Glass aesthetic used throughout the app.
+/// Settings navigation with a material track and a Liquid Glass selection.
 struct SettingsTabSelector: View {
     let tabs: [String]
     let fillsWidth: Bool
     @Binding var selectedTab: Int
-    @EnvironmentObject private var themeStore: ThemeStore
+
     @Environment(\.fullscreenSettingsPresentationStyle) private var presentationStyle
     @Environment(\.settingsAppForegroundColors) private var appColors
 
@@ -23,98 +22,41 @@ struct SettingsTabSelector: View {
         self.fillsWidth = fillsWidth
     }
 
-    @ViewBuilder
     var body: some View {
-        if fillsWidth {
-            selector
-                .frame(maxWidth: .infinity)
-        } else {
-            selector
-                .fixedSize(horizontal: true, vertical: false)
-        }
-    }
-
-    private var selector: some View {
         SlidingSelector(
             segments: Array(tabs.indices),
             selection: $selectedTab,
             hSpacing: 0,
-            background: {
-                Color.clear
-            },
+            background: { Color.clear },
             knob: {
-                let knobBaseColor = presentationStyle.usesMaterialSectionCards
-                    ? presentationStyle.primaryTextColor
-                    : themeStore.accentColor
-                Capsule()
-                    .fill(knobBaseColor.opacity(0.18))
+                Color.clear
+                    .glassEffect(.clear, in: Capsule())
             },
             content: { index, isSelected in
                 Text(tabs[index])
-                    .font(.system(size: presentationStyle.tabFontSize, weight: isSelected ? .medium : .regular))
+                    .font(.system(
+                        size: presentationStyle.scaled(13),
+                        weight: isSelected ? .medium : .regular
+                    ))
                     .foregroundStyle(
                         isSelected
-                            ? presentationStyle.settingsSelectedTextColor(
-                                accentColor: themeStore.accentColor,
-                                appColors: appColors
-                            )
+                            ? presentationStyle.settingsPrimaryTextColor(appColors: appColors)
                             : presentationStyle.settingsSecondaryTextColor(appColors: appColors)
                     )
+                    .lineLimit(1)
                     .frame(
-                        minWidth: presentationStyle.tabMinWidth,
+                        minWidth: presentationStyle.scaled(presentationStyle.isCompact ? 96 : 72),
                         maxWidth: fillsWidth ? .infinity : nil,
                         minHeight: presentationStyle.tabHeight
                     )
-                    .padding(.horizontal, presentationStyle.tabHorizontalPadding)
-                    .padding(.vertical, presentationStyle.tabVerticalPadding)
-                    .contentShape(Rectangle())
-                    .accessibilityLabel(Text(tabs[index]))
+                    .padding(.vertical, presentationStyle.scaled(3))
                     .accessibilityValue(Text(isSelected ? "已选择" : "未选择"))
                     .accessibilityAddTraits(isSelected ? .isSelected : [])
             }
         )
-        .padding(.horizontal, presentationStyle.tabTrackHorizontalPadding)
-        .padding(.vertical, presentationStyle.tabTrackVerticalPadding)
-        .background(tabTrackBackground)
-    }
-
-    @ViewBuilder
-    private var tabTrackBackground: some View {
-        if presentationStyle.usesGlassSectionCards {
-            Capsule()
-                .fill(Color.clear)
-                .liquidGlassPill(
-                    colorScheme: .dark,
-                    accentColor: nil,
-                    prominence: .standard,
-                    materialStyle: presentationStyle.glassMaterialStyle,
-                    isFloating: false
-                )
-                .overlay(
-                    Capsule()
-                        .fill(Color.white.opacity(0.02))
-                )
-        } else {
-            ZStack {
-                if presentationStyle.usesMaterialSectionCards {
-                    Capsule()
-                        .fill(.ultraThinMaterial)
-                }
-
-                Capsule()
-                    .fill(presentationStyle.settingsSegmentedTrackColor(appColors: appColors))
-                    .overlay(
-                        Capsule()
-                            .strokeBorder(
-                                presentationStyle.segmentedTrackStrokeColor,
-                                lineWidth: presentationStyle.segmentedTrackStrokeColor == .clear
-                                    ? 0
-                                    : presentationStyle.scaledHairlineWidth
-                            )
-                            .allowsHitTesting(false)
-                    )
-            }
-        }
+        .padding(presentationStyle.scaled(3))
+        .background(.ultraThinMaterial, in: Capsule())
+        .fixedSize(horizontal: !fillsWidth, vertical: false)
     }
 }
 
@@ -124,7 +66,6 @@ struct SettingsTabSelector: View {
         
         var body: some View {
             SettingsTabSelector(tabs: ["常规", "歌词"], selectedTab: $selectedTab)
-                .environmentObject(ThemeStore.shared)
                 .padding()
         }
     }

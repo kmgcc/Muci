@@ -1,6 +1,6 @@
 # 技术文档
 
-这里收录经过筛选的 kmgccc_player 使用指南、稳定架构、算法与工程规范，帮助用户使用产品，也帮助贡献者理解和参与项目。每篇文档都应有明确、长期的阅读用途。
+这里收录经过筛选的 Muci 使用指南、稳定架构、算法与工程规范，帮助用户使用产品，也帮助贡献者理解和参与项目。每篇文档都应有明确、长期的阅读用途。
 
 更新时优先补充已有专题；只有现有文档无法承载、且确有独立公开用途时才新增，并同步本索引。实施计划、调研报告、排障记录、阶段状态和 Agent 工作记录不在本目录收录；功能完成或结论稳定不构成收录理由。
 
@@ -36,7 +36,7 @@
 | --- | --- |
 | [产品文案与界面规范](product-ui-guidelines.md) | 极简书面语风格、自然长句、禁用装饰点号、胶囊按钮、设置行规范与视觉层级 |
 | [弹窗标准](popup-standards.md) | `PopupKit` 共享视觉标准、长内容边缘淡出与悬浮动作区、交互式玻璃点击命中顺序与单一退出入口规则 |
-| [原生皮肤开发](skin-authoring-native.md) | 开发中的原生场景 v2、数据绑定、效果、包管理与样例 |
+| [原生皮肤开发](skin-authoring-native.md) | Beta 阶段的原生场景 v2：版本与能力、数据绑定、脚本、效果、包管理与样例 |
 | [皮肤包 JSON Schema v2](skin-package-v2.schema.json) | 皮肤清单与场景节点的编辑器补全及结构定义 |
 | [皮肤包示例](examples/skins/) | 唱片、浮光、字里行间与流彩四个完整打包示例 |
 
@@ -59,7 +59,7 @@
 | [Automation CLI Reference](automation-cli-reference.md) | 命令行详细参数、选项、JSON 输入输出格式与批处理示例 |
 | [Automation MCP Setup / Reference](automation-mcp.md) | 现代与兼容 MCP stdio 传输协议、Dynamic Resources、Tasks 扩展与客户端对接指南 |
 | [Automation Troubleshooting](automation-troubleshooting.md) | 常见错误码、握手失败、权限拒绝、挂载卷离线与网络超时排查指南 |
-| [kmgccc-player-automation Skill](skills/kmgccc-player-automation/SKILL.md) | 供 AI 辅助工具直接加载的 Agent 行为 Skill 规范 |
+| [Muci Automation Skill](skills/muci-automation/SKILL.md) | 供 AI 辅助工具直接加载的 Agent 行为 Skill 规范 |
 
 ### 7. 稳定性与遥测
 
@@ -71,7 +71,7 @@
 
 ## 全局核心约束与难点导览
 
-在参与 kmgccc_player 开发或修改代码时，请特别注意以下贯穿全工程的关键不变量：
+在参与 Muci 开发或修改代码时，请特别注意以下贯穿全工程的关键不变量：
 
 ### 1. 单向数据流与状态所有权
 - **单一发布点**：UI、MiniPlayer、Dock、全屏与歌词**严禁**各自监听底层播放服务或独立猜测当前状态。所有播放快照统一收敛至 `PlaybackCoordinator`，并通过 `NowPlayingPresentation` 向外发布。

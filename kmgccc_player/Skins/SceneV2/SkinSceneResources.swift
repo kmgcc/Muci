@@ -155,12 +155,32 @@ struct SkinSceneParticles: View {
             let color = values["color"]?.colorValue?.swiftUIColor ?? .white
             let radius = values["size"]?.number(2) ?? 2
             let seed = values["seed"]?.number() ?? 0
+            // `soft` feathers each dot's edge over about that many points, drawn as a gradient:
+            // a `blur` on the node would filter the whole field every frame.
+            let soft = max(0, values["soft"]?.number() ?? 0)
+            let scroll = self.scroll(in: size)
             for index in 0..<count {
                 let n = Double(index) + seed
-                let x = fract(sin(n * 127.1 + 4) * 43758.5453)
-                let y = fract(sin(n * 311.7 + 7) * 96321.912 + time * (0.2 + x))
+                let drift = fract(sin(n * 311.7 + 7) * 96321.912 + time * (0.2 + fract(sin(n * 127.1 + 4) * 43758.5453)))
+                let x = fract(sin(n * 127.1 + 4) * 43758.5453 - scroll.x)
+                let y = fract(drift + scroll.y)
                 let rect = CGRect(x: x * size.width, y: (1 - y) * size.height, width: radius * 2, height: radius * 2)
-                context.fill(Path(ellipseIn: rect), with: .color(color.opacity(0.2 + x * 0.7)))
+                let ink = color.opacity(0.2 + x * 0.7)
+                guard soft > 0.05 else {
+                    context.fill(Path(ellipseIn: rect), with: .color(ink))
+                    continue
+                }
+                let centre = CGPoint(x: rect.midX, y: rect.midY)
+                let outer = radius + 2 * soft
+                let stops: [Gradient.Stop] = [
+                    .init(color: ink, location: 0),
+                    .init(color: ink, location: max(0, radius - soft) / outer),
+                    .init(color: ink.opacity(0.5), location: radius / outer),
+                    .init(color: ink.opacity(0.12), location: (radius + soft) / outer),
+                    .init(color: ink.opacity(0), location: 1),
+                ]
+                context.fill(Path(ellipseIn: CGRect(x: centre.x - outer, y: centre.y - outer, width: 2 * outer, height: 2 * outer)),
+                             with: .radialGradient(Gradient(stops: stops), center: centre, startRadius: 0, endRadius: outer))
             }
         }.allowsHitTesting(false).accessibilityHidden(true)
     }
@@ -182,12 +202,13 @@ struct SkinSceneParticles: View {
         let turbulence = max(0, values["turbulence"]?.number() ?? 0)
         let wander = max(0.01, values["wander"]?.number() ?? 0.65)
         let curve = values["curve"]?.number() ?? 0
+        let scroll = self.scroll(in: size)
         for index in 0..<count {
             let n = Double(index) + seed * 101
             let local = time / lifetime + hash(n, 1)
             let cycle = floor(local), t = local - cycle
             let key = n + cycle * 7.13
-            let x0 = hash(key, 2) * size.width, y0 = hash(key, 3) * size.height
+            let x0 = fract(hash(key, 2) - scroll.x) * size.width, y0 = fract(hash(key, 3) - scroll.y) * size.height
             let direction = angle + (hash(key, 4) - 0.5) * spread
             let velocity = speed * (0.45 + 1.1 * hash(key, 5))
             let sway = turbulence * (0.4 + 1.2 * hash(key, 8))
@@ -216,6 +237,12 @@ struct SkinSceneParticles: View {
                                   width: headRadius * 2, height: headRadius * 2)
             context.fill(Path(ellipseIn: headRect), with: .color(color.opacity(alpha)))
         }
+    }
+
+    /// `scrollX`/`scrollY` in points, as fractions of the frame: the field slides by that much
+    /// and wraps at its edges, so it reaches on without end in any direction.
+    private func scroll(in size: CGSize) -> (x: Double, y: Double) {
+        ((values["scrollX"]?.number() ?? 0) / max(1, size.width), (values["scrollY"]?.number() ?? 0) / max(1, size.height))
     }
 
     private func hash(_ n: Double, _ salt: Double) -> Double { fract(sin(n * 127.1 + salt * 311.7) * 43758.5453) }

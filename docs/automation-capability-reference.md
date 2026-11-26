@@ -1,11 +1,11 @@
 # Automation Capability Reference
 
-`kmgccc_player` 的 CLI、MCP stdio 和未来 Built-in Agent 共用同一个 App-owned
+`Muci` 的 CLI、MCP stdio 和未来 Built-in Agent 共用同一个 App-owned
 Automation contract。适配器只负责 transport、参数解析和结果渲染；LibrarySession、
 PlaybackCoordinator、Repository、Source reconciler 和 Job coordinator 仍然是唯一的
 业务 owner。
 
-仓库：<https://github.com/kmgcc/kmgccc_player>
+仓库：<https://github.com/kmgcc/Muci>
 
 ## Domain semantics
 

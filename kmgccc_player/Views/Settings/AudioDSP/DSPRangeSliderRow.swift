@@ -16,6 +16,8 @@ struct DSPRangeSliderRow: View {
     let step: Double
     var unit: String = "dB"
     var fractionDigits: Int = 1
+    var defaultValue: Double? = nil
+    var defaultMarkerColor: Color = .secondary
     /// Supplementary note shown from an info mark beside the title.
     var info: String? = nil
     var onCommit: (() -> Void)? = nil
@@ -33,17 +35,9 @@ struct DSPRangeSliderRow: View {
                 .settingsInfoHint(info)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-            // The slider stays continuous and snaps through the same quantizer
-            // as the number field, so both controls land on identical values.
-            Slider(
-                value: sliderBinding,
-                in: range,
-                onEditingChanged: { isEditing in
-                    if !isEditing { onCommit?() }
-                }
-            )
-            .frame(width: Self.sliderWidth)
-            .accessibilityLabel(title)
+            slider
+                .frame(width: Self.sliderWidth)
+                .accessibilityLabel(title)
 
             ScrubbableNumberField(
                 value: $value,
@@ -59,11 +53,34 @@ struct DSPRangeSliderRow: View {
         }
     }
 
+    @ViewBuilder
+    private var slider: some View {
+        if let defaultValue {
+            DefaultSnappingSlider(
+                value: sliderBinding,
+                range: range,
+                defaultValue: defaultValue,
+                markerColor: defaultMarkerColor,
+                // Keep the neighboring steps reachable when dragging slowly past the default.
+                maxSnapDistance: step * 0.75,
+                snapsOnlyWhileEditing: true,
+                editingChanged: sliderEditingChanged
+            )
+        } else {
+            Slider(value: sliderBinding, in: range, onEditingChanged: sliderEditingChanged)
+        }
+    }
+
+    private func sliderEditingChanged(_ isEditing: Bool) {
+        if !isEditing { onCommit?() }
+    }
+
     private var sliderBinding: Binding<Double> {
         Binding(
             get: { min(max(value, range.lowerBound), range.upperBound) },
             set: { raw in
-                let next = ScrubbableNumberField.quantize(
+                // A declared default can fall between regular steps.
+                let next = raw == defaultValue ? raw : ScrubbableNumberField.quantize(
                     raw,
                     range: range,
                     step: step,

@@ -14,7 +14,7 @@ enum WhatsNewConfiguration {
 
     /// First-install onboarding overview for new users.
     static let welcome = WhatsNew(
-        title: "欢迎使用 kmgccc_player",
+        title: "欢迎使用 Muci",
         features: [
             WhatsNew.Feature(
                 image: .init(systemName: "square.stack.3d.up.fill", foregroundColor: .indigo),
@@ -53,12 +53,32 @@ enum WhatsNewConfiguration {
     /// The current What's New content. Display version is separate from the build gate.
     static let current = WhatsNew(
         version: WhatsNewConfig.whatsNewVersion,
-        title: "什么是新的",
+        title: "Muci 2.5.0 nymphaea",
         features: [
             WhatsNew.Feature(
-                image: .init(systemName: "books.vertical", foregroundColor: .orange),
-                title: "资料库修复",
-                subtitle: "修复资料库打开或删除异常的问题。"
+                image: .init(systemName: "sparkles", foregroundColor: .blue),
+                title: "播放器更名为 Muci",
+                subtitle: "版本代号 nymphaea，还有全新的 App 图标。之后在spotlight搜索“muci”即可使用。"
+            ),
+            WhatsNew.Feature(
+                image: .init(systemName: "textformat.size", foregroundColor: .pink),
+                title: "全新「字潮」全屏皮肤",
+                subtitle: "当字如潮水涌来，让心怡的音乐铺满每一片夜空。"
+            ),
+            WhatsNew.Feature(
+                image: .init(systemName: "waveform", foregroundColor: .green),
+                title: "重新调校的频谱",
+                subtitle: "频段响应和起伏更接近 Apple 的频谱效果，更加还原音乐跳动。"
+            ),
+            WhatsNew.Feature(
+                image: .init(systemName: "magnifyingglass", foregroundColor: .orange),
+                title: "设置项可以搜索了",
+                subtitle: "输入关键词或拼音首字母，就能跳到对应设置。也可以在外观设置里换上自己的主页座右铭。"
+            ),
+            WhatsNew.Feature(
+                image: .init(systemName: "music.note.list", foregroundColor: .purple),
+                title: "更多音乐格式",
+                subtitle: "新增 APE、WavPack 和 DSD 等格式支持，CUE 整轨与 SACD ISO 可按曲目导入。也可以把视频导入为歌曲，用视频画面作动态封面。"
             )
         ],
         primaryAction: .init(

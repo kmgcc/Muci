@@ -619,7 +619,7 @@ final class SmartPlaybackController {
                 }
 
                 let record = self.pendingHistoryRecords.removeFirst()
-                self.playbackHistoryStore.record(
+                await self.playbackHistoryStore.recordInBackground(
                     trackID: record.trackID,
                     playedAt: record.playedAt,
                     title: record.title,
@@ -642,6 +642,8 @@ final class SmartPlaybackController {
     private func flushPendingPlaybackHistory() {
         historyWriteTask?.cancel()
         historyWriteTask = nil
+        // A record may already be on the background writer; let it land first.
+        playbackHistoryStore.waitForPendingWrites()
         for record in pendingHistoryRecords {
             playbackHistoryStore.record(
                 trackID: record.trackID,

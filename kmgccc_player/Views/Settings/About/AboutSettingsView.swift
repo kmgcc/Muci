@@ -153,9 +153,9 @@ struct AboutSettingsView: View {
                     license: "AGPL-3.0"
                 )
                 complianceItem(
-                    name: "apple-audio-visualization",
-                    url: "https://github.com/taterboom/apple-audio-visualization",
-                    license: nil
+                    name: "apple-like-waves",
+                    url: "https://github.com/kmgcc/apple-like-waves",
+                    license: "MIT"
                 )
                 complianceItem(
                     name: "LDDC",
@@ -202,10 +202,22 @@ struct AboutSettingsView: View {
                 )
             }
 
-            if let licenses = Bundle.main.resourceURL?.appendingPathComponent("AudioCodecs/Licenses") {
-                Link("音频组件许可证", destination: licenses)
+            VStack(alignment: .leading, spacing: 12) {
+                Text(NSLocalizedString("settings.about.inspiration", comment: ""))
                     .settingsRowLabelStyle()
+
+                Text("settings.about.inspiration_desc")
+                    .settingsDescriptionStyle()
+
+                VStack(alignment: .leading, spacing: 16) {
+                    inspirationItem(
+                        name: "Folia",
+                        url: "https://github.com/chthollyphile/folia-major",
+                        badge: NSLocalizedString("settings.about.inspiration.design", comment: "")
+                    )
+                }
             }
+            .padding(.top, 6)
 
             VStack(alignment: .leading, spacing: 6) {
                 Text("settings.about.source_code")
@@ -213,8 +225,8 @@ struct AboutSettingsView: View {
                 Text("settings.about.source_code_desc")
                     .settingsDescriptionStyle()
                 Link(
-                    "https://github.com/kmgcc/kmgccc_player",
-                    destination: URL(string: "https://github.com/kmgcc/kmgccc_player")!
+                    "https://github.com/kmgcc/Muci",
+                    destination: URL(string: "https://github.com/kmgcc/Muci")!
                 )
                 .font(.system(size: SettingsStyleTokens.descriptionFontSize))
             }
@@ -368,6 +380,31 @@ struct AboutSettingsView: View {
                 )
                 .foregroundStyle(licenseColor(for: license))
             }
+        }
+    }
+
+    private func inspirationItem(name: String, url: String, badge: String) -> some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(name)
+                    .settingsRowLabelStyle()
+                Link(url, destination: URL(string: url)!)
+                    .font(.system(size: SettingsStyleTokens.descriptionFontSize))
+            }
+            Spacer()
+            HStack(spacing: 4) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 10))
+                Text(badge)
+                    .font(.system(size: 10, weight: .medium))
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(
+                Capsule()
+                    .fill(themeStore.accentColor.opacity(0.15))
+            )
+            .foregroundStyle(themeStore.accentColor)
         }
     }
 

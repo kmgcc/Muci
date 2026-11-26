@@ -12,7 +12,7 @@ nonisolated enum Constants {
 
     // MARK: - App Info
 
-    static var appName: String { NSLocalizedString("common.app_name", comment: "") }
+    static var appName: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "Muci" }
     static let appVersion =
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
 

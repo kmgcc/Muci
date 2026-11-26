@@ -1,0 +1,131 @@
+{
+  "type": "layer",
+  "id": "controls",
+  "visible": "=let.uiShown",
+  "transition": { "type": "fade+fromBottom", "token": "control", "distance": 26, "duration": 0.6, "bounce": 0.28 },
+  "frame": { "x": "50%", "y": "50%", "width": "100%", "height": "100%" },
+  "children": [
+    {
+      "type": "gradient",
+      "id": "scrim",
+      "hitTesting": false,
+      "start": "top",
+      "end": "bottom",
+      "stops": [
+        { "color": "=alpha(withLightness(theme.artBackgroundPrimary, 0.02), 0)", "at": 0 },
+        { "color": "=alpha(withLightness(theme.artBackgroundPrimary, 0.02), 0.45)", "at": 0.6 },
+        { "color": "=alpha(withLightness(theme.artBackgroundPrimary, 0.02), 0.78)", "at": 1 }
+      ],
+      "frame": { "x": 0, "y": "=viewport.height", "anchor": "bottomLeading", "width": "100%", "height": "=viewport.height - let.uiRowY + 190 * let.uiS" }
+    },
+
+    {
+      "type": "artwork",
+      "id": "cover",
+      "fit": "fill",
+      "cornerRadius": "=7 * let.uiS",
+      "hitTesting": false,
+      "frame": { "x": "=let.uiPad", "y": "=let.uiBarY + 6 * let.uiS", "anchor": "bottomLeading", "width": "=let.uiCover", "height": "=let.uiCover" }
+    },
+    {
+      "type": "text",
+      "id": "title",
+      "text": "=track.title",
+      "font": "=let.fontCJK",
+      "weight": "=let.fontWeight",
+      "fontSize": "=18 * let.uiS",
+      "alignment": "leading",
+      "lineLimit": 1,
+      "color": "=let.uiFg",
+      "hitTesting": false,
+      "frame": { "x": "=let.uiTextX", "y": "=let.uiRowY - 11 * let.uiS", "anchor": "leading", "align": "leading", "width": "=let.uiInfoWidth" }
+    },
+    {
+      "type": "text",
+      "id": "artist",
+      "text": "=track.artist",
+      "font": "=params.font == 'app' ? (lyrics.prefs.fontFamilyCJK ?? '') : (params.font == 'yisong' ? 'youyou-yisong' : (params.font == 'songti' ? 'STSongti-SC-Light' : 'PingFang SC'))",
+      "weight": "medium",
+      "fontSize": "=13 * let.uiS",
+      "alignment": "leading",
+      "lineLimit": 1,
+      "color": "=alpha(mix(theme.accent, #FFFFFF, 0.8), 0.62)",
+      "hitTesting": false,
+      "frame": { "x": "=let.uiTextX", "y": "=let.uiRowY + 13 * let.uiS", "anchor": "leading", "align": "leading", "width": "=let.uiInfoWidth" }
+    },
+
+    {
+      "type": "component",
+      "id": "previous",
+      "component": "control.previous",
+      "props": { "size": "=52 * let.uiS", "symbolSize": "=46 * let.uiS", "color": "=let.uiFg" },
+      "frame": { "x": "=let.uiRight - 242 * let.uiS", "y": "=let.uiRowY", "width": "=52 * let.uiS", "height": "=52 * let.uiS" }
+    },
+    {
+      "type": "component",
+      "id": "playPause",
+      "component": "control.playPause",
+      "props": { "size": "=56 * let.uiS", "symbolSize": "=32 * let.uiS", "color": "=let.uiFg" },
+      "frame": { "x": "=let.uiRight - 182 * let.uiS", "y": "=let.uiRowY", "width": "=56 * let.uiS", "height": "=56 * let.uiS" }
+    },
+    {
+      "type": "component",
+      "id": "next",
+      "component": "control.next",
+      "props": { "size": "=52 * let.uiS", "symbolSize": "=46 * let.uiS", "color": "=let.uiFg" },
+      "frame": { "x": "=let.uiRight - 122 * let.uiS", "y": "=let.uiRowY", "width": "=52 * let.uiS", "height": "=52 * let.uiS" }
+    },
+
+    {
+      "type": "component",
+      "id": "queue",
+      "component": "panel.queue",
+      "frame": {
+        "x": "=let.uiRight",
+        "y": "=let.uiRowY - 44 * let.uiS",
+        "anchor": "bottomTrailing",
+        "width": "=min(480 * let.uiS, viewport.width * 0.46)",
+        "height": "=max(160, let.uiRowY - 44 * let.uiS - let.uiPad)"
+      }
+    },
+
+    {
+      "type": "component",
+      "id": "playbackMode",
+      "component": "control.playbackModeStack",
+      "props": { "size": "=36 * let.uiS", "symbolSize": "=16 * let.uiS", "spacing": "=4 * let.uiS", "bounce": 0.3, "duration": 0.55, "stagger": 0.06, "color": "=let.uiFg" },
+      "frame": { "x": "=let.uiRight - 48 * let.uiS", "y": "=let.uiRowY", "anchor": "trailing", "width": "=36 * let.uiS", "height": "=36 * let.uiS" }
+    },
+    {
+      "type": "component",
+      "id": "actions",
+      "component": "control.actionStack",
+      "props": {
+        "size": "=36 * let.uiS",
+        "symbolSize": "=17 * let.uiS",
+        "spacing": "=4 * let.uiS",
+        "volumeWidth": "=100 * let.uiS",
+        "volumeHeight": "=6 * let.uiS",
+        "bounce": 0.3,
+        "duration": 0.55,
+        "stagger": 0.06,
+        "color": "=let.uiFg"
+      },
+      "frame": { "x": "=let.uiRight", "y": "=let.uiRowY", "anchor": "trailing", "width": "=36 * let.uiS", "height": "=36 * let.uiS" }
+    },
+
+    {
+      "type": "component",
+      "id": "progress",
+      "component": "control.progressLine",
+      "props": {
+        "height": "=3 * let.uiS",
+        "hoverHeight": "=11 * let.uiS",
+        "hitHeight": "=24 * let.uiS",
+        "timeSize": "=11 * let.uiS",
+        "color": "=let.uiFg"
+      },
+      "frame": { "x": "=let.uiTextX", "y": "=let.uiBarY - 12 * let.uiS", "anchor": "topLeading", "width": "=let.uiRight - let.uiTextX", "height": "=44 * let.uiS" }
+    }
+  ]
+}

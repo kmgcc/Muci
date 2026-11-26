@@ -62,6 +62,18 @@ enum AudioVisualizationPlacement: String, Codable {
     }
 }
 
+/// Number of capsules in the in-skin spectrum. One setting shared by every skin
+/// (the Mini Player sizes its own spectrum from the available width).
+enum SkinSpectrumBandCount {
+    static let storageKey = "skin.spectrumBandCount"
+    static let range = 6...15
+    static let defaultValue = 9
+
+    static func clamped(_ value: Int) -> Int {
+        min(max(value, range.lowerBound), range.upperBound)
+    }
+}
+
 enum AudioVisualizationScope: String {
     case fullscreen
     case window

@@ -13,11 +13,18 @@ if [[ -z "$MCP_BIN" || ! -x "$MCP_BIN" ]]; then
     MCP_BIN="$(swift build --package-path "$PACKAGE_ROOT" --scratch-path "$SMOKE_SCRATCH" -c debug --show-bin-path)/player-automation"
 fi
 
+MUCI_BIN="${PLAYER_AUTOMATION_MUCI_BIN:-$(dirname "$MCP_BIN")/muci-automation}"
+if [[ ! -x "$MUCI_BIN" ]]; then
+    printf 'Muci CLI missing: %s\n' "$MUCI_BIN" >&2
+    exit 1
+fi
+
 mcp_args=(mcp-stdio --no-launch --timeout "$MCP_TIMEOUT")
 
 request() {
     local payload="$1"
-    printf '%s\n' "$payload" | "$MCP_BIN" "${mcp_args[@]}"
+    local executable="${2:-$MCP_BIN}"
+    printf '%s\n' "$payload" | "$executable" "${mcp_args[@]}"
 }
 
 assert_jq() {
@@ -38,7 +45,10 @@ modern_resources="{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"resources/list\",\"
 modern_call="{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":{\"_meta\":{\"io.modelcontextprotocol/protocolVersion\":\"2026-07-28\"},\"name\":\"system.info\",\"arguments\":{}}}"
 
 discover_result="$(request "$modern_discover")"
-assert_jq "modern discovery" "$discover_result" '.jsonrpc == "2.0" and .result.capabilities.tools and ._meta["io.modelcontextprotocol/serverInfo"].name == "kmgccc_player"'
+assert_jq "modern discovery" "$discover_result" '.jsonrpc == "2.0" and .result.capabilities.tools and (._meta["io.modelcontextprotocol/serverInfo"] | .name == "kmgccc_player" and .title == "Muci")'
+alias_discover_result="$(request "$modern_discover" "$MUCI_BIN")"
+[[ "$(jq -cS . <<< "$discover_result")" == "$(jq -cS . <<< "$alias_discover_result")" ]]
+printf 'pass: both CLI names expose the same MCP discovery\n'
 
 tools_result="$(request "$modern_tools")"
 assert_jq "modern tools/list" "$tools_result" '.result.tools | length >= 40'
@@ -76,10 +86,14 @@ if [[ "${PLAYER_AUTOMATION_SMOKE_DSP_LIVE:-0}" == "1" ]]; then
 fi
 
 resources_result="$(request "$modern_resources")"
-assert_jq "modern resources/list" "$resources_result" '.result.resources | length >= 2'
+assert_jq "modern resources/list" "$resources_result" '([.result.resources[].uri] | index("kmgccc://capabilities")) != null'
 
 call_result="$(request "$modern_call")"
-assert_jq "modern tools/call" "$call_result" '.result.structuredContent.protocolVersion == 1 and .result.isError != true'
+if [[ "${PLAYER_AUTOMATION_SMOKE_OFFLINE:-0}" == "1" ]]; then
+    assert_jq "modern tools/call (isolated socket)" "$call_result" '.result.isError == true and .result.structuredContent.error.code == "serverUnavailable"'
+else
+    assert_jq "modern tools/call" "$call_result" '.result.structuredContent.protocolVersion == 1 and .result.isError != true and .result.structuredContent.appName == "Muci"'
+fi
 
 legacy_initialize='{"jsonrpc":"2.0","id":10,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"kmgccc-player-mcp-smoke","version":"1"}}}'
 legacy_initialized='{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}'
@@ -93,7 +107,7 @@ legacy_result="$(
 )"
 legacy_initialize_result="$(jq -s 'map(select(.id == 10))[0]' <<<"$legacy_result")"
 legacy_ping_result="$(jq -s 'map(select(.id == 11))[0]' <<<"$legacy_result")"
-assert_jq "legacy initialize" "$legacy_initialize_result" '.result.protocolVersion == "2025-11-25"'
+assert_jq "legacy initialize" "$legacy_initialize_result" '.result.protocolVersion == "2025-11-25" and .result.serverInfo.name == "kmgccc_player" and .result.serverInfo.title == "Muci"'
 assert_jq "legacy ping" "$legacy_ping_result" '.result != null and .error == null'
 
 printf 'MCP stdio smoke passed.\n'

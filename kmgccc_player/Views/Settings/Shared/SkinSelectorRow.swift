@@ -7,6 +7,9 @@
 
 import SwiftUI
 
+/// Built-in skins with a hand-drawn preview; every other skin draws its package preview.
+let skinDrawnPreviewIDs: Set<String> = ["coverLed", "appleStyle", "rotatingCover", "kmgccc.cassette", "fullscreen.coverGradientBlur"]
+
 /// Maps a skin identifier to its minimal vector preview.
 @ViewBuilder
 func skinPreview(for id: String, isSelected: Bool, accentColor: Color) -> some View {
@@ -38,15 +41,32 @@ struct SkinSelectorRow: View {
     var edgePadding: CGFloat = 10
     var verticalPadding: CGFloat = 4
     var showsScrollButtons: Bool = true
+    /// Adds per-card package menus and a trailing add card.
+    var managesPackages: Bool = false
+    /// Which scene a package preview outlines.
+    var surface: SkinSurface = .window
     @EnvironmentObject private var themeStore: ThemeStore
     @Environment(\.fullscreenSettingsPresentationStyle) private var presentationStyle
+    @Environment(\.settingsAppForegroundColors) private var appColors
+
+    private var previewForeground: Color {
+        if presentationStyle.usesUnifiedOverlayForeground { return presentationStyle.primaryTextColor }
+        return appColors?.primary ?? .primary
+    }
+    @State private var packageActions = SkinPackageActionModel()
 
     var body: some View {
-        let selectionAccentColor = FullscreenSelectionAccentStyle.adjustedAccentColor(
-            from: themeStore.accentNSColor
-        )
+        if managesPackages {
+            selector.modifier(SkinPackageActionDialogs(model: packageActions))
+        } else {
+            selector
+        }
+    }
 
-        HorizontalFadeScrollContainer(
+    private var selector: some View {
+        let selectionAccentColor = presentationStyle.skinSelectionAccent(themeStore)
+
+        return HorizontalFadeScrollContainer(
             spacing: itemSpacing,
             fadeWidth: presentationStyle.scaled(12),
             verticalPadding: verticalPadding,
@@ -65,21 +85,48 @@ struct SkinSelectorRow: View {
         ) {
             ForEach(skins) { skin in
                 let selected = selectedSkinID == skin.id
-                SkinPreviewCard(
+                let drawn = skinDrawnPreviewIDs.contains(skin.id)
+                let card = SkinPreviewCard(
                     title: skin.name,
                     isSelected: selected,
+                    sidebar: skin.sidebar,
+                    previewFillsSquare: !drawn,
                     cardSize: cardSize,
                     previewSize: previewSize,
                     cornerRadius: cornerRadius,
                     titleFontSize: titleFontSize,
                     preview: {
-                        skinPreview(
-                            for: skin.id,
-                            isSelected: selected,
-                            accentColor: selectionAccentColor
-                        )
+                        if drawn {
+                            skinPreview(
+                                for: skin.id,
+                                isSelected: selected,
+                                accentColor: selectionAccentColor
+                            )
+                        } else {
+                            SkinPackagePreviewView(
+                                skinID: skin.id,
+                                surface: surface,
+                                foreground: previewForeground,
+                                accent: selectionAccentColor
+                            )
+                        }
                     },
                     action: { selectedSkinID = skin.id }
+                )
+                if managesPackages && skin.isCustomPackage {
+                    card.contextMenuWithVisibleIcons {
+                        SkinPackageCardMenu(skinID: skin.id, model: packageActions)
+                    }
+                } else {
+                    card
+                }
+            }
+            if managesPackages {
+                SkinPackageAddCard(
+                    model: packageActions,
+                    cardWidth: cardSize.width,
+                    cornerRadius: cornerRadius,
+                    titleFontSize: titleFontSize
                 )
             }
         }

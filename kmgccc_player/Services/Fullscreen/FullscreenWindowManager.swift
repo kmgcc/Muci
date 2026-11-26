@@ -35,6 +35,10 @@ final class FullscreenWindowManager: NSObject, NSWindowDelegate, ObservableObjec
     private(set) var isTransitioning = false
     @Published private(set) var isPreparingEmbeddedFullscreen = false
     @Published private(set) var isExitingEmbeddedFullscreen = false
+    /// The window mini player sits below the window edge while the embedded
+    /// fullscreen surface rises or covers the window. The surface transition
+    /// drives it so both move together.
+    @Published private(set) var isWindowMiniPlayerRetracted = false
 
     var isEmbeddedFullscreenSurfaceMounted: Bool {
         isPreparingEmbeddedFullscreen || isExitingEmbeddedFullscreen || isWindowedFullscreenActive
@@ -66,6 +70,10 @@ final class FullscreenWindowManager: NSObject, NSWindowDelegate, ObservableObjec
 
     private override init() {
         super.init()
+        embeddedTransition.onMiniPlayerRetractedChange = { [weak self] retracted in
+            guard let self, self.isWindowMiniPlayerRetracted != retracted else { return }
+            self.isWindowMiniPlayerRetracted = retracted
+        }
     }
 
     var isFullscreenPlayerPresented: Bool {
@@ -220,7 +228,7 @@ final class FullscreenWindowManager: NSObject, NSWindowDelegate, ObservableObjec
             defer: false
         )
 
-        window.title = "kmgccc_player - Fullscreen"
+        window.title = "\(Constants.appName) - Fullscreen"
         ColorRenderingAdapter.configureNativeWindowForDisplayP3(window)
         window.isRestorable = false
         window.backgroundColor = .black
@@ -400,6 +408,7 @@ final class FullscreenWindowManager: NSObject, NSWindowDelegate, ObservableObjec
         embeddedTransition.cancel()
         isPreparingEmbeddedFullscreen = false
         isExitingEmbeddedFullscreen = false
+        isWindowMiniPlayerRetracted = false
         isTransitioning = false
 
         PaneLayoutTrace.log(

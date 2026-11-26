@@ -1,0 +1,82 @@
+{
+  "type": "layer",
+  "id": "slot",
+  "hitTesting": false,
+  "frame": { "x": "50%", "y": "50%", "width": "100%", "height": "100%" },
+  "children": [
+    {
+      "type": "repeat",
+      "id": "line",
+      "layout": "free",
+      "items": "=slice(props.line.items ?? [], 0, props.line.nm ?? count(props.line.items ?? []))",
+      "limit": 64,
+      "hitTesting": false,
+      "frame": { "x": "50%", "y": "50%", "width": "100%", "height": "100%" },
+      "template": {
+        "type": "text",
+        "id": "word",
+        "text": "=item.t",
+        "font": "=item.k == 1 ? props.line.font.cjk : props.line.font.latin",
+        "weight": "=props.line.font.weight",
+        "fontSize": "=100 * let.slotUnit * item.s",
+        "lineLimit": "=item.v == 1 ? 24 : 1",
+        "alignment": "center",
+        "color": "=let.gColor",
+        "rotation": "=item.r",
+        "subpixel": true,
+        "visible": "=clock.lyrics >= item.start - 0.5 && let.slotShown && let.gShown",
+        "frame": {
+          "x": "=viewport.width / 2 + let.slotUnit * (props.line.cam.x + item.x) + let.slotDX",
+          "y": "=viewport.height / 2 + let.slotUnit * (props.line.cam.y + item.y) + let.slotDY",
+          "width": "=item.v == 1 ? 112 * let.slotUnit * item.s : null"
+        },
+        "glow": {
+          "radius": "=item.role == 2 && (let.gAccent == 0 || let.gAccent == 1 || let.gAccent == 5) ? 300 * let.slotUnit * item.s : 0",
+          "color": "=withLightness(saturate((item.c ?? 0) <= 0 ? theme.accent : ((item.c ?? 0) >= 1 ? theme.lyricHarmony : mix(theme.accent, theme.lyricHarmony, item.c)), 1.7), 0.66)",
+          "core": 0.7,
+          "strength": "=let.glowStrength",
+          "haze": "=let.glowHaze",
+          "saturation": "=params.glowSaturation"
+        },
+        "glyphMotion": {
+          "glow": "=item.role != 2 ? 0 : (let.gAccent == 0 ? 0.9 * sin(pi * clamp(let.gAccentAge / let.gAccentDur, 0, 1)) : (let.gAccent == 1 || let.gAccent == 5 ? (let.gAccent == 1 ? 0.75 : 1) * smoothstep(-0.05, 0.18, let.gSince) * (1 + 0.7 * exp(-max(0, let.gSince) * 4)) * (1 - smoothstep(0.2, 1.1, clock.lyrics - max(item.end, item.start + 0.6))) : 0))",
+          "opacity": "=smoothstep(0, 0.4 * let.gEntry, let.gSince + 0.25) * let.slotFade * (1 - let.gRest) * (props.line.accent.flash == 1 && item.role == 2 && let.gOwn && ((index == props.line.hero && glyph.index == 0) || random(index * 1.9 + glyph.index * 3.1 + props.line.index * 0.7) < 0.25) && abs(clock.lyrics - item.start - glyph.index * 0.06 - 0.12) < 0.28 && random(floor(clock.lyrics * 14) * 1.7 + glyph.index * 2.3 + index * 0.9 + props.line.index * 0.31) < 0.3 ? 0.22 : 1) * (let.glitch && let.glitchBurst && random(floor(clock.lyrics * 15) + glyph.index * 0.7 + index * 1.3) < 0.12 ? 0.6 : 1)",
+          "scale": "=1 + (1 - let.gIn) * (item.m == 1 ? (item.k == 1 ? 0.2 : 0.35) : (item.m == 2 ? -0.15 : (item.k == 1 ? (item.role == 2 ? 0.04 : 0) : (item.role == 2 ? 0.08 : -0.1))))",
+          "rotation": "=item.m == 2 || item.m == 4 ? (1 - let.gIn) * (item.ex >= 0 ? 1 : -1) * (item.m == 2 ? (item.k == 1 ? 14 : 28) : 6) : 0",
+          "x": "=(1 - let.gIn) * let.gTravel * (item.m == 3 ? (item.r > 45 ? item.ex : -item.ey) * (mod(glyph.index, 2) == 0 ? 1 : -1) : (item.r > 45 ? item.ey : item.ex)) + (let.glitch && let.glitchBurst && random(floor(clock.lyrics * 15) * 0.7 + glyph.index * 2.9 + index * 1.3) < 0.4 ? (random(floor(clock.lyrics * 15) * 2.1 + glyph.index * 1.9) - 0.5) * glyph.fontSize * 0.07 : 0)",
+          "y": "=(1 - let.gIn) * let.gTravel * (item.m == 3 ? (item.r > 45 ? item.ey : item.ex) * (mod(glyph.index, 2) == 0 ? 1 : -1) : (item.r > 45 ? -item.ex : item.ey)) + sin(time * motion.speed * 1.1 - glyph.index * 0.5 - (item.q ?? index) * 0.7) * glyph.fontSize * 0.01 - 0.14 * let.gRest * glyph.fontSize",
+          "blur": "=min(18, (let.gSharp ? 0 : (1 - easeOut((let.gSince + 0.25) / (0.7 * let.gEntry))) * (item.m == 1 ? 0.16 : 0.1) * glyph.fontSize) + 0.12 * let.gRest * glyph.fontSize)",
+          "split": "=let.glitch ? (let.glitchBurst ? 0.035 : 0.006) * glyph.fontSize : 0",
+          "smearX": "=let.glitch && let.glitchBurst && random(floor(clock.lyrics * 12) + glyph.index * 3.3 + index * 1.1) < 0.18 ? glyph.fontSize * 0.12 : 0"
+        }
+      }
+    },
+    {
+      "type": "text",
+      "id": "caption",
+      "text": "=props.line.cap.text ?? ''",
+      "visible": "=(props.line.cap.text ?? '') != '' && lyrics.prefs.showTranslation && let.capSince > 0 && let.slotShown",
+      "font": "=props.line.font.tr ?? props.line.font.cjk",
+      "weight": "=props.line.font.trw ?? 'medium'",
+      "fontSize": "=let.slotUnit * (props.line.cap.size ?? 40)",
+      "tracking": "=viewport.min * 0.0012",
+      "lineLimit": 2,
+      "alignment": "center",
+      "subpixel": true,
+      "color": "=alpha(mix(theme.accent, #FFFFFF, 0.82), 0.8)",
+      "opacity": "=smoothstep(0, 0.6, let.capSince) * let.slotFade * (let.slotResting ? 1 - smoothstep(0, props.line.fade, clock.lyrics - state.gap.t0) : 1)",
+      "blur": "=6 * (1 - let.capIn)",
+      "offsetX": "=let.slotDX",
+      "offsetY": "=let.slotDY",
+      "glyphMotion": {
+        "y": "=let.slotUnit * 0.6 * (props.line.cap.size ?? 40) * (1 - let.capIn)"
+      },
+      "hitTesting": false,
+      "frame": {
+        "x": "=viewport.width / 2 + let.slotUnit * props.line.cam.x",
+        "y": "=viewport.height / 2 + let.slotUnit * (props.line.cam.y + (props.line.cap.y ?? 0))",
+        "width": "=let.slotUnit * (props.line.cap.wrap ?? 600)"
+      }
+    }
+  ]
+}

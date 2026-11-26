@@ -1,0 +1,85 @@
+{
+  "type": "layer",
+  "id": "titleCard",
+  "visible": "=let.titleOut < 0.98 && let.queueOut < 0.99 && !host.detailVisible",
+  "opacity": "=1 - let.queueOut",
+  "enter": { "type": "fade+blur", "token": "backgroundTransition" },
+  "hitTesting": false,
+  "frame": { "x": "50%", "y": "50%", "width": "100%", "height": "100%" },
+  "camera": {
+    "x": "=sin(clock.position * motion.speed * 0.07) * viewport.width * 0.012 * params.camera * smoothstep(1.5, 6, clock.position)",
+    "y": "=sin(clock.position * motion.speed * 0.053) * viewport.height * 0.012 * params.camera * smoothstep(1.5, 6, clock.position) + let.titlePan",
+    "zoom": "=1.02 + 0.02 * sin(time * motion.speed * 0.05) + 0.06 * let.titleOut",
+    "rotationY": "=sin(clock.position * motion.speed * 0.045) * 3 * params.camera * smoothstep(1.5, 6, clock.position)",
+    "perspective": 0.6,
+    "sharedMotion": true
+  },
+  "children": [
+    {
+      "type": "text",
+      "id": "title",
+      "text": "=track.title",
+      "font": "=let.fontCJK",
+      "fontSize": "=let.titleSize",
+      "weight": "=let.fontWeight",
+      "lineLimit": 1,
+      "color": "=mix(theme.accent, #FFFFFF, 0.94)",
+      "filter": { "type": "lut", "file": "=params.lut", "amount": "=params.lutAmount" },
+      "subpixel": true,
+      "glyphMotion": {
+        "opacity": "=smoothstep(0, motion.emphasis * 0.4, glyph.age - glyph.index * motion.microInteraction * 0.3)",
+        "y": "=(1 - springTo(glyph.age - glyph.index * motion.microInteraction * 0.3, max(let.entryMin, let.entryTime) * 1.2, params.bounce * 0.5)) * viewport.min * 0.06 + sin(time * motion.speed * 1.6 - glyph.index * 0.55) * viewport.min * 0.004",
+        "scale": "=0.85 + 0.15 * springTo(glyph.age - glyph.index * motion.microInteraction * 0.3, max(let.entryMin, let.entryTime) * 1.2, params.bounce * 0.5)",
+        "blur": "=(1 - easeOut((glyph.age - glyph.index * motion.microInteraction * 0.3) / (motion.emphasis * 0.8))) * viewport.min * 0.016",
+        "split": "=(1 - easeOut((glyph.age - glyph.index * motion.microInteraction * 0.3) / motion.navigation)) * viewport.min * 0.014",
+        "smearY": "=(1 - easeOut((glyph.age - glyph.index * motion.microInteraction * 0.3) / motion.emphasis)) * viewport.min * 0.05"
+      },
+      "opacity": "=1 - smoothstep(0.3, 0.85, let.titleOut)",
+      "blur": "=viewport.min * 0.02 * smoothstep(0.1, 0.8, let.titleOut)",
+      "frame": { "x": "50%", "y": "=let.titleY" }
+    },
+    {
+      "type": "shape",
+      "id": "rule",
+      "shape": "rectangle",
+      "color": "=withLightness(saturate(theme.accent, 1.5), 0.64)",
+      "filter": { "type": "lut", "file": "=params.lut", "amount": "=params.lutAmount" },
+      "enter": { "type": "fade+scale", "token": "navigation", "scale": 0.2, "delay": "=motion.emphasis" },
+      "opacity": "=1 - smoothstep(0.2, 0.7, let.titleOut)",
+      "frame": { "x": "50%", "y": "=let.titleRuleY", "width": "=viewport.min * 0.16", "height": 1.5 },
+      "depth": 0.25
+    },
+    {
+      "type": "text",
+      "id": "artist",
+      "text": "=track.artist",
+      "font": "=params.font == 'app' ? (lyrics.prefs.fontFamilyCJK ?? '') : (params.font == 'yisong' ? 'youyou-yisong' : (params.font == 'songti' ? 'STSongti-SC-Light' : 'PingFang SC'))",
+      "fontSize": "=viewport.min * 0.026",
+      "weight": "medium",
+      "tracking": "=viewport.min * 0.006",
+      "lineLimit": 1,
+      "subpixel": true,
+      "color": "=alpha(mix(theme.accent, #FFFFFF, 0.8), 0.72)",
+      "filter": { "type": "lut", "file": "=params.lut", "amount": "=params.lutAmount" },
+      "glyphMotion": {
+        "opacity": "=smoothstep(motion.navigation, motion.navigation + motion.emphasis, glyph.age - glyph.index * motion.microInteraction * 0.15)",
+        "x": "=(1 - easeOut((glyph.age - motion.navigation - glyph.index * motion.microInteraction * 0.15) / motion.emphasis)) * viewport.min * 0.02"
+      },
+      "opacity": "=1 - smoothstep(0.2, 0.75, let.titleOut)",
+      "blur": "=viewport.min * 0.012 * smoothstep(0.1, 0.75, let.titleOut)",
+      "frame": { "x": "50%", "y": "=let.titleArtistY" },
+      "depth": 0.5
+    },
+    {
+      "type": "component",
+      "id": "instrumental",
+      "component": "visualizer.capsuleSpectrum",
+      "visible": "=let.titleInstr",
+      "enter": { "type": "fade+scale", "token": "navigation", "scale": 0.6, "delay": "=motion.emphasis + motion.navigation" },
+      "props": { "count": 9, "scale": "=let.capsuleScale" },
+      "hitTesting": false,
+      "frame": { "x": "50%", "y": "=let.titleSpecY", "width": "=let.capsuleRowW", "height": "=let.titleSpecH" },
+      "depth": 0.6
+    }
+  ]
+}

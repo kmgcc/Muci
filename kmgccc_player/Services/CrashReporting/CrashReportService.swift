@@ -7,32 +7,29 @@ final class CrashReportService: ObservableObject {
     static let shared = CrashReportService()
 
     @Published private(set) var currentPrompt: CrashReportPromptPresentation?
-    @Published private(set) var isPromptFlowActive = false
 
     private let bootstrap: CrashReporterBootstrap
     private let store: CrashReportStore
     private let uploader: CrashReportUploader
     private let defaults: UserDefaults
+    private let promptCoordinator: AppPromptCoordinator
     private var hasStarted = false
     private var workerTask: Task<Void, Never>?
     private var activationObserver: NSObjectProtocol?
-    private var promptQueueDrainedHandler: (() -> Void)?
     private var activeLibraryRootURL: URL?
 
     private init(
         bootstrap: CrashReporterBootstrap = .shared,
         store: CrashReportStore = .shared,
         uploader: CrashReportUploader = CrashReportUploader(),
-        defaults: UserDefaults = .standard
+        defaults: UserDefaults = .standard,
+        promptCoordinator: AppPromptCoordinator = .shared
     ) {
         self.bootstrap = bootstrap
         self.store = store
         self.uploader = uploader
         self.defaults = defaults
-    }
-
-    var hasPendingPrompt: Bool {
-        currentPrompt != nil
+        self.promptCoordinator = promptCoordinator
     }
 
     func bindLibraryRoot(_ rootURL: URL?) {
@@ -52,19 +49,19 @@ final class CrashReportService: ObservableObject {
         installActivationObserverIfNeeded()
         await importPendingReportIfNeeded(anonymousInstallID: anonymousInstallID)
         await normalizeInterruptedStates()
-        isPromptFlowActive = await store.records().contains {
-            $0.promptState == .pending || $0.promptState == .presenting
-        }
 
-        // Start an automatic delivery attempt before publishing the prompt. The
-        // request remains asynchronous, so an offline server never delays the UI.
+        // Start an automatic delivery attempt before asking for the prompt.
+        // The request remains asynchronous, so an offline server never delays the UI.
         scheduleDelivery()
-        await Task.yield()
-        await presentNextPromptIfNeeded()
-    }
+        guard await store.records().contains(where: { $0.promptState == .pending }) else { return }
 
-    func setPromptQueueDrainedHandler(_ handler: @escaping () -> Void) {
-        promptQueueDrainedHandler = handler
+        // Every pending report is reviewed in one blocking prompt that keeps
+        // the slot until the queue is empty.
+        promptCoordinator.submit(AppPromptRequest(id: .crashReport, tier: .blocking) { [weak self] in
+            guard let self else { return false }
+            Task { await self.presentNextPromptIfNeeded() }
+            return true
+        })
     }
 
     func automaticUploadPreferenceDidChange(_ enabled: Bool) {
@@ -431,11 +428,9 @@ final class CrashReportService: ObservableObject {
             .filter { $0.promptState == .pending }
             .min { $0.report.occurredAt < $1.report.occurredAt }
         guard var record = pending else {
-            isPromptFlowActive = false
-            notifyPromptQueueDrained()
+            promptCoordinator.finish(.crashReport)
             return
         }
-        isPromptFlowActive = true
         record.promptState = .presenting
         record.promptedAt = Date()
         do {
@@ -448,6 +443,7 @@ final class CrashReportService: ObservableObject {
             )
         } catch {
             Log.error("[CrashReporting] Failed to persist prompt state", category: .telemetry)
+            promptCoordinator.finish(.crashReport)
         }
     }
 
@@ -456,12 +452,6 @@ final class CrashReportService: ObservableObject {
         // next item. This remains asynchronous and does not block the window.
         try? await Task.sleep(for: .milliseconds(250))
         await presentNextPromptIfNeeded()
-    }
-
-    private func notifyPromptQueueDrained() {
-        guard let handler = promptQueueDrainedHandler else { return }
-        promptQueueDrainedHandler = nil
-        handler()
     }
 
     private func sanitizedUserDescription(

@@ -8,6 +8,7 @@
 import AppKit
 import SwiftData
 import SwiftUI
+import PlayerAutomationProtocol
 
 // MARK: - Playback Order Menu Content
 
@@ -97,6 +98,15 @@ struct KmgcccPlayerApp: App {
     let initialLibraryContext: LibraryContext?
 
     init() {
+        #if !DEBUG
+        if !Self.isRunningTests {
+            do { try AutomationSkillInstaller.refreshExistingExecutableExport() }
+            catch { Log.warning("Could not refresh the exported automation command", category: .ui) }
+            if InstallNameMigration.handOffIfNeeded() {
+                exit(EXIT_SUCCESS)
+            }
+        }
+        #endif
         // Capture failures in preference migration and font registration too.
         CrashReporterBootstrap.shared.enable()
         CrashBreadcrumbRecorder.shared.record(.appLaunchStarted)
@@ -324,6 +334,10 @@ struct KmgcccPlayerApp: App {
             // 3.1 显示菜单追加项（窗口播放 / 窗口模拟全屏）
             PlaybackCommands(appSession: appSession)
 
+            #if DEBUG
+            PromptDebugCommands(appSession: appSession)
+            #endif
+
             // 4. 帮助菜单
             CommandGroup(replacing: .help) {
                 Button(NSLocalizedString("menu.help_center", comment: "Help Center")) {
@@ -333,13 +347,13 @@ struct KmgcccPlayerApp: App {
                 }
 
                 Button(NSLocalizedString("menu.submit_feedback", comment: "Submit Feedback")) {
-                    if let url = URL(string: "https://github.com/kmgcc/kmgccc_player/issues") {
+                    if let url = URL(string: "https://github.com/kmgcc/Muci/issues") {
                         NSWorkspace.shared.open(url)
                     }
                 }
 
                 Button(NSLocalizedString("menu.github", comment: "GitHub")) {
-                    if let url = URL(string: "https://github.com/kmgcc/kmgccc_player") {
+                    if let url = URL(string: "https://github.com/kmgcc/Muci") {
                         NSWorkspace.shared.open(url)
                     }
                 }

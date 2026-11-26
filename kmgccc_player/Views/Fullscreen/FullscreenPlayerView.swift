@@ -544,21 +544,10 @@ struct FullscreenPlayerView: View {
     }
 
     private func handleFullscreenDisappear() {
-        FeatureTipPresentationCoordinator.shared.cancelPending(
-            key: FeatureTipCatalog.PlaybackModeRetap.key
-        )
-        if showPlaybackModeRetapTip {
-            AppVersionGate.shared.markPlaybackModeRetapFeatureTipDismissed()
-            showPlaybackModeRetapTip = false
-            finishPlaybackModeRetapTipPresentation()
-        }
-        FeatureTipPresentationCoordinator.shared.cancelPending(
-            key: FeatureTipCatalog.ScrollWheelVolume.key
-        )
-        if showScrollWheelVolumeTip {
-            showScrollWheelVolumeTip = false
-            finishScrollWheelVolumeTipPresentation()
-        }
+        showPlaybackModeRetapTip = false
+        finishPlaybackModeRetapTipPresentation()
+        showScrollWheelVolumeTip = false
+        finishScrollWheelVolumeTipPresentation()
         Log.info(
             "FullscreenPlayerView disappeared context=\(hostContext.rawValue)",
             category: .lyrics
@@ -1389,61 +1378,21 @@ struct FullscreenPlayerView: View {
         foregroundProfile: FullscreenMiniPlayerForegroundProfile,
         glassStyle: FullscreenControlsGlassStyle
     ) -> some View {
-        let percentage = Int((panoramicVolumeHUDValue * 100).rounded())
-
-        return HStack(spacing: 12 * scale) {
-            Image(systemName: panoramicVolumeIcon)
-                .font(.system(size: 22 * scale, weight: .semibold))
-                .frame(width: 32 * scale)
-
-            Text("\(percentage)%")
-                .font(.system(size: 24 * scale, weight: .semibold, design: .rounded))
-                .monospacedDigit()
-                .lineLimit(1)
-                .contentTransition(.numericText())
-                .motionAnimation(.contentReplacement, value: percentage)
-                .frame(width: 86 * scale)
-        }
-        .foregroundStyle(foregroundProfile.primaryColor.opacity(0.96))
-        .compositingGroup()
-        .blendMode(foregroundProfile.iconBlendMode)
-        .frame(width: 184 * scale, height: 58 * scale)
-        .contentShape(Capsule())
-        .liquidGlassPill(
-            colorScheme: glassStyle.colorScheme,
-            accentColor: nil as Color?,
-            prominence: .standard,
-            materialStyle: glassStyle.materialStyle,
-            isFloating: true
+        VolumeScrollHUD(
+            volume: panoramicVolumeHUDValue,
+            scale: scale,
+            foregroundProfile: foregroundProfile,
+            glassStyle: glassStyle
         )
-        .environment(\.colorScheme, glassStyle.colorScheme)
-        .allowsHitTesting(false)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Volume")
-        .accessibilityValue(Text("\(percentage)%"))
-    }
-
-    private var panoramicVolumeIcon: String {
-        switch panoramicVolumeHUDValue {
-        case ...0:
-            return "speaker.slash.fill"
-        case ..<0.34:
-            return "speaker.wave.1.fill"
-        case ..<0.67:
-            return "speaker.wave.2.fill"
-        default:
-            return "speaker.wave.3.fill"
-        }
     }
 
     private func handlePanoramicArtworkVolumeAdjustment(_ adjustment: Double) {
         guard playbackCoordinator.presentation.isVolumeControlEnabled else { return }
 
-        FeatureTipPresentationCoordinator.shared.cancelPending(
-            key: FeatureTipCatalog.ScrollWheelVolume.key
-        )
         if showScrollWheelVolumeTip {
             dismissScrollWheelVolumeTip()
+        } else {
+            finishScrollWheelVolumeTipPresentation()
         }
 
         let currentVolume = playbackCoordinator.presentation.volume
@@ -2691,6 +2640,19 @@ struct FullscreenPlayerView: View {
             displayHasTrack: currentDisplayContext.hasTrack,
             visualOffsetSeconds: 0
         )
+        if !motionFullscreenCoordinator.isActive,
+           lyricsCoordinator.evaluateAutoRestore(
+               snapshot,
+               delayAfterFinalLine: fullscreenLyricsAutoHideDelayAfterFinalLine
+           )
+        {
+            Log.debug(
+                "[FullscreenLyricsAutoHide] restoring lyrics after seeking back to \(String(format: "%.2f", currentTime))s track=\(lyricsCoordinator.autoHideTrackID?.uuidString.prefix(8) ?? "nil")",
+                category: .lyrics
+            )
+            handleLyricsButtonTap(isAutomatic: true)
+            return
+        }
         guard let event = lyricsCoordinator.evaluateAutoHide(
             snapshot,
             trailingGapThreshold: fullscreenLyricsAutoHideTrailingGap,
@@ -2855,9 +2817,10 @@ struct FullscreenPlayerView: View {
 
     @MainActor
     private func schedulePlaybackModeRetapTipIfNeeded() async {
-        guard playbackModeRetapTipTaskID != "inactive" else { return }
+        let tip = FeatureTip.playbackModeRetap
+        guard playbackModeRetapTipTaskID != "inactive", FeatureTipStore.shared.isEligible(tip) else { return }
         do {
-            try await Task.sleep(for: .seconds(FeatureTipCatalog.PlaybackModeRetap.playbackStartDelay))
+            try await Task.sleep(for: tip.presentationDelay)
         } catch {
             return
         }
@@ -2866,33 +2829,20 @@ struct FullscreenPlayerView: View {
               showPlaybackModeRetapTip == false
         else { return }
 
-        FeatureTipPresentationCoordinator.shared.requestPresentation(
-            key: FeatureTipCatalog.PlaybackModeRetap.key
-        ) { [self] in
-            presentPlaybackModeRetapTipNow()
+        AppPromptCoordinator.shared.requestTip(tip) { [self] in
+            guard playbackModeRetapTipTaskID != "inactive", showPlaybackModeRetapTip == false else { return false }
+            withAnimation(bottomControlsAnimation) {
+                showPlaybackModeRetapTip = true
+            }
+            return true
         }
-    }
-
-    private func presentPlaybackModeRetapTipNow() -> Bool {
-        guard playbackModeRetapTipTaskID != "inactive",
-              showPlaybackModeRetapTip == false,
-              AppVersionGate.shared.claimPlaybackModeRetapFeatureTipDisplay()
-        else { return false }
-
-        withAnimation(bottomControlsAnimation) {
-            showPlaybackModeRetapTip = true
-        }
-        return true
     }
 
     private func finishPlaybackModeRetapTipPresentation() {
-        FeatureTipPresentationCoordinator.shared.endPresentation(
-            key: FeatureTipCatalog.PlaybackModeRetap.key
-        )
+        AppPromptCoordinator.shared.finishTip(.playbackModeRetap)
     }
 
     private func dismissPlaybackModeRetapTip() {
-        AppVersionGate.shared.markPlaybackModeRetapFeatureTipDismissed()
         withAnimation(bottomControlsAnimation) {
             showPlaybackModeRetapTip = false
         }
@@ -2911,11 +2861,10 @@ struct FullscreenPlayerView: View {
 
     @MainActor
     private func scheduleScrollWheelVolumeTipIfNeeded() async {
-        guard scrollWheelVolumeTipTaskID != "inactive" else { return }
+        let tip = FeatureTip.scrollWheelVolume
+        guard scrollWheelVolumeTipTaskID != "inactive", FeatureTipStore.shared.isEligible(tip) else { return }
         do {
-            try await Task.sleep(
-                for: .seconds(FeatureTipCatalog.ScrollWheelVolume.presentationDelay)
-            )
+            try await Task.sleep(for: tip.presentationDelay)
         } catch {
             return
         }
@@ -2924,35 +2873,20 @@ struct FullscreenPlayerView: View {
               showScrollWheelVolumeTip == false
         else { return }
 
-        FeatureTipPresentationCoordinator.shared.requestPresentation(
-            key: FeatureTipCatalog.ScrollWheelVolume.key
-        ) { [self] in
-            presentScrollWheelVolumeTipNow()
+        AppPromptCoordinator.shared.requestTip(tip) { [self] in
+            guard scrollWheelVolumeTipTaskID != "inactive",
+                  showScrollWheelVolumeTip == false,
+                  isArtworkVolumeControlEnabled
+            else { return false }
+            withAnimation(bottomControlsAnimation) {
+                showScrollWheelVolumeTip = true
+            }
+            return true
         }
-    }
-
-    private func presentScrollWheelVolumeTipNow() -> Bool {
-        let key = FeatureTipCatalog.ScrollWheelVolume.key
-        guard scrollWheelVolumeTipTaskID != "inactive",
-              showScrollWheelVolumeTip == false,
-              isArtworkVolumeControlEnabled,
-              AppVersionGate.shared.claimFeatureTipDisplay(
-                featureKey: key,
-                introducedBuild: FeatureTipCatalog.ScrollWheelVolume.introducedBuild,
-                maxDisplayCount: FeatureTipCatalog.ScrollWheelVolume.maxDisplayCount
-              )
-        else { return false }
-
-        withAnimation(bottomControlsAnimation) {
-            showScrollWheelVolumeTip = true
-        }
-        return true
     }
 
     private func finishScrollWheelVolumeTipPresentation() {
-        FeatureTipPresentationCoordinator.shared.endPresentation(
-            key: FeatureTipCatalog.ScrollWheelVolume.key
-        )
+        AppPromptCoordinator.shared.finishTip(.scrollWheelVolume)
     }
 
     private func dismissScrollWheelVolumeTip() {

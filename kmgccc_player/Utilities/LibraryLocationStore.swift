@@ -1,24 +1,33 @@
-//
-//  LibraryLocationStore.swift
-//  myPlayer2
-//
-//  kmgccc_player - Legacy factory-default library root location.
-//
-
 import Foundation
 
-/// Production sessions use `MusicLibraryRegistryStore` and `LibraryContext`;
-/// this locates the legacy factory-default root and the default storage parent.
+/// The registry owns existing paths. These locations are used for adoption and creation.
 nonisolated enum LibraryLocationStore {
-    private static let defaultLibraryRootName = "kmgccc_player Library"
+    private static var musicDirectory: URL {
+        FileManager.default.urls(for: .musicDirectory, in: .userDomainMask).first
+            ?? URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+    }
 
-    /// The legacy factory default root URL (`~/Music/kmgccc_player Library`).
     static var defaultLibraryRootURL: URL {
         #if DEBUG
         if let root = DebugLibraryIsolation.rootURL { return root.appendingPathComponent("Library", isDirectory: true) }
         #endif
-        let base = FileManager.default.urls(for: .musicDirectory, in: .userDomainMask).first
-        return (base ?? URL(fileURLWithPath: NSHomeDirectory()))
-            .appendingPathComponent(defaultLibraryRootName, isDirectory: true)
+        return musicDirectory.appendingPathComponent(LibraryPaths.rootDirectoryName, isDirectory: true)
+    }
+
+    static var factoryDefaultRootURLs: [URL] {
+        #if DEBUG
+        if DebugLibraryIsolation.rootURL != nil { return [defaultLibraryRootURL] }
+        #endif
+        return [
+            musicDirectory.appendingPathComponent(LibraryPaths.legacyRootDirectoryName, isDirectory: true),
+            defaultLibraryRootURL
+        ]
+    }
+
+    static func existingFactoryDefaultRoot(in candidates: [URL]) -> URL? {
+        let existing = candidates.filter { FileManager.default.fileExists(atPath: $0.path) }
+        return existing.first {
+            (try? MusicLibraryManifest.read(from: LibraryPaths(rootURL: $0).manifestURL)) != nil
+        } ?? existing.first
     }
 }

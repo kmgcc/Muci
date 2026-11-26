@@ -517,7 +517,7 @@ nonisolated final class Track: Identifiable, Hashable, Equatable, @unchecked Sen
     // MARK: - Bookmark Resolution
 
     /// Resolve result with optional refreshed bookmark data.
-    struct ResolveResult {
+    struct ResolveResult: Sendable {
         let url: URL?
         let refreshedLocator: TrackMediaLocator?
         let lease: SecurityScopedResourceLease
@@ -530,7 +530,22 @@ nonisolated final class Track: Identifiable, Hashable, Equatable, @unchecked Sen
 
     /// Compatibility wrapper. LocalAudioResourceResolver is the only resolution implementation.
     func resolveFileURL() -> ResolveResult {
-        guard let paths = capturedLibraryPaths else {
+        Self.resolveFileURL(paths: capturedLibraryPaths, locator: mediaLocator)
+    }
+
+    /// Bookmark resolution and the security-scope start touch the file
+    /// system. Callers on the main actor that can wait use this variant so
+    /// the resolution runs off the main thread.
+    func resolveFileURLOffMain() async -> ResolveResult {
+        let paths = capturedLibraryPaths
+        let locator = mediaLocator
+        return await Task.detached(priority: .utility) {
+            Self.resolveFileURL(paths: paths, locator: locator)
+        }.value
+    }
+
+    private static func resolveFileURL(paths: LibraryPaths?, locator mediaLocator: TrackMediaLocator) -> ResolveResult {
+        guard let paths else {
             return ResolveResult(url: nil, refreshedLocator: nil, lease: .none, newAvailability: .missing)
         }
         do {

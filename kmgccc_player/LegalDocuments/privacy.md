@@ -3,7 +3,7 @@
 更新日期：2026 年 10 月 13 日
 生效日期：2026 年 10 月 13 日
 
-欢迎使用 **kmgccc_player**。
+欢迎使用 **Muci**。
 
 我们重视你的隐私。这份文档说明了本 App 会收集哪些数据、如何使用，以及你可以如何管理这些数据。
 
@@ -90,4 +90,4 @@
 开发者：kmg
 网页表单：https://player.kmgccc.cn/help/submit
 联系邮箱：apoptosise@outlook.com
-项目地址：https://github.com/kmgcc/kmgccc_player
+项目地址：https://github.com/kmgcc/Muci

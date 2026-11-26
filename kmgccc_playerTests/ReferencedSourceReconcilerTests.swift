@@ -1195,8 +1195,8 @@ final class ReferencedSourceReconcilerTests: XCTestCase {
     func testNCMReservationSkipsSourceAndOutputAndRegistryFailureIsConservative() async throws {
         let fixture = try await ReconcileFixture(scannerFactory: { paths in
             let filter = NCMScanReservationFilter(registry: NCMConversionRegistry(paths: paths))
-            return ReferencedSourceScanner(paths: paths, isReserved: { url, identity in
-                await filter.isReserved(url: url, identity: identity)
+            return ReferencedSourceScanner(paths: paths, beginReservationScan: {
+                await filter.beginScan()
             })
         })
         defer { fixture.cleanup() }
@@ -1237,8 +1237,8 @@ final class ReferencedSourceReconcilerTests: XCTestCase {
 
         let failureFixture = try await ReconcileFixture(scannerFactory: { paths in
             let filter = NCMScanReservationFilter(registry: NCMConversionRegistry(paths: paths))
-            return ReferencedSourceScanner(paths: paths, isReserved: { url, identity in
-                await filter.isReserved(url: url, identity: identity)
+            return ReferencedSourceScanner(paths: paths, beginReservationScan: {
+                await filter.beginScan()
             })
         })
         defer { failureFixture.cleanup() }
@@ -1247,6 +1247,159 @@ final class ReferencedSourceReconcilerTests: XCTestCase {
         try await failureFixture.reconciler.reconcile(sourceIDs: [failureFixture.sourceID])
         let failureTracks = await failureFixture.repository.fetchTracks(in: nil)
         XCTAssertTrue(failureTracks.isEmpty)
+    }
+
+    func testNCMReservationSnapshotDecisionsFollowRecordState() {
+        func record(
+            state: NCMConversionState,
+            source: String,
+            output: String,
+            sourceVolume: String,
+            outputVolume: String? = nil
+        ) -> NCMConversionRecord {
+            let sourceIdentity = ReferencedFileIdentity(volumeUUID: sourceVolume, resourceIdentifierArchive: Data(source.utf8))
+            let outputIdentity = outputVolume.map {
+                ReferencedFileIdentity(volumeUUID: $0, resourceIdentifierArchive: Data(output.utf8))
+            }
+            return NCMConversionRecord(
+                id: UUID(),
+                sourceIdentity: sourceIdentity,
+                sourceFingerprint: ReferencedFileFingerprint(identity: sourceIdentity, fileSize: 1, modifiedAt: 1),
+                sourceBookmarkData: Data(source.utf8),
+                parentDirectoryBookmarkData: nil,
+                sourcePath: source,
+                sourceMemberships: [],
+                sourcePrimaryID: nil,
+                expectedOutputPath: output,
+                outputIdentity: outputIdentity,
+                outputFingerprint: nil,
+                outputLocator: nil,
+                outputFormat: nil,
+                outputMetadata: nil,
+                outputCoverData: nil,
+                trackID: nil,
+                state: state,
+                errorSummary: nil,
+                createdAt: Date(),
+                updatedAt: Date()
+            )
+        }
+        let snapshot = NCMReservationSnapshot(records: [
+            record(state: .pending, source: "/m/pending.ncm", output: "/m/pending.mp3", sourceVolume: "pending-src"),
+            record(state: .outputReady, source: "/m/ready.ncm", output: "/m/ready.mp3", sourceVolume: "ready-src", outputVolume: "ready-out"),
+            record(state: .committed, source: "/m/committed.ncm", output: "/m/committed.mp3", sourceVolume: "committed-src"),
+            record(state: .removed, source: "/m/removed.ncm", output: "/m/removed.mp3", sourceVolume: "removed-src"),
+            record(state: .failed, source: "/m/failed.ncm", output: "/m/failed.mp3", sourceVolume: "failed-src"),
+        ])
+        func url(_ path: String) -> URL { URL(fileURLWithPath: path) }
+
+        // Pending, output-ready and removed reserve both the source and the output path.
+        for name in ["pending", "ready", "removed"] {
+            XCTAssertTrue(snapshot.isReserved(url: url("/m/\(name).ncm"), identity: nil), name)
+            XCTAssertTrue(snapshot.isReserved(url: url("/m/\(name).mp3"), identity: nil), name)
+        }
+        // Committed and failed reserve nothing.
+        for name in ["committed", "failed"] {
+            XCTAssertFalse(snapshot.isReserved(url: url("/m/\(name).ncm"), identity: nil), name)
+            XCTAssertFalse(snapshot.isReserved(url: url("/m/\(name).mp3"), identity: nil), name)
+        }
+        // A moved file is still recognised by identity, source or output.
+        XCTAssertTrue(snapshot.isReserved(
+            url: url("/elsewhere/a.ncm"),
+            identity: ReferencedFileIdentity(volumeUUID: "pending-src", resourceIdentifierArchive: Data("/m/pending.ncm".utf8))
+        ))
+        XCTAssertTrue(snapshot.isReserved(
+            url: url("/elsewhere/b.mp3"),
+            identity: ReferencedFileIdentity(volumeUUID: "ready-out", resourceIdentifierArchive: Data("/m/ready.mp3".utf8))
+        ))
+        XCTAssertFalse(snapshot.isReserved(
+            url: url("/elsewhere/c.ncm"),
+            identity: ReferencedFileIdentity(volumeUUID: "committed-src", resourceIdentifierArchive: Data("/m/committed.ncm".utf8))
+        ))
+        XCTAssertFalse(snapshot.isReserved(url: url("/m/ordinary.flac"), identity: nil))
+    }
+
+    func testNCMScanReadsJournalOncePerScanAndNextScanSeesNewReservation() async throws {
+        let fixture = try await ReconcileFixture()
+        defer { fixture.cleanup() }
+        let reserved = fixture.sourceRoot.appendingPathComponent("reserved.ncm")
+        let later = fixture.sourceRoot.appendingPathComponent("later.ncm")
+        let ordinary = fixture.sourceRoot.appendingPathComponent("ordinary.flac")
+        for file in [reserved, later, ordinary] { try Data("x".utf8).write(to: file) }
+        let registry = NCMConversionRegistry(paths: fixture.paths)
+        func reserve(_ file: URL) async throws {
+            let fingerprint = try ReferencedFileIdentityProvider().fingerprint(for: file)
+            try await registry.reserve(NCMConversionRecord(
+                id: UUID(),
+                sourceIdentity: fingerprint.identity,
+                sourceFingerprint: fingerprint,
+                sourceBookmarkData: Data(file.path.utf8),
+                parentDirectoryBookmarkData: nil,
+                sourcePath: file.path,
+                sourceMemberships: [],
+                sourcePrimaryID: nil,
+                expectedOutputPath: file.deletingPathExtension().appendingPathExtension("mp3").path,
+                outputIdentity: nil,
+                outputFingerprint: nil,
+                outputLocator: nil,
+                outputFormat: nil,
+                outputMetadata: nil,
+                outputCoverData: nil,
+                trackID: nil,
+                state: .pending,
+                errorSummary: nil,
+                createdAt: Date(),
+                updatedAt: Date()
+            ))
+        }
+        try await reserve(reserved)
+
+        let filter = NCMScanReservationFilter(registry: registry)
+        let check = await filter.beginScan()
+        // The journal is read once, when the scan begins. Breaking the file on
+        // disk afterwards must not turn per-file answers into "reserved".
+        try Data("broken".utf8).write(to: fixture.paths.ncmConversionsURL)
+        let reservedAnswer = await check(reserved, nil)
+        let ordinaryAnswer = await check(ordinary, nil)
+        XCTAssertTrue(reservedAnswer)
+        XCTAssertFalse(ordinaryAnswer)
+
+        // Reading the journal fails: the scan conservatively skips everything.
+        let failedCheck = await filter.beginScan()
+        let failedAnswer = await failedCheck(ordinary, nil)
+        XCTAssertTrue(failedAnswer)
+
+        // A conversion reserved after a scan began is invisible to that scan
+        // but seen by the next one.
+        try FileManager.default.removeItem(at: fixture.paths.ncmConversionsURL)
+        let firstCheck = await filter.beginScan()
+        try await reserve(later)
+        let missedByFirst = await firstCheck(later, nil)
+        XCTAssertFalse(missedByFirst)
+        let secondCheck = await filter.beginScan()
+        let seenBySecond = await secondCheck(later, nil)
+        XCTAssertTrue(seenBySecond)
+    }
+
+    func testScannerAsksForReservationSnapshotOncePerScan() async throws {
+        let fixture = try await ReconcileFixture()
+        defer { fixture.cleanup() }
+        for name in ["a.mp3", "b.mp3", "c.mp3"] {
+            try Data("audio".utf8).write(to: fixture.sourceRoot.appendingPathComponent(name))
+        }
+        let counter = ScanStartCounter()
+        let scanner = ReferencedSourceScanner(
+            paths: fixture.paths,
+            beginReservationScan: {
+                counter.increment()
+                return { _, _ in false }
+            }
+        )
+        let result = try await scanner.scan(context: fixture.context, sourceID: fixture.sourceID, rootURL: fixture.sourceRoot)
+        XCTAssertEqual(result.proposedManifest?.entries.count, 3)
+        XCTAssertEqual(counter.value, 1)
+        _ = try await scanner.scan(context: fixture.context, sourceID: fixture.sourceID, rootURL: fixture.sourceRoot)
+        XCTAssertEqual(counter.value, 2)
     }
 
     func testScannerUsesImportableAudioExtensions() async throws {
@@ -1265,8 +1418,8 @@ final class ReferencedSourceReconcilerTests: XCTestCase {
     func testMarkedNCMOutputIsHiddenWhileCommittedNCMRemainsCanonicalScanEntry() async throws {
         let fixture = try await ReconcileFixture(scannerFactory: { paths in
             let filter = NCMScanReservationFilter(registry: NCMConversionRegistry(paths: paths))
-            return ReferencedSourceScanner(paths: paths, isReserved: { url, identity in
-                await filter.isReserved(url: url, identity: identity)
+            return ReferencedSourceScanner(paths: paths, beginReservationScan: {
+                await filter.beginScan()
             })
         })
         defer { fixture.cleanup() }
@@ -1327,9 +1480,8 @@ final class ReferencedSourceReconcilerTests: XCTestCase {
 
         let scanner = ReferencedSourceScanner(
             paths: fixture.paths,
-            isReserved: { url, identity in
-                let filter = NCMScanReservationFilter(registry: registry)
-                return await filter.isReserved(url: url, identity: identity)
+            beginReservationScan: {
+                await NCMScanReservationFilter(registry: registry).beginScan()
             }
         )
         let result = try await scanner.scan(
@@ -2107,6 +2259,23 @@ final class ReferencedSourceReconcilerTests: XCTestCase {
 
         let notices = await recorder.notices
         XCTAssertTrue(notices.isEmpty, "cancelled switch must not publish source failure notices")
+    }
+}
+
+private final class ScanStartCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+
+    func increment() {
+        lock.lock()
+        count += 1
+        lock.unlock()
+    }
+
+    var value: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return count
     }
 }
 

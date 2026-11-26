@@ -39,7 +39,6 @@ struct SidebarView: View {
     @Environment(\.motionTokens) private var motionTokens
     @Environment(\.motionPolicy) private var configuredMotionPolicy
     @ObservedObject private var updateCoordinator = UpdateCoordinator.shared
-    @ObservedObject private var crashReportService = CrashReportService.shared
 
     @State private var showSettings = false
     @State private var showCrashReportSettingsTip = false
@@ -538,35 +537,20 @@ struct SidebarView: View {
         .onDisappear {
             crashReportTipTask?.cancel()
             crashReportTipTask = nil
-            FeatureTipPresentationCoordinator.shared.cancelPending(
-                key: FeatureTipCatalog.AutomaticCrashReports.key
-            )
             showCrashReportSettingsTip = false
-            finishCrashReportTipPresentation()
+            AppPromptCoordinator.shared.finishTip(.automaticCrashReports)
             cancelPlaylistHeaderAutoExpand()
-        }
-        .onChange(of: crashReportService.isPromptFlowActive) { _, isActive in
-            if isActive {
-                crashReportTipTask?.cancel()
-                FeatureTipPresentationCoordinator.shared.cancelPending(
-                    key: FeatureTipCatalog.AutomaticCrashReports.key
-                )
-                showCrashReportSettingsTip = false
-                finishCrashReportTipPresentation()
-            } else {
-                scheduleCrashReportSettingsTipIfNeeded()
-            }
         }
         .onChange(of: showCrashReportSettingsTip) { _, isPresented in
             if !isPresented {
-                finishCrashReportTipPresentation()
+                AppPromptCoordinator.shared.finishTip(.automaticCrashReports)
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .presentSettingsFromMenu)) { _ in
             openSettings()
         }
         .sheet(isPresented: $showSettings, onDismiss: {
-            FeatureTipPresentationCoordinator.shared.setSuspended(false, reason: .settingsSheet)
+            AppPromptCoordinator.shared.setObstruction(.settingsSheet, active: false)
         }) {
             SettingsView(
                 hasActiveLibrarySession: true,
@@ -1109,15 +1093,13 @@ struct SidebarView: View {
             CrashReportSettingsTipView(
                 onOpenSettings: {
                     showCrashReportSettingsTip = false
-                    AppVersionGate.shared.markFeatureTipDismissed(
-                        featureKey: FeatureTipCatalog.AutomaticCrashReports.key
-                    )
+                    FeatureTipStore.shared.markDismissed(.automaticCrashReports)
+                    AppPromptCoordinator.shared.finishTip(.automaticCrashReports)
                     openSettings()
-                    finishCrashReportTipPresentation()
                 },
                 onDismiss: {
                     showCrashReportSettingsTip = false
-                    finishCrashReportTipPresentation()
+                    AppPromptCoordinator.shared.finishTip(.automaticCrashReports)
                 }
             )
         }
@@ -1130,7 +1112,7 @@ struct SidebarView: View {
     private func openSettings(category: SettingsCategory?, anchor: String?) {
         settingsInitialCategory = category
         settingsInitialAnchor = anchor
-        FeatureTipPresentationCoordinator.shared.setSuspended(true, reason: .settingsSheet)
+        AppPromptCoordinator.shared.setObstruction(.settingsSheet, active: true)
         settingsRotateTrigger += 1
         showSettings = true
     }
@@ -1164,55 +1146,28 @@ struct SidebarView: View {
         }
     }
 
-    private func finishCrashReportTipPresentation() {
-        FeatureTipPresentationCoordinator.shared.endPresentation(
-            key: FeatureTipCatalog.AutomaticCrashReports.key
-        )
+    /// The crash-report preference tip anchors to the sidebar Settings button.
+    private var canAnchorCrashReportSettingsTip: Bool {
+        settings.sidebarSetBarConfiguration.items.contains(where: { $0.kind == .settings })
+            && !showSettings
+            && !showingPlaylistSheet
+            && !showCrashReportSettingsTip
     }
 
     private func scheduleCrashReportSettingsTipIfNeeded() {
         crashReportTipTask?.cancel()
-        guard !crashReportService.isPromptFlowActive,
-              settings.sidebarSetBarConfiguration.items.contains(where: { $0.kind == .settings }),
-              !showSettings,
-              !showingPlaylistSheet,
-              !showCrashReportSettingsTip
-        else { return }
+        let tip = FeatureTip.automaticCrashReports
+        guard canAnchorCrashReportSettingsTip, FeatureTipStore.shared.isEligible(tip) else { return }
 
         crashReportTipTask = Task { @MainActor in
-            try? await Task.sleep(
-                for: .seconds(FeatureTipCatalog.AutomaticCrashReports.presentationDelay)
-            )
-            guard !Task.isCancelled,
-                  !crashReportService.isPromptFlowActive,
-                  !showSettings,
-                  !showingPlaylistSheet
-            else { return }
-
-            FeatureTipPresentationCoordinator.shared.requestPresentation(
-                key: FeatureTipCatalog.AutomaticCrashReports.key
-            ) { [self] in
-                presentCrashReportSettingsTipNow()
+            try? await Task.sleep(for: tip.presentationDelay)
+            guard !Task.isCancelled, canAnchorCrashReportSettingsTip else { return }
+            AppPromptCoordinator.shared.requestTip(tip) { [self] in
+                guard canAnchorCrashReportSettingsTip else { return false }
+                showCrashReportSettingsTip = true
+                return true
             }
         }
-    }
-
-    private func presentCrashReportSettingsTipNow() -> Bool {
-        let key = FeatureTipCatalog.AutomaticCrashReports.key
-        guard !showCrashReportSettingsTip,
-              settings.sidebarSetBarConfiguration.items.contains(where: { $0.kind == .settings }),
-              !crashReportService.isPromptFlowActive,
-              !showSettings,
-              !showingPlaylistSheet
-        else { return false }
-        guard AppVersionGate.shared.claimFeatureTipDisplay(
-            featureKey: key,
-            introducedBuild: FeatureTipCatalog.AutomaticCrashReports.introducedBuild,
-            maxDisplayCount: FeatureTipCatalog.AutomaticCrashReports.maxDisplayCount
-        ) else { return false }
-
-        showCrashReportSettingsTip = true
-        return true
     }
 
     private func appearanceSwitchButton(showsHelp: Bool) -> some View {

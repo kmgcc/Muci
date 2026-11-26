@@ -568,7 +568,6 @@ private struct HomeThemeSnapshot: Equatable {
 
 @MainActor
 private struct HomeThemeSnapshotReader<Content: View>: View {
-    @EnvironmentObject private var themeStore: ThemeStore
     @State private var snapshot: HomeThemeSnapshot
     private let content: (HomeThemeSnapshot) -> Content
 
@@ -582,7 +581,27 @@ private struct HomeThemeSnapshotReader<Content: View>: View {
     }
 
     var body: some View {
+        // ThemeStore is an ObservableObject: every @Published write during a
+        // track switch invalidates its observers. Only the small observer
+        // below subscribes, so those writes no longer re-run the whole Home
+        // content closure; Home rebuilds once, when the snapshot changes.
         content(snapshot)
+            .background {
+                HomeThemeGenerationObserver(snapshot: $snapshot)
+            }
+    }
+}
+
+@MainActor
+private struct HomeThemeGenerationObserver: View {
+    @EnvironmentObject private var themeStore: ThemeStore
+    @Binding var snapshot: HomeThemeSnapshot
+
+    var body: some View {
+        Color.clear
+            .frame(width: 0, height: 0)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
             .task(id: themeStore.themeGeneration) {
                 do {
                     try await Task.sleep(for: .milliseconds(700))

@@ -9,13 +9,69 @@
   ],
   "properties": {
     "formatVersion": {
-      "const": 2
+      "const": 2,
+      "description": "package format version; the App loads only format 2"
     },
     "hostAPIVersion": {
-      "const": 2
+      "const": 2,
+      "description": "host interface version; the App loads only interface 2"
     },
     "version": {
-      "type": "string"
+      "type": "string",
+      "description": "the package's own version, kept by the author; 1.0.0 when absent"
+    },
+    "author": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 24,
+      "description": "the author's display name; shown on the selection card only when sidebar.showsAuthor is true"
+    },
+    "preview": {
+      "description": "a square picture for the selection card (png, jpg or heic, at least 256 px a side); without one the card outlines the scene in flat blocks",
+      "oneOf": [
+        {"type": "string", "minLength": 1},
+        {
+          "type": "object",
+          "required": ["image"],
+          "additionalProperties": false,
+          "properties": {
+            "image": {"type": "string", "minLength": 1},
+            "dark": {"type": "string", "minLength": 1, "description": "shown in dark appearance"},
+            "themed": {
+              "type": "boolean",
+              "default": false,
+              "description": "a three-colour template: pure red, green and blue are repainted as the theme's accent, foreground and a quiet accent-tinted neutral, all contrasting with the card"
+            }
+          }
+        }
+      ]
+    },
+    "sidebar": {
+      "type": "object",
+      "description": "a vertical strip on the trailing side of the selection card; omitted means no strip",
+      "additionalProperties": false,
+      "properties": {
+        "visible": {
+          "type": "boolean",
+          "default": true,
+          "description": "false hides the strip while keeping its settings"
+        },
+        "label": {
+          "type": "string",
+          "maxLength": 12,
+          "description": "a short mark at the top of the strip, such as beta"
+        },
+        "showsAuthor": {
+          "type": "boolean",
+          "default": false,
+          "description": "shows author at the bottom of the strip"
+        },
+        "showsAuthorPrefix": {
+          "type": "boolean",
+          "default": true,
+          "description": "writes the author as \"-by name\"; false shows the name alone"
+        }
+      }
     },
     "descriptor": {
       "type": "object",
@@ -79,8 +135,10 @@
     },
     "requires": {
       "type": "array",
+      "description": "capabilities the package uses, each name@major such as lyrics.document@1; loading fails when the host lacks one. skin.capabilities lists them all",
       "items": {
-        "type": "string"
+        "type": "string",
+        "pattern": "^[A-Za-z][A-Za-z0-9.]*@[0-9]+$"
       }
     },
     "uses": {
@@ -95,6 +153,12 @@
       "items": {
         "type": "string"
       }
+    },
+    "let": {
+      "type": "object",
+      "description": "Named expressions, read as let.name from any expression.",
+      "propertyNames": { "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+      "additionalProperties": { "type": "string" }
     }
   },
   "$defs": {
@@ -255,7 +319,7 @@
           "description": "gradient: [{color, at}] stops"
         },
         "radius": {
-          "description": "gradient: radial radius relative to the node's longer side; elliptical radius as a fraction of the frame, so the glow ends inside it"
+          "description": "gradient: radial radius relative to the node's longer side; elliptical radius as a fraction of the frame, so the glow ends inside it; light: the core as a share of the frame's half size (default 0.08), with inverse-square falloff that ends at the frame's edge"
         },
         "tracking": {},
         "subpixel": {
@@ -322,17 +386,51 @@
         "curve": {
           "description": "particles with lifetime: turn added to the travel direction over time, in radians per second squared"
         },
+        "soft": {
+          "description": "particles without lifetime: points over which each dot's edge fades out, drawn per dot without a layer blur"
+        },
+        "resolution": {
+          "description": "any node: share of display resolution (0.25 to 1) its content is drawn at before scaling back up, multiplied by the render quality setting; for soft content such as backgrounds. The node's own filter and bloom run afterwards at the usual resolution"
+        },
+        "args": {
+          "type": "array",
+          "maxItems": 16,
+          "description": "shader: values the full signature reads with skinArg(in, i); a number fills x, a list of up to four numbers fills x to w, a colour is sRGB rgba. Expressions are evaluated every frame"
+        },
+        "images": {
+          "type": "array",
+          "maxItems": 4,
+          "items": { "type": "string" },
+          "description": "shader: package images read with skinImage(in, i, uv, blur), decoded at most 2048 pixels on the long side, with mipmaps and repeating edges"
+        },
+        "spectrum": {
+          "description": "shader: number of log-spaced spectrum bands from 30 Hz to 16 kHz (0 to 256, default 64), read with skinSpectrum(in, x)"
+        },
+        "waveform": {
+          "description": "shader: number of waveform samples in −1…1 (0 to 2048, default 256), read with skinWaveform(in, x)"
+        },
+        "feedback": {
+          "type": "boolean",
+          "description": "shader: keeps the previous frame at half-float precision for skinPrevious(in, uv), for trails and accumulation"
+        },
+        "render": {
+          "enum": ["gpu"],
+          "description": "layer: draws its children into one Metal surface on its own display clock, resting while still. Children are shapes (rectangle, circle, ellipse and path, with stroke, trim, rotation and blur; a path may take an angular gradient mask), gradients, fog, particles (particles may carry motionBlur), comets and text, plus nested layers (with offsetX, offsetY) and repeats with layout free; text takes font, size, tracking, alignment, line limit, color, rotation, scale, offsets, blur, glow and glyphMotion and is drawn glyph by glyph from cached masks; the camera takes x, y, zoom, perspective, rotation, rotationX and rotationY; the layer filter is grain, fov, bokeh and lut, with defocus, distortion, spectral dispersion and edge blur drawn on the surface in that order, then the LUT grade and grain added as it scales up; resolution sets the surface resolution"
+        },
         "outline": {
           "description": "text, lyricLine: a width, or {width, color, hollow}; hollow keeps only the ring"
         },
         "filter": {
-          "description": "a preset {type, ...} or a list applied in order: chromatic {amount, angle}, glitch {amount, slice, rate, intensity}, motionBlur {x, y, samples}, scanlines {spacing, intensity, speed}, wave {amplitude, wavelength, speed}, grain {amount}, fov {distortion, chromatic, blur, start}, custom {library (.metallib), function, kind (layer, color, distortion), args, reach, animated}"
+          "description": "a preset {type, ...} or a list applied in order: chromatic {amount, angle}, glitch {amount, slice, rate, intensity}, motionBlur {x, y, samples}, scanlines {spacing, intensity, speed}, wave {amplitude, wavelength, speed}, grain {amount, rate}, fov {distortion, chromatic, blur, start}, lut {file (a package-relative .cube path, empty for none), amount 0 to 1}, bokeh {at, seed, wave, radius, amount, speed, glow, threshold, swirl, hold, breathing, detail} (render gpu layers only: from lyric time at the lens eases out of focus, pulses one to three times around a blurred middle and clears, finishing a started hunt after its line ends; hold above 0 keeps it open at that strength; each point spreads into a hard-edged aperture disc, radius in points, wave 0 hunt, 1 flutter, 2 drift, 3 snap or chosen by seed, glow (highlight pull), threshold and swirl 0 to 1), custom {library (.metallib), function, kind (layer, color, distortion), args, reach, animated}; custom args take numbers, lists of 2 to 4 numbers, longer lists as a float array, colours, and {image: path} as a package texture"
         },
         "bloom": {
           "description": "bright parts of the subtree glow: a radius, or {radius, intensity, threshold}"
         },
         "camera": {
           "description": "layer: {x, y, zoom, rotation, rotationX, rotationY, perspective}; positioned children pan and zoom scaled by 1 / (1 + depth)"
+        },
+        "motionBlur": {
+          "description": "layer with render gpu: a share of one frame's travel, 0 to 2; glyphs, particles and rings integrate their own move, the camera's included, along the path they took"
         },
         "depth": {
           "description": "a positioned child of a layer with camera: 0 follows the camera fully, larger values move less, negative values move more (above -0.9)"
@@ -348,6 +446,24 @@
         },
         "warp": {
           "description": "fog: how strongly the noise folds into itself"
+        },
+        "scrollX": {
+          "description": "fog, particles: how far the field has slid sideways, in points"
+        },
+        "glow": {
+          "description": "text: glyph-hugging glow, {radius, color, core}; glyphMotion.glow sets each glyph's brightness. In a render gpu layer it is a bloom with inverse-square falloff reaching radius, plus strength (exposure, default 2.5) and haze (outer veil, default 1.4), saturation (colour strength, 0 neutral to 2 rich, default 1); its colour saturates and drifts in hue as it fades"
+        },
+        "width": {
+          "description": "comet: line width of the head and trail, in points; with brush, the stroke's half width. particles with lifetime and brush: the painted tail's half width at size"
+        },
+        "brush": {
+          "description": "render: gpu comet, particles with trail, circle, ellipse or path with stroke: painted-stroke texture; a number 0 to 1 is the amount, or {amount, dry, wobble, warp, seed}: amount sets the dry oil-brush texture, ragged edges, bristle streaks and tone (0 keeps the smooth line), dry how far the paint runs dry towards the stroke's end, wobble how far a ring's short overlapping strokes shift and slant and how much a path's pressure and line sway, warp (default wobble) how far a path strays from its exact shape as if drawn by hand"
+        },
+        "zones": {
+          "description": "render: gpu fog: colours the smoke carries, a list of colours or {colors, lightness, chroma, size, share, scrollX, scrollY}: the smoke takes the first colour and the rest tint it in small, occasional spots; tones close together count as one, lightness sets them to one level, chroma scales them (tints quieter than the lead, capped in the dark), size is a spot's scale in points, share how often spots appear (0 to 1), scrollX and scrollY slide the spots on their own (the fog's scroll when absent); a spot's edge follows the smoke's density, its heart keeps a fifth of the lead, and colours mix perceptually at one lightness"
+        },
+        "scrollY": {
+          "description": "fog, particles: how far the field has slid down, in points"
         },
         "type": {
           "enum": [
@@ -413,6 +529,7 @@
             "control.previous", "control.next", "control.progress", "control.volume", "control.expandableVolume", "control.playbackMode",
             "control.like", "control.dislike", "control.outputDevice", "control.queue", "control.lyricsToggle", "control.fullscreen", "control.settings", "control.quickPanel",
             "control.actionButton", "control.glassButton", "control.glassTriplePill",
+            "control.progressLine", "control.actionStack", "control.playbackModeStack",
             "text.trackInfo", "text.trackDescription", "text.marquee", "transition.bokeh",
             "panel.queue", "panel.quickAppearance", "panel.trackDetail", "sheet.trackEdit", "sheet.externalInfo", "sheet.settings", "menu.trackContext", "menu.player",
             "behavior.autoHide", "behavior.lyricsEndAutoHide", "behavior.scrollVolume", "behavior.pointerOcclusion", "behavior.windowDrag",

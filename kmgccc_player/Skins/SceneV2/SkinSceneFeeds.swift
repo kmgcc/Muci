@@ -4,6 +4,14 @@ import MelismaKit
 import MotionKit
 import SwiftUI
 
+/// What the scene's lyric timeline was last loaded from.
+/// Unchanged documents share storage, so comparing them costs nothing.
+final class SkinLyricsLoadMemo {
+    var timeline: ObjectIdentifier?
+    var document: LyricsDocument?
+    var timing: LyricsTimingConfiguration?
+}
+
 /// A scene-scoped adapter. The application services remain the owners of all facts.
 struct SkinSceneFeeds: View {
     let data: SkinSceneData
@@ -27,7 +35,10 @@ struct SkinSceneFeeds: View {
     @Environment(\.skinSceneIsActive) private var active
     @Environment(\.skinSceneLyricsVisible) private var lyricsVisible
     @Environment(\.skinScenePresentation) private var presentation
+    @Environment(\.skinSceneHostOverlays) private var overlays
     @Environment(\.motionArtworkFullscreenCoordinator) private var motionFullscreen
+    @State private var audioLease = SkinSceneAudioLease()
+    @State private var lyricsLoad = SkinLyricsLoadMemo()
 
     var body: some View {
         let domains = values
@@ -40,7 +51,8 @@ struct SkinSceneFeeds: View {
             }
             .onChange(of: audioKey, initial: true) { _, _ in updateAudio() }
             .onChange(of: NativeLyricsSurfaceManager.shared.documentPublication.revision, initial: true) { _, _ in updateLyrics() }
-            .onDisappear { data.audio.stop() }
+            .onChange(of: "\(fontScales.main)|\(fontScales.translation)") { _, _ in updateLyrics() }
+            .onDisappear { audioLease.stop(data.audio) }
             .overlay { SkinSceneClockFeed(data: data, role: viewport.surface == .window ? .main : .fullscreen, lead: lyricsLead) }
             .background { SkinSceneHostProbe(data: data) }
             .allowsHitTesting(false)
@@ -54,10 +66,30 @@ struct SkinSceneFeeds: View {
         return min(2, max(-1, value))
     }
 
+    /// The lyric font sizes the user set, relative to the surface's defaults (1 is the default).
+    /// `lyrics.prefs.fontSize` already carries the fullscreen canvas scale and the embedded
+    /// window's enlargement, so a skin that sizes type from the viewport reads these instead.
+    private var fontScales: (main: Double, translation: Double) {
+        if viewport.surface == .window {
+            // The window lyrics' stored defaults (`lyricsFontSize`, `lyricsTranslationFontSize`).
+            return (settings.lyricsFontSize / 32, settings.lyricsTranslationFontSize / 18)
+        }
+        let typography = settings.effectiveFullscreenLyricsTypography
+        let base = FullscreenLyricsTypography.defaultValue(forFullscreenSkinID: settings.fullscreen.skinID)
+        return (typography.mainFontSize / max(1, base.mainFontSize),
+                typography.translationFontSize / max(1, base.translationFontSize))
+    }
+
+    /// A skin whose controls are always light draws on a dark stage, so it reads the night
+    /// palette whatever the app's appearance.
+    private var colorScheme: ColorScheme {
+        presentation.controlForeground == .fixedLight ? .dark : theme.colorScheme
+    }
+
     private var audioKey: String { "\(active)|\(snapshot.playback.isPlaying)|\(playback.stablePresentation.source)|\(data.audioReaders.isEmpty)" }
 
     private func updateAudio() {
-        data.audio.update(provider: meter, source: playback.stablePresentation.source,
+        audioLease.update(data.audio, provider: meter, source: playback.stablePresentation.source,
                           active: active && !data.audioReaders.isEmpty, isPlaying: snapshot.playback.isPlaying, usesLED: true)
         data.audioAvailability = data.audio.availability.rawValue
     }
@@ -74,10 +106,17 @@ struct SkinSceneFeeds: View {
             timing.leadIn = 0
             timing.nearSwitchGap = 0
         }
-        data.lyricsTimeline.load(document, timing: timing)
-        data.set(.lyrics, [
+        // The publication also advances for palette changes, which nothing here reads; the
+        // timeline reloads only for a new document or timing.
+        let timeline = ObjectIdentifier(data.lyricsTimeline)
+        if lyricsLoad.timeline != timeline || lyricsLoad.document != document || lyricsLoad.timing != timing {
+            data.lyricsTimeline.load(document, timing: timing)
+            lyricsLoad.timeline = timeline
+            lyricsLoad.document = document
+            lyricsLoad.timing = timing
+        }
+        var values: [String: SkinValue] = [
             "lyrics.available": .boolean(document != nil), "lyrics.availability": .text(document == nil ? "unavailable" : "available"),
-            "lyrics.revision": .number(Double(manager.documentPublication.revision)),
             "lyrics.lineCount": .number(Double(data.lyricsTimeline.lines.count)), "lyrics.lines": .list(data.lyricsTimeline.lines),
             "lyrics.sourceTTML": .text(manager.currentTTML), "lyrics.title": .text(snapshot.track?.title ?? ""),
             "lyrics.duration": .number(playback.stablePresentation.duration),
@@ -89,10 +128,21 @@ struct SkinSceneFeeds: View {
             "lyrics.prefs.fontFamily": .text(config.fontName), "lyrics.prefs.translationFontSize": .number(config.translationFontSize ?? config.fontSize * 0.5),
             "lyrics.prefs.fontFamilyCJK": .text(config.fontNameCJK ?? config.fontName),
             "lyrics.prefs.fontWeight": .text(Self.weightName(config.fontWeight)),
+            "lyrics.prefs.translationFontFamily": .text(config.translationFontName),
+            "lyrics.prefs.translationFontWeight": .text(Self.weightName(config.translationFontWeight)),
+            "lyrics.prefs.fontScale": .number(fontScales.main),
+            "lyrics.prefs.translationFontScale": .number(fontScales.translation),
             "lyrics.prefs.translationLanguage": .text(config.translationLanguage), "lyrics.prefs.romanizationLanguage": .text(config.romanizationLanguage),
             "lyrics.prefs.obscenity": .text(config.obscenity.rawValue),
             "lyrics.metadata": .record(document?.metadata.mapValues { .list($0.map(SkinValue.text)) } ?? [:]),
-        ])
+        ]
+        // `lyrics.revision` (and the scene's `lyricsChange` event) advance only when what a
+        // scene reads here changed, so a new palette re-renders no lyric reader.
+        var previous = data.lyrics
+        let revision = previous.removeValue(forKey: "lyrics.revision")
+        values["lyrics.revision"] = previous == values && revision != nil
+            ? revision : .number(Double(manager.documentPublication.revision))
+        data.set(.lyrics, values)
     }
 
     /// The lyric weight (−1…1, CSS 400 at 0 and 900 at 1) as a scene `weight` name.
@@ -152,20 +202,23 @@ struct SkinSceneFeeds: View {
             "playback.canSetOrderMode": .boolean(p.isPlaybackModeControlEnabled), "playback.hasTrack": .boolean(p.hasTrack),
             "playback.audioOutputDelay": .number(p.audioOutputDelay),
         ]
-        var colors = Dictionary(uniqueKeysWithValues: SkinThemeRoles.colorRoles.map { ($0.path, SkinValue.color(OKLCHColor($0.read(theme.semanticPalette)))) })
-        colors["theme.scheme"] = .text(theme.colorScheme == .dark ? "dark" : "light")
-        colors["theme.isDark"] = .boolean(theme.colorScheme == .dark)
-        colors["theme.accent"] = .color(OKLCHColor(theme.accentNSColor))
+        let scheme = colorScheme
+        let palette = theme.semanticPalette(for: scheme)
+        var colors = Dictionary(uniqueKeysWithValues: SkinThemeRoles.colorRoles.map { ($0.path, SkinValue.color(OKLCHColor($0.read(palette)))) })
+        colors["theme.scheme"] = .text(scheme == .dark ? "dark" : "light")
+        colors["theme.isDark"] = .boolean(scheme == .dark)
+        colors["theme.accent"] = .color(OKLCHColor(theme.accentNSColor(for: scheme)))
         colors["theme.hasArtworkColor"] = .boolean(theme.hasArtworkThemeColor)
         colors["theme.palette"] = .list(snapshot.theme.artworkPalette.map { .color(OKLCHColor($0)) })
         colors["theme.averageColor"] = .color(OKLCHColor(snapshot.theme.artworkAverageColor ?? .black))
         colors["theme.spectrumColors"] = .list(snapshot.theme.spectrumArtworkColors.map { .color(OKLCHColor($0)) })
+        colors["theme.artSwatches"] = .list(theme.artworkSwatches(for: scheme).map { .color(OKLCHColor($0)) })
         colors["theme.spectrumUsesDarkForeground"] = .boolean(snapshot.theme.spectrumUsesDarkForeground)
         colors["theme.artBackgroundIsUltraDark"] = .boolean(snapshot.theme.artBackgroundIsUltraDark)
-        colors["theme.roles"] = Self.paletteRoles(theme.semanticPalette)
+        colors["theme.roles"] = Self.paletteRoles(palette)
         for strategy in SkinThemeRoles.foregroundStrategies {
-            let foreground = FullscreenMiniPlayerForegroundStrategy.resolve(palette: theme.semanticPalette, localArtworkPolarity: nil,
-                hasArtworkThemeColor: theme.hasArtworkThemeColor, controlForeground: strategy, colorScheme: theme.colorScheme,
+            let foreground = FullscreenMiniPlayerForegroundStrategy.resolve(palette: palette, localArtworkPolarity: nil,
+                hasArtworkThemeColor: theme.hasArtworkThemeColor, controlForeground: strategy, colorScheme: scheme,
                 materialStyle: .normal, fullscreenArtBackgroundEnabled: settings.fullscreenArtBackgroundEnabled)
             let prefix = "theme.controlForeground.\(strategy.rawValue)."
             colors[prefix + "primary"] = .color(OKLCHColor(foreground.primary))
@@ -173,7 +226,7 @@ struct SkinSceneFeeds: View {
             colors[prefix + "disabled"] = .color(OKLCHColor(foreground.disabled))
             colors[prefix + "pillTint"] = .color(OKLCHColor(foreground.pillTint))
         }
-        colors["theme.readability.usesDarkForeground"] = .boolean(theme.semanticPalette.readabilityProfile.usesDarkForeground)
+        colors["theme.readability.usesDarkForeground"] = .boolean(palette.readabilityProfile.usesDarkForeground)
         do {
             let analysis = theme.analysis
             for field in SkinThemeRoles.analysisFields { colors[field.path] = field.read(analysis) }
@@ -187,8 +240,8 @@ struct SkinSceneFeeds: View {
             "viewport.aspect": .number(viewport.size.width / max(1, viewport.size.height)), "viewport.displayScale": .number(displayScale),
             "viewport.maximumRefreshRate": .number(Double(NSScreen.main?.maximumFramesPerSecond ?? 60)),
             "viewport.surface": .text(viewport.surface.rawValue), "viewport.fullscreenHost": .text(String(describing: viewport.fullscreenHost)),
-            "viewport.isFullscreen": .boolean(viewport.surface == .fullscreen), "viewport.isDark": .boolean(theme.colorScheme == .dark),
-            "viewport.colorScheme": .text(theme.colorScheme == .dark ? "dark" : "light"),
+            "viewport.isFullscreen": .boolean(viewport.surface == .fullscreen), "viewport.isDark": .boolean(scheme == .dark),
+            "viewport.colorScheme": .text(scheme == .dark ? "dark" : "light"),
             "viewport.reduceMotion": .boolean(reduceMotion), "viewport.reduceTransparency": .boolean(reduceTransparency),
             "viewport.increaseContrast": .boolean(contrast == .increased), "viewport.safeArea": .record([:]),
             "motion.speed": .number(MotionTokens.standard.emphasis.duration / max(0.001, motionTokens.emphasis.duration)),
@@ -198,6 +251,9 @@ struct SkinSceneFeeds: View {
                                            lyricsVisible: lyricsVisible, presentation: presentation)
         result[.host] = ["host.isActive": .boolean(active), "host.lyricsVisible": .boolean(lyricsVisible),
                          "host.queueVisible": .boolean(ui.isWindowPlaybackQueueVisible),
+                         "host.quickPanelVisible": .boolean(overlays.quickPanelVisible),
+                         "host.detailVisible": .boolean(overlays.detailVisible),
+                         "host.detail": overlays.detailValue,
                          "host.layout": SkinHostLayout.value(layout)]
         let fullscreen = viewport.surface == .fullscreen
         let effectiveAutoHide = fullscreen

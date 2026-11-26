@@ -7,8 +7,6 @@ import SwiftUI
 /// backdrop; background parts report their dimming so the estimate follows what is drawn.
 @MainActor @Observable
 final class SkinBackdropReadability {
-    nonisolated static let space = "skinScene"
-
     private(set) var revision = 0
     @ObservationIgnored private var source: RenderedBackdropReadabilityMap?
     @ObservationIgnored private var map: RenderedBackdropReadabilityMap?
@@ -67,22 +65,30 @@ final class SkinBackdropReadability {
     }
 }
 
-/// The ink an adaptive node chose for what lies beneath it.
-struct SkinBackdropReading: Equatable {
-    let profile: FullscreenMiniPlayerForegroundProfile
-    var usesDarkForeground: Bool { profile.isDarkForeground }
-    var primary: Color { Color(nsColor: profile.primary) }
-    var secondary: Color { Color(nsColor: profile.secondary) }
-
-    var value: SkinValue {
-        .record(["backdrop": .text(usesDarkForeground ? "light" : "dark"),
-                 "foreground": .color(OKLCHColor(profile.primary)), "secondaryForeground": .color(OKLCHColor(profile.secondary))])
-    }
-}
-
 extension EnvironmentValues {
     @Entry var skinBackdropReadability: SkinBackdropReadability?
-    @Entry var skinBackdropReading: SkinBackdropReading?
+}
+
+/// Holds the scene's backdrop map and keeps it on the current artwork and viewport. The map is
+/// built only while some node is adaptive; the wrapper stays either way so the scene keeps its
+/// identity when that changes.
+struct SkinSceneBackdropRoot: View {
+    let content: AnyView
+    let snapshot: SkinSceneSnapshot
+    let size: CGSize
+    let enabled: Bool
+    @State private var backdrop = SkinBackdropReadability()
+
+    var body: some View {
+        let key = "\(snapshot.track?.id.uuidString ?? "")|\(snapshot.track?.artworkChecksum ?? 0)"
+        content
+            .environment(\.skinBackdropReadability, backdrop)
+            .task(id: enabled ? key : nil) {
+                guard enabled else { return }
+                await backdrop.load(key: key, artwork: snapshot.track?.artworkData)
+            }
+            .onChange(of: size, initial: true) { _, size in backdrop.setViewport(size) }
+    }
 }
 
 /// `adaptive: true` on a node: measure where it sits, read the backdrop there and hand the
@@ -95,6 +101,7 @@ struct SkinAdaptiveBackdropProbe: ViewModifier {
     @Environment(AppSettings.self) private var settings
     @EnvironmentObject private var theme: ThemeStore
     @State private var frame: CGRect = .zero
+    @State private var profile: FullscreenMiniPlayerForegroundProfile?
 
     private struct Key: Equatable {
         let frame: CGRect
@@ -111,14 +118,14 @@ struct SkinAdaptiveBackdropProbe: ViewModifier {
         content
             .onGeometryChange(for: CGRect.self) { proxy in
                 // Quantised, so small motion does not re-score the backdrop.
-                let rect = proxy.frame(in: .named(SkinBackdropReadability.space))
+                let rect = proxy.frame(in: .named(SkinSceneSpace.name))
                 func step(_ value: CGFloat) -> CGFloat { (value / 8).rounded() * 8 }
                 return CGRect(x: step(rect.minX), y: step(rect.minY), width: step(rect.width), height: step(rect.height))
             } action: { frame = $0 }
             .onChange(of: key, initial: true) { resolve(candidates) }
             .environment(\.skinBackdropReading, reading)
             .environment(\.skinNativeControls, adaptedControls)
-            .environment(\.colorScheme, reading?.profile.complementaryGlassColorScheme ?? theme.colorScheme)
+            .environment(\.colorScheme, profile?.complementaryGlassColorScheme ?? theme.colorScheme)
     }
 
     private func resolve(_ candidates: (dark: FullscreenMiniPlayerForegroundProfile, light: FullscreenMiniPlayerForegroundProfile)) {
@@ -129,24 +136,25 @@ struct SkinAdaptiveBackdropProbe: ViewModifier {
             ?? (palette.analysis.usesDarkForeground ? .darkOnLightBackground : .lightOnDarkBackground)
         let material = native?.presentation.glassStyle.materialStyle
             ?? (settings.fullscreenMiniPlayerGlassMaterial == .normal ? .normal : .clear)
-        let profile = FullscreenMiniPlayerForegroundStrategy.resolve(
+        let next = FullscreenMiniPlayerForegroundStrategy.resolve(
             palette: palette, localArtworkPolarity: polarity, hasArtworkThemeColor: theme.palette != nil,
             controlForeground: .artworkAdaptive, colorScheme: theme.colorScheme, materialStyle: material,
             fullscreenArtBackgroundEnabled: false
         )
-        let next = SkinBackdropReading(profile: profile)
-        if reading != next { reading = next }
+        if profile != next { profile = next }
+        let ink = SkinBackdropReading(usesDarkForeground: next.isDarkForeground, primaryColor: next.primary, secondaryColor: next.secondary)
+        if reading != ink { reading = ink }
     }
 
     private var adaptedControls: SkinNativeControlsContext? {
-        guard let native, let reading else { return native }
+        guard let native, let profile else { return native }
         let p = native.presentation
         return .init(
             presentation: .init(
-                glassStyle: .init(colorScheme: reading.profile.complementaryGlassColorScheme,
+                glassStyle: .init(colorScheme: profile.complementaryGlassColorScheme,
                                   accentColor: p.glassStyle.accentColor, materialStyle: p.glassStyle.materialStyle),
-                miniPlayerForegroundProfile: reading.profile, primaryColor: reading.primary,
-                iconBlendMode: reading.profile.iconBlendMode, playbackMode: p.playbackMode, hasTrack: p.hasTrack,
+                miniPlayerForegroundProfile: profile, primaryColor: Color(nsColor: profile.primary),
+                iconBlendMode: profile.iconBlendMode, playbackMode: p.playbackMode, hasTrack: p.hasTrack,
                 isShowingLyrics: p.isShowingLyrics, isVolumeControlEnabled: p.isVolumeControlEnabled,
                 usesAdaptiveVolumeForeground: p.usesAdaptiveVolumeForeground, showsPlaybackModeRetapTip: p.showsPlaybackModeRetapTip
             ),

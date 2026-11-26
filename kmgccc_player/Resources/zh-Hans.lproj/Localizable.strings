@@ -3,7 +3,6 @@
 */
 
 // MARK: - Common
-"common.app_name" = "kmgccc_player";
 "menu.settings" = "设置…";
 "menu.about_app" = "关于 %@";
 "menu.about_window_title" = "关于";
@@ -123,6 +122,9 @@
 "settings.about.quote" = "“Where words fail, music speaks.”";
 "settings.about.compliance" = "开源与鸣谢";
 "settings.about.compliance_desc" = "本程序包含或修改了以下开源软件。";
+"settings.about.inspiration" = "灵感与参考";
+"settings.about.inspiration_desc" = "界面设计与动效参考了以下开源项目。";
+"settings.about.inspiration.design" = "设计灵感";
 "settings.about.source_code" = "源代码";
 "settings.about.source_code_desc" = "本程序为开源软件。此版本的完整相应源代码可在以下地址获得：";
 "settings.about.license" = "根据 GNU Affero General Public License v3.0 (AGPL-3.0) 授权。";

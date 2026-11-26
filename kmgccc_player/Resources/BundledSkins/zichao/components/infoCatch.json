@@ -1,0 +1,82 @@
+{
+  "type": "layer",
+  "id": "infoCatch",
+  "visible": "=host.detailVisible",
+  "enter": { "type": "fade", "token": "backgroundTransition" },
+  "transition": { "type": "fade", "token": "backgroundTransition" },
+  "frame": { "x": "50%", "y": "50%", "width": "100%", "height": "100%" },
+  "children": [
+    {
+      "type": "shape",
+      "id": "infoScrollCatch",
+      "color": "#00000002",
+      "frame": { "x": "50%", "y": "50%", "width": "100%", "height": "100%" },
+      "on": {
+        "scroll": [
+          {
+            "do": "state.set", "key": "infoScroll",
+            "value": "=clamp(clamp(state.infoScroll ?? 0, let.infoMin, let.infoMax) - gesture.deltaY * (gesture.precise ? 1.2 : 24) / let.infoZ, let.infoMin, let.infoMax)"
+          },
+          {
+            "do": "state.set", "key": "infoScrollX",
+            "value": "=clamp(clamp(state.infoScrollX ?? 0, -let.infoPanMax, let.infoPanMax) - gesture.deltaX * (gesture.precise ? 1.2 : 24) / let.infoZ, -let.infoPanMax, let.infoPanMax)"
+          }
+        ],
+        "magnify": { "do": "state.set", "key": "infoZoom", "value": "=clamp((state.infoZoom ?? 1) * (1 + gesture.magnification), 0.75, 2.5)" }
+      }
+    },
+    {
+      "type": "shape",
+      "id": "infoLeft",
+      "visible": "=let.infoZ <= 1.05",
+      "color": "#00000002",
+      "frame": { "x": 0, "y": 0, "anchor": "topLeading", "width": "=max(1, let.infoX0 - viewport.min * 0.04)", "height": "100%" },
+      "on": { "tap": "trackDetail.close" }
+    },
+    {
+      "type": "shape",
+      "id": "infoRight",
+      "visible": "=let.infoZ <= 1.05",
+      "color": "#00000002",
+      "frame": { "x": "=viewport.width", "y": 0, "anchor": "topTrailing", "width": "=max(1, let.infoX0 - viewport.min * 0.04)", "height": "100%" },
+      "on": { "tap": "trackDetail.close" }
+    },
+    {
+      "type": "layer",
+      "id": "infoClose",
+      "cursor": "pointingHand",
+      "frame": {
+        "x": "=viewport.width / 2 + let.infoZF * (let.infoX0 + let.infoCloseW / 2 - viewport.width / 2 - let.infoCamX - let.infoSwayX)",
+        "y": "=let.infoCy + let.infoZF * (let.infoCloseY - let.infoCy - let.infoCamY - let.infoSwayY)",
+        "width": "=let.infoCloseW",
+        "height": "=let.infoCloseH"
+      },
+      "on": {
+        "tap": "trackDetail.close",
+        "hoverStart": { "do": "state.set", "key": "infoCloseHover", "value": 1 },
+        "hoverEnd": { "do": "state.set", "key": "infoCloseHover", "value": 0 }
+      },
+      "children": [
+        {
+          "type": "shape",
+          "id": "infoCloseFill",
+          "shape": "capsule",
+          "color": "=alpha(mix(theme.accent, #FFFFFF, 0.9), state.infoCloseHover == 1 ? 0.16 : 0.08)",
+          "frame": { "x": "50%", "y": "50%", "width": "100%", "height": "100%" }
+        },
+        {
+          "type": "text",
+          "id": "infoCloseLabel",
+          "text": "关闭",
+          "font": "=let.fontCaption",
+          "weight": "medium",
+          "fontSize": "=viewport.min * 0.018",
+          "lineLimit": 1,
+          "color": "=alpha(mix(theme.accent, #FFFFFF, 0.9), state.infoCloseHover == 1 ? 0.95 : 0.78)",
+          "hitTesting": false,
+          "frame": { "x": "50%", "y": "50%" }
+        }
+      ]
+    }
+  ]
+}

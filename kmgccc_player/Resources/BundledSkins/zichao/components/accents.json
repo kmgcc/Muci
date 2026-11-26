@@ -1,0 +1,23 @@
+{
+  "type": "layer",
+  "id": "accents",
+  "visible": "=let.lyricsShown && lyrics.available && lyrics.lineCount > 0 && state.stageHidden == 0 && let.queueOut < 0.99 && !host.detailVisible",
+  "opacity": "=(1 - let.queueOut) * let.stageFade",
+  "enter": { "type": "fade", "token": "backgroundTransition" },
+  "transition": { "type": "fade", "token": "backgroundTransition" },
+  "hitTesting": false,
+  "render": "gpu",
+  "resolution": 0.5,
+  "motionBlur": "=params.motionBlur",
+  "frame": { "x": "50%", "y": "50%", "width": "100%", "height": "100%" },
+  "filter": [
+    { "type": "bokeh", "at": "=state.line.accent.focusAt", "seed": "=state.line.accent.focusSeed ?? 0", "wave": "=let.defocusWave", "radius": "=params.defocusRadius", "speed": "=params.defocusSpeed", "breathing": "=0.006 * params.defocusBreathing", "detail": "=0.5 * params.defocusDetail", "glow": "=params.defocusGlow", "threshold": "=params.defocusThreshold", "swirl": "=params.defocusSwirl" },
+    { "type": "lut", "file": "=params.lut", "amount": "=params.lutAmount" }
+  ],
+  "camera": { "x": "=let.camX", "y": "=let.camY", "zoom": "=let.camZoom", "rotation": "=let.camRoll" },
+  "children": [
+    { "type": "use", "name": "burst", "props": { "line": "=state.slots[0] ?? {}" } },
+    { "type": "use", "name": "burst", "props": { "line": "=state.slots[1] ?? {}" } },
+    { "type": "use", "name": "burst", "props": { "line": "=state.slots[2] ?? {}" } }
+  ]
+}

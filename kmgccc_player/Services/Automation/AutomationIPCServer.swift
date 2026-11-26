@@ -283,8 +283,7 @@ final class AutomationIPCServer {
                 ?? (Bundle.main.infoDictionary?["CFBundleVersion"] as? String)
                 ?? "development"
             let info = AutomationSystemInfo(
-                appName: Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String
-                    ?? "kmgccc_player",
+                appName: Constants.appName,
                 appVersion: appVersion,
                 capabilities: AutomationToolCatalog.all.map(\.name),
                 isReady: appSession?.hasCompletedInitialSetup == true,

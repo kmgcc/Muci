@@ -204,43 +204,16 @@ struct AppearanceSettingsView: View {
     }
 
     private var artworkTintModePicker: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                Text("动态取色")
-                    .settingsRowLabelStyle()
-                    .settingsInfoHint("简洁使用默认色，动态跟随播放封面，丰富为列表歌曲分别取色。")
-
-                Spacer(minLength: 6)
-
-                SlidingSelector(
-                    segments: AppSettings.ArtworkTintMode.allCases,
-                    selection: $artworkTintMode,
-                    hSpacing: 0,
-                    background: {
-                        Color.clear
-                    },
-                    knob: {
-                        Capsule()
-                            .fill(themeStore.accentColor.opacity(0.18))
-                    },
-                    content: { mode, isSelected in
-                        Text(mode.title)
-                            .font(.system(size: 11, weight: isSelected ? .medium : .regular))
-                            .padding(.horizontal, 7)
-                            .padding(.vertical, 4)
-                            .foregroundStyle(
-                                isSelected ? themeStore.accentColor : (appColors?.secondary ?? .secondary)
-                            )
-                            .frame(minWidth: 34)
-                    }
-                )
-                .padding(3)
-                .background(
-                    Capsule()
-                        .fill((appColors?.secondary ?? .secondary).opacity(0.08))
-                )
-                .fixedSize(horizontal: true, vertical: false)
-            }
+        HStack(spacing: 8) {
+            Text("动态取色")
+                .settingsRowLabelStyle()
+                .settingsInfoHint("简洁使用默认色，动态跟随播放封面，丰富为列表歌曲分别取色。")
+            Spacer(minLength: 6)
+            SettingsCapsuleSelector(
+                options: AppSettings.ArtworkTintMode.allCases,
+                selection: $artworkTintMode,
+                title: \.title
+            )
         }
     }
 
@@ -248,36 +221,12 @@ struct AppearanceSettingsView: View {
         HStack(spacing: 8) {
             Text("歌词卡片背景")
                 .settingsRowLabelStyle()
-
             Spacer()
-
-            SlidingSelector(
-                segments: AppSettings.LyricsBackgroundMode.allCases,
+            SettingsCapsuleSelector(
+                options: AppSettings.LyricsBackgroundMode.allCases,
                 selection: $lyricsBackgroundMode,
-                hSpacing: 0,
-                background: {
-                    Color.clear
-                },
-                knob: {
-                    Capsule()
-                        .fill(themeStore.accentColor.opacity(0.18))
-                },
-                content: { mode, isSelected in
-                    Text(mode.title)
-                        .font(.system(size: 11, weight: isSelected ? .medium : .regular))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
-                        .foregroundStyle(
-                            isSelected ? themeStore.accentColor : (appColors?.secondary ?? .secondary)
-                        )
-                }
+                title: \.title
             )
-            .padding(3)
-            .background(
-                Capsule()
-                    .fill((appColors?.secondary ?? .secondary).opacity(0.08))
-            )
-            .fixedSize(horizontal: true, vertical: false)
         }
     }
 
@@ -285,40 +234,12 @@ struct AppearanceSettingsView: View {
         HStack(spacing: 8) {
             Text("主页卡片材质")
                 .settingsRowLabelStyle()
-
             Spacer()
-
-            SlidingSelector(
-                segments: [
-                    .solid,
-                    .liquidGlass,
-                    .frostedGlass
-                ],
+            SettingsCapsuleSelector(
+                options: [.solid, .liquidGlass, .frostedGlass],
                 selection: $homeCardMaterialMode,
-                hSpacing: 0,
-                background: {
-                    Color.clear
-                },
-                knob: {
-                    Capsule()
-                        .fill(themeStore.accentColor.opacity(0.18))
-                },
-                content: { mode, isSelected in
-                    Text(mode.title)
-                        .font(.system(size: 11, weight: isSelected ? .medium : .regular))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
-                        .foregroundStyle(
-                            isSelected ? themeStore.accentColor : (appColors?.secondary ?? .secondary)
-                        )
-                }
+                title: \.title
             )
-            .padding(3)
-            .background(
-                Capsule()
-                    .fill((appColors?.secondary ?? .secondary).opacity(0.08))
-            )
-            .fixedSize(horizontal: true, vertical: false)
         }
     }
 

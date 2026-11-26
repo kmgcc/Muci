@@ -23,9 +23,13 @@
 		A01000000000000000000008 /* apple-audio-visualization.txt in Resources */ = {isa = PBXBuildFile; fileRef = B01000000000000000000008 /* apple-audio-visualization.txt */; };
 		A01000000000000000000009 /* applemusic-like-lyrics.txt in Resources */ = {isa = PBXBuildFile; fileRef = B01000000000000000000009 /* applemusic-like-lyrics.txt */; };
 		A0100000000000000000000A /* zh-Hans.lproj in Resources */ = {isa = PBXBuildFile; fileRef = B0100000000000000000000A /* zh-Hans.lproj */; };
-		A0100000000000000000000B /* kmgccc.icon in Resources */ = {isa = PBXBuildFile; fileRef = B0100000000000000000000B /* kmgccc.icon */; };
+		A0100000000000000000000B /* Muci.icon in Resources */ = {isa = PBXBuildFile; fileRef = B0100000000000000000000B /* Muci.icon */; };
 		A0100000000000000000000C /* PLCrashReporter-LICENSE.txt in Resources */ = {isa = PBXBuildFile; fileRef = B0100000000000000000000C /* PLCrashReporter-LICENSE.txt */; };
 		A0100000000000000000000D /* LegalDocuments in Resources */ = {isa = PBXBuildFile; fileRef = B0100000000000000000000D /* LegalDocuments */; };
+		A0100000000000000000000E /* zichao-preview.mp4 in Resources */ = {isa = PBXBuildFile; fileRef = B0100000000000000000000E /* zichao-preview.mp4 */; };
+		A0100000000000000000000F /* zichao-preview-poster.jpg in Resources */ = {isa = PBXBuildFile; fileRef = B0100000000000000000000F /* zichao-preview-poster.jpg */; };
+		A01000000000000000000010 /* BundledSkins in Resources */ = {isa = PBXBuildFile; fileRef = B01000000000000000000010 /* BundledSkins */; };
+		DA0000000000000000000001 /* kmgccc_playerTests/PromptSystemTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA0000000000000000000011 /* kmgccc_playerTests/PromptSystemTests.swift */; };
 		B437C0F1E10A4C68AAB31001 /* kmgccc_playerTests/SidebarSetBarConfigurationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B437C0F1E10A4C68AAB31002 /* kmgccc_playerTests/SidebarSetBarConfigurationTests.swift */; };
 		C02000000000000000000001 /* kmgccc_playerTests/MetadataMatchScorerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C02000000000000000000011 /* kmgccc_playerTests/MetadataMatchScorerTests.swift */; };
 		C02000000000000000000002 /* kmgccc_playerTests/SkinRoutePolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C02000000000000000000012 /* kmgccc_playerTests/SkinRoutePolicyTests.swift */; };
@@ -111,7 +115,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		935118922F3231C500766A5F /* kmgccc_player.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = kmgccc_player.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		935118922F3231C500766A5F /* Muci.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Muci.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		9351198D2F33149A00766A5F /* AMLL */ = {isa = PBXFileReference; lastKnownFileType = folder; name = AMLL; path = kmgccc_player/Resources/AMLL; sourceTree = "<group>"; };
 		A10000000000000000000001 /* Project.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Project.xcconfig; sourceTree = "<group>"; };
 		A10000000000000000000002 /* LocalOverrides.xcconfig.example */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = LocalOverrides.xcconfig.example; sourceTree = "<group>"; };
@@ -125,9 +129,12 @@
 		B01000000000000000000008 /* apple-audio-visualization.txt */ = {isa = PBXFileReference; lastKnownFileType = text; name = "apple-audio-visualization.txt"; path = "kmgccc_player/Resources/Licenses/apple-audio-visualization.txt"; sourceTree = "<group>"; };
 		B01000000000000000000009 /* applemusic-like-lyrics.txt */ = {isa = PBXFileReference; lastKnownFileType = text; name = "applemusic-like-lyrics.txt"; path = "kmgccc_player/Resources/Licenses/applemusic-like-lyrics.txt"; sourceTree = "<group>"; };
 		B0100000000000000000000A /* zh-Hans.lproj */ = {isa = PBXFileReference; lastKnownFileType = folder; name = "zh-Hans.lproj"; path = "kmgccc_player/Resources/zh-Hans.lproj"; sourceTree = "<group>"; };
-		B0100000000000000000000B /* kmgccc.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; name = kmgccc.icon; path = kmgccc_player/kmgccc.icon; sourceTree = "<group>"; };
+		B0100000000000000000000B /* Muci.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; name = Muci.icon; path = kmgccc_player/Muci.icon; sourceTree = "<group>"; };
 		B0100000000000000000000C /* PLCrashReporter-LICENSE.txt */ = {isa = PBXFileReference; lastKnownFileType = text; name = "PLCrashReporter-LICENSE.txt"; path = "kmgccc_player/Resources/Licenses/PLCrashReporter-LICENSE.txt"; sourceTree = "<group>"; };
 		B0100000000000000000000D /* LegalDocuments */ = {isa = PBXFileReference; lastKnownFileType = folder; name = LegalDocuments; path = kmgccc_player/LegalDocuments; sourceTree = "<group>"; };
+		B0100000000000000000000E /* zichao-preview.mp4 */ = {isa = PBXFileReference; lastKnownFileType = file.mp4; name = "zichao-preview.mp4"; path = "kmgccc_player/Resources/FeatureDiscovery/zichao-preview.mp4"; sourceTree = "<group>"; };
+		B0100000000000000000000F /* zichao-preview-poster.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; name = "zichao-preview-poster.jpg"; path = "kmgccc_player/Resources/FeatureDiscovery/zichao-preview-poster.jpg"; sourceTree = "<group>"; };
+		B01000000000000000000010 /* BundledSkins */ = {isa = PBXFileReference; lastKnownFileType = folder; name = BundledSkins; path = kmgccc_player/Resources/BundledSkins; sourceTree = "<group>"; };
 		B437C0F1E10A4C68AAB31002 /* kmgccc_playerTests/SidebarSetBarConfigurationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = kmgccc_playerTests/SidebarSetBarConfigurationTests.swift; sourceTree = "<group>"; };
 		C02000000000000000000010 /* kmgccc_playerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = kmgccc_playerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		C02000000000000000000011 /* kmgccc_playerTests/MetadataMatchScorerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = kmgccc_playerTests/MetadataMatchScorerTests.swift; sourceTree = "<group>"; };
@@ -228,6 +235,7 @@
 		E01000000000000000000003 /* PlaybackCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PlaybackCommands.swift; path = kmgccc_player/PlaybackCommands.swift; sourceTree = "<group>"; };
 		E01000000000000000000006 /* kmgccc_playerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = kmgccc_playerApp.swift; path = kmgccc_player/kmgccc_playerApp.swift; sourceTree = "<group>"; };
 		AA1100000000000000000011 /* kmgccc_playerTests/AudioProgramSupportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = kmgccc_playerTests/AudioProgramSupportTests.swift; sourceTree = SOURCE_ROOT; };
+		DA0000000000000000000011 /* kmgccc_playerTests/PromptSystemTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = kmgccc_playerTests/PromptSystemTests.swift; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -339,7 +347,7 @@
 		935118932F3231C500766A5F /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				935118922F3231C500766A5F /* kmgccc_player.app */,
+				935118922F3231C500766A5F /* Muci.app */,
 				C02000000000000000000010 /* kmgccc_playerTests.xctest */,
 			);
 			name = Products;
@@ -348,7 +356,7 @@
 		93EBF7BA2F8A113D007F15E3 /* Recovered References */ = {
 			isa = PBXGroup;
 			children = (
-				B0100000000000000000000B /* kmgccc.icon */,
+				B0100000000000000000000B /* Muci.icon */,
 				C0D000000000000000000011 /* Log.swift */,
 				C0E000000000000000000011 /* TrackCredit.swift */,
 				C0F000000000000000000011 /* LibraryTextNormalization.swift */,
@@ -380,6 +388,9 @@
 				B0100000000000000000000A /* zh-Hans.lproj */,
 				B0100000000000000000000C /* PLCrashReporter-LICENSE.txt */,
 				B0100000000000000000000D /* LegalDocuments */,
+				B0100000000000000000000E /* zichao-preview.mp4 */,
+				B0100000000000000000000F /* zichao-preview-poster.jpg */,
+				B01000000000000000000010 /* BundledSkins */,
 			);
 			name = "Runtime Resources";
 			sourceTree = "<group>";
@@ -475,6 +486,7 @@
 				C33000000000000000000011 /* kmgccc_playerTests/NowPlayingPresentationTests.swift */,
 				C34000000000000000000011 /* kmgccc_playerTests/AlbumTrackOrderResolverTests.swift */,
 				AA1100000000000000000011 /* kmgccc_playerTests/AudioProgramSupportTests.swift */,
+				DA0000000000000000000011 /* kmgccc_playerTests/PromptSystemTests.swift */,
 				D30000000000000000000011 /* kmgccc_playerTests/NativeLyricsSurfaceManagerTests.swift */,
 				D40000000000000000000011 /* kmgccc_playerTests/DisplayHDRCapabilityTests.swift */,
 				C31000000000000000000002 /* kmgccc_playerTests/SeamlessMarqueeTimingTests.swift */,
@@ -510,6 +522,7 @@
 				93D91A122FA5000000010001 /* Copy QQMusic helper */,
 				93D91A132FA5000000010002 /* Copy SACAD helper */,
 				93D91A152FA5000000010004 /* Build and embed Player Automation CLI */,
+				B34E6A21C21D400AA1000011 /* Build install name migration helper */,
 				93D91A162FA5000000010005 /* Copy Agent Skill */,
 				93D91A142FA5000000010003 /* Run Optional Build Hook */,
 			);
@@ -539,8 +552,8 @@
 				D10000000000000000000002 /* PlayerAutomationProtocol */,
 				D10000000000000000000003 /* PlayerAutomationIPC */,
 			);
-			productName = kmgccc_player;
-			productReference = 935118922F3231C500766A5F /* kmgccc_player.app */;
+			productName = Muci;
+			productReference = 935118922F3231C500766A5F /* Muci.app */;
 			productType = "com.apple.product-type.application";
 		};
 		C02000000000000000000030 /* kmgccc_playerTests */ = {
@@ -594,7 +607,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				D60000000000000000000003 /* XCLocalSwiftPackageReference "Tools/PopupLab" */,
-				D20000000000000000000002 /* XCLocalSwiftPackageReference "../MelismaKit" */,
+				D20000000000000000000002 /* XCRemoteSwiftPackageReference "melismakit" */,
 				AA0000000000000000000001 /* XCRemoteSwiftPackageReference "WhatsNewKit" */,
 				AA0000000000000000000003 /* XCRemoteSwiftPackageReference "plcrashreporter" */,
 				AA0000000000000000000005 /* XCRemoteSwiftPackageReference "Sparkle" */,
@@ -628,9 +641,12 @@
 				A01000000000000000000008 /* apple-audio-visualization.txt in Resources */,
 				A01000000000000000000009 /* applemusic-like-lyrics.txt in Resources */,
 				A0100000000000000000000A /* zh-Hans.lproj in Resources */,
-				A0100000000000000000000B /* kmgccc.icon in Resources */,
+				A0100000000000000000000B /* Muci.icon in Resources */,
 				A0100000000000000000000C /* PLCrashReporter-LICENSE.txt in Resources */,
 				A0100000000000000000000D /* LegalDocuments in Resources */,
+				A0100000000000000000000E /* zichao-preview.mp4 in Resources */,
+				A0100000000000000000000F /* zichao-preview-poster.jpg in Resources */,
+				A01000000000000000000010 /* BundledSkins in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -790,7 +806,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/bash;
-			shellScript = "set -euo pipefail\nPACKAGE_ROOT=\"${PROJECT_DIR}/Dependencies/PlayerAutomation\"\nSCRATCH_PATH=\"${DERIVED_FILE_DIR}/PlayerAutomation\"\nCONFIGURATION_LOWER=$(printf '%s' \"${CONFIGURATION}\" | tr '[:upper:]' '[:lower:]')\n/usr/bin/xcrun swift build --package-path \"${PACKAGE_ROOT}\" --scratch-path \"${SCRATCH_PATH}\" --configuration \"${CONFIGURATION_LOWER}\" --product player-automation\nBIN_DIR=$(/usr/bin/xcrun swift build --package-path \"${PACKAGE_ROOT}\" --scratch-path \"${SCRATCH_PATH}\" --configuration \"${CONFIGURATION_LOWER}\" --show-bin-path)\nSRC=\"${BIN_DIR}/player-automation\"\nDST_DIR=\"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/Tools\"\nDST=\"${DST_DIR}/player-automation\"\nif [ ! -x \"${SRC}\" ]; then\n  echo \"error: Missing Player Automation CLI build product at ${SRC}.\"\n  exit 1\nfi\nmkdir -p \"${DST_DIR}\"\nCOPYFILE_DISABLE=1 /bin/cp -f \"${SRC}\" \"${DST}\"\n/usr/bin/xattr -cr \"${DST}\" 2>/dev/null || true\nchmod 755 \"${DST}\"\nif [ \"${CODE_SIGNING_ALLOWED:-NO}\" = \"YES\" ] && [ -n \"${EXPANDED_CODE_SIGN_IDENTITY:-}\" ] && [ \"${EXPANDED_CODE_SIGN_IDENTITY}\" != \"-\" ]; then\n  /usr/bin/codesign --force --sign \"${EXPANDED_CODE_SIGN_IDENTITY}\" --timestamp=none \"${DST}\"\nfi\n";
+			shellScript = "set -euo pipefail\nPACKAGE_ROOT=\"${PROJECT_DIR}/Dependencies/PlayerAutomation\"\nSCRATCH_PATH=\"${DERIVED_FILE_DIR}/PlayerAutomation\"\nCONFIGURATION_LOWER=$(printf '%s' \"${CONFIGURATION}\" | tr '[:upper:]' '[:lower:]')\n/usr/bin/xcrun swift build --package-path \"${PACKAGE_ROOT}\" --scratch-path \"${SCRATCH_PATH}\" --configuration \"${CONFIGURATION_LOWER}\" --product player-automation\nBIN_DIR=$(/usr/bin/xcrun swift build --package-path \"${PACKAGE_ROOT}\" --scratch-path \"${SCRATCH_PATH}\" --configuration \"${CONFIGURATION_LOWER}\" --show-bin-path)\nSRC=\"${BIN_DIR}/player-automation\"\nDST_DIR=\"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/Tools\"\nDST=\"${DST_DIR}/player-automation\"\nif [ ! -x \"${SRC}\" ]; then\n  echo \"error: Missing Player Automation CLI build product at ${SRC}.\"\n  exit 1\nfi\nmkdir -p \"${DST_DIR}\"\nCOPYFILE_DISABLE=1 /bin/cp -f \"${SRC}\" \"${DST}\"\n/usr/bin/xattr -cr \"${DST}\" 2>/dev/null || true\nchmod 755 \"${DST}\"\n/bin/ln -sfn player-automation \"$DST_DIR/muci-automation\"\nif [ \"${CODE_SIGNING_ALLOWED:-NO}\" = \"YES\" ] && [ -n \"${EXPANDED_CODE_SIGN_IDENTITY:-}\" ] && [ \"${EXPANDED_CODE_SIGN_IDENTITY}\" != \"-\" ]; then\n  /usr/bin/codesign --force --sign \"${EXPANDED_CODE_SIGN_IDENTITY}\" --timestamp=none \"${DST}\"\nfi\n";
 		};
 		93D91A162FA5000000010005 /* Copy Agent Skill */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -802,6 +818,7 @@
 			);
 			inputPaths = (
 				"$(PROJECT_DIR)/docs/skills/kmgccc-player-automation",
+				"$(PROJECT_DIR)/docs/skills/muci-automation",
 			);
 			name = "Copy Agent Skill";
 			outputFileListPaths = (
@@ -810,7 +827,24 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/bash;
-			shellScript = "set -euo pipefail\nSRC=\"${PROJECT_DIR}/docs/skills/kmgccc-player-automation\"\nDST=\"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/Skills/kmgccc-player-automation\"\nif [ ! -f \"${SRC}/SKILL.md\" ]; then\n  echo \"error: Missing Agent skill at ${SRC}.\"\n  exit 1\nfi\nrm -rf \"${DST}\"\nmkdir -p \"$(dirname \"${DST}\")\"\nCOPYFILE_DISABLE=1 /usr/bin/ditto \"${SRC}\" \"${DST}\"\n/usr/bin/xattr -cr \"${DST}\" 2>/dev/null || true\n";
+			shellScript = "set -euo pipefail\nfor skill in muci-automation kmgccc-player-automation; do\n  SRC=\"$PROJECT_DIR/docs/skills/$skill\"\n  DST=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/Skills/$skill\"\n  test -f \"$SRC/SKILL.md\"\n  rm -rf \"$DST\"\n  mkdir -p \"$(dirname \"$DST\")\"\n  COPYFILE_DISABLE=1 /usr/bin/ditto \"$SRC\" \"$DST\"\n  /usr/bin/xattr -cr \"$DST\" 2>/dev/null || true\ndone\n";
+		};
+		B34E6A21C21D400AA1000011 /* Build install name migration helper */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = ();
+			inputPaths = (
+				"$(PROJECT_DIR)/Tools/MuciInstallMigration/main.m",
+				"$(PROJECT_DIR)/Tools/MuciInstallMigration/BundleRename.h",
+				"$(PROJECT_DIR)/scripts/build-install-migration-helper.sh",
+			);
+			name = "Build install name migration helper";
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/Helpers/muci-install-migration",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "/bin/bash \"$PROJECT_DIR/scripts/build-install-migration-helper.sh\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -879,6 +913,7 @@
 				C33000000000000000000001 /* kmgccc_playerTests/NowPlayingPresentationTests.swift in Sources */,
 				C34000000000000000000001 /* kmgccc_playerTests/AlbumTrackOrderResolverTests.swift in Sources */,
 				AA1100000000000000000012 /* kmgccc_playerTests/AudioProgramSupportTests.swift in Sources */,
+				DA0000000000000000000001 /* kmgccc_playerTests/PromptSystemTests.swift in Sources */,
 				D30000000000000000000001 /* kmgccc_playerTests/NativeLyricsSurfaceManagerTests.swift in Sources */,
 				D40000000000000000000001 /* kmgccc_playerTests/DisplayHDRCapabilityTests.swift in Sources */,
 				C31000000000000000000001 /* kmgccc_playerTests/SeamlessMarqueeTimingTests.swift in Sources */,
@@ -1043,14 +1078,14 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ARCHS = "$(ARCHS_STANDARD)";
-				ASSETCATALOG_COMPILER_APPICON_NAME = kmgccc;
+				ASSETCATALOG_COMPILER_APPICON_NAME = Muci;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				AUTOMATION_APPLE_EVENTS = YES;
 				CODE_SIGN_ENTITLEMENTS = kmgccc_player/kmgccc_player.entitlements;
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 22;
+				CURRENT_PROJECT_VERSION = 27;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = TYU73KR9WW;
 				ENABLE_APP_SANDBOX = NO;
@@ -1061,7 +1096,7 @@
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = kmgccc_player/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = kmgccc_player;
+				INFOPLIST_KEY_CFBundleDisplayName = "$(APP_DISPLAY_NAME)";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.music";
 				INFOPLIST_KEY_NSAppDataUsageDescription = "用于访问本机音乐资料库并提供音乐播放功能。";
 				INFOPLIST_KEY_NSAppleEventsUsageDescription = "需要控制 Music.app，以便在 Apple Music 模式下读取当前播放、同步歌词并执行播放控制。";
@@ -1072,9 +1107,11 @@
 				);
 				LIBRARY_SEARCH_PATHS = "$(inherited)";
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
-				MARKETING_VERSION = 2.4.5;
+				MARKETING_VERSION = 2.5.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(APP_BUNDLE_IDENTIFIER)";
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = "$(APP_PRODUCT_NAME)";
+				PRODUCT_MODULE_NAME = kmgccc_player;
+				EXECUTABLE_NAME = "$(APP_EXECUTABLE_NAME)";
 				REGISTER_APP_GROUPS = YES;
 				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
 				RUNTIME_EXCEPTION_ALLOW_JIT = NO;
@@ -1096,7 +1133,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ARCHS = "$(ARCHS_STANDARD)";
-				ASSETCATALOG_COMPILER_APPICON_NAME = kmgccc;
+				ASSETCATALOG_COMPILER_APPICON_NAME = Muci;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				AUTOMATION_APPLE_EVENTS = YES;
 				CODE_SIGN_ENTITLEMENTS = kmgccc_player/kmgccc_player.release.entitlements;
@@ -1104,7 +1141,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 22;
+				CURRENT_PROJECT_VERSION = 27;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = TYU73KR9WW;
 				ENABLE_APP_SANDBOX = NO;
@@ -1119,7 +1156,7 @@
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = kmgccc_player/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = kmgccc_player;
+				INFOPLIST_KEY_CFBundleDisplayName = "$(APP_DISPLAY_NAME)";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.music";
 				INFOPLIST_KEY_NSAppDataUsageDescription = "用于访问本机音乐资料库并提供音乐播放功能。";
 				INFOPLIST_KEY_NSAppleEventsUsageDescription = "需要控制 Music.app，以便在 Apple Music 模式下读取当前播放、同步歌词并执行播放控制。";
@@ -1130,9 +1167,11 @@
 				);
 				LIBRARY_SEARCH_PATHS = "$(inherited)";
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
-				MARKETING_VERSION = 2.4.5;
+				MARKETING_VERSION = 2.5.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(APP_BUNDLE_IDENTIFIER)";
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = "$(APP_PRODUCT_NAME)";
+				PRODUCT_MODULE_NAME = kmgccc_player;
+				EXECUTABLE_NAME = "$(APP_EXECUTABLE_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				REGISTER_APP_GROUPS = YES;
 				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
@@ -1165,7 +1204,7 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
 				SWIFT_VERSION = 6.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/kmgccc_player.app/Contents/MacOS/kmgccc_player";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/$(APP_PRODUCT_NAME).app/Contents/MacOS/$(APP_EXECUTABLE_NAME)";
 			};
 			name = Debug;
 		};
@@ -1182,7 +1221,7 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
 				SWIFT_VERSION = 6.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/kmgccc_player.app/Contents/MacOS/kmgccc_player";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/$(APP_PRODUCT_NAME).app/Contents/MacOS/$(APP_EXECUTABLE_NAME)";
 			};
 			name = Release;
 		};
@@ -1223,10 +1262,6 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Dependencies/PlayerAutomation;
 		};
-		D20000000000000000000002 /* XCLocalSwiftPackageReference "../MelismaKit" */ = {
-			isa = XCLocalSwiftPackageReference;
-			relativePath = ../MelismaKit;
-		};
 		D50000000000000000000003 /* XCLocalSwiftPackageReference "Dependencies/MotionKit" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Dependencies/MotionKit;
@@ -1262,6 +1297,14 @@
 				version = 2.9.4;
 			};
 		};
+		D20000000000000000000002 /* XCRemoteSwiftPackageReference "melismakit" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/kmgcc/melismakit.git";
+			requirement = {
+				kind = revision;
+				revision = 14e82d2274813dde5d42f61f1c4184dab51d846e;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -1292,7 +1335,7 @@
 		};
 		D20000000000000000000003 /* MelismaKit */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = D20000000000000000000002 /* XCLocalSwiftPackageReference "../MelismaKit" */;
+			package = D20000000000000000000002 /* XCRemoteSwiftPackageReference "melismakit" */;
 			productName = MelismaKit;
 		};
 		D50000000000000000000002 /* MotionKit */ = {

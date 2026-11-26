@@ -24,6 +24,43 @@ enum SkinPackageError: LocalizedError {
     }
 }
 
+/// What a package carries that runs or loads beyond its scene description and pictures.
+enum SkinPackageUse: CaseIterable {
+    case scripts, shaders, fonts, videos
+
+    var title: String {
+        switch self {
+        case .scripts: "脚本"
+        case .shaders: "着色器"
+        case .fonts: "字体"
+        case .videos: "视频"
+        }
+    }
+
+    private var fileExtensions: Set<String> {
+        switch self {
+        case .scripts: ["js"]
+        case .shaders: ["metal", "metallib"]
+        case .fonts: ["ttf", "otf", "ttc"]
+        case .videos: ["mp4", "mov", "m4v"]
+        }
+    }
+
+    /// The uses present in an unpacked package, in declaration order.
+    static func found(in directory: URL) -> [SkinPackageUse] {
+        var extensions: Set<String> = []
+        if let entries = FileManager.default.enumerator(at: directory, includingPropertiesForKeys: nil) {
+            for case let url as URL in entries { extensions.insert(url.pathExtension.lowercased()) }
+        }
+        return allCases.filter { !$0.fileExtensions.isDisjoint(with: extensions) }
+    }
+}
+
+struct SkinPackageInspection {
+    let manifest: SkinPackageManifest
+    let uses: [SkinPackageUse]
+}
+
 /// Package persistence and archive work live outside settings views and renderers.
 @MainActor
 final class SkinPackageStore {
@@ -36,21 +73,66 @@ final class SkinPackageStore {
             .appendingPathComponent("kmgccc_player/Skins", isDirectory: true)
     }
 
+    /// Package directories shipped in the App bundle, by skin ID.
+    private var shippedDirectories: [String: URL] = [:]
+
+    /// Registers the packages in the App's `BundledSkins` folder. Runs before installed and linked packages.
+    func loadShipped(from root: URL? = Bundle.main.resourceURL?.appendingPathComponent("BundledSkins", isDirectory: true)) {
+        guard let root,
+              let directories = try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
+        else { return }
+        for directory in directories.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
+            do {
+                let manifest = try readManifest(in: directory)
+                guard catalog.registeredSkin(for: manifest.descriptor.id) == nil else {
+                    Log.warning("Shipped skin ID is already registered: \(manifest.descriptor.id)", category: .ui)
+                    continue
+                }
+                catalog.install(try skin(manifest, origin: .bundled(directory)))
+                shippedDirectories[manifest.descriptor.id] = directory
+            } catch {
+                Log.warning("Shipped skin load failed: \(directory.lastPathComponent): \(error.localizedDescription)", category: .ui)
+            }
+        }
+    }
+
+    /// Once the active package for an ID goes away, the next one down takes its place:
+    /// an imported copy, else the shipped version.
+    private func restoreFallback(_ skinID: String) {
+        guard catalog.registeredSkin(for: skinID) == nil else { return }
+        do {
+            if let directory = installedDirectory(for: skinID) {
+                catalog.install(try skin(readManifest(in: directory), origin: .installed(directory)))
+            } else if let directory = shippedDirectories[skinID] {
+                catalog.install(try skin(readManifest(in: directory), origin: .bundled(directory)))
+            }
+        } catch {
+            Log.warning("Skin fallback failed: \(skinID): \(error.localizedDescription)", category: .ui)
+        }
+    }
+
+    /// The imported copy with this ID, whether active or behind a linked development folder.
+    func installedDirectory(for skinID: String) -> URL? {
+        let directories = (try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
+        return directories.first { (try? readManifest(in: $0))?.descriptor.id == skinID }
+    }
+
+    /// Whether a package from `incoming` may take the catalog slot `existing` holds for the same ID.
+    static func outranks(_ incoming: SkinPackageOrigin, _ existing: (any NowPlayingSkin)?) -> Bool {
+        guard let existing else { return true }
+        guard let current = (existing as? PackagedSkin)?.origin.precedence, let next = incoming.precedence else { return false }
+        return next >= current
+    }
+
     func loadInstalled() {
         guard let directories = try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil) else { return }
         for directory in directories {
             do {
                 let manifest = try readManifest(in: directory)
-                if let existing = catalog.registeredSkin(for: manifest.descriptor.id) {
-                    if let packaged = existing as? PackagedSkin {
-                        if case .bundled = packaged.origin { continue }
-                    } else {
-                        Log.warning(
-                            "Installed skin ID conflicts with a code-registered skin; keeping the registered skin: \(manifest.descriptor.id)",
-                            category: .ui
-                        )
-                        continue
-                    }
+                let existing = catalog.registeredSkin(for: manifest.descriptor.id)
+                guard Self.outranks(.installed(directory), existing) else {
+                    Log.warning("Installed skin ID belongs to a native skin; keeping the native skin: \(manifest.descriptor.id)", category: .ui)
+                    continue
                 }
                 catalog.install(try skin(manifest, origin: .installed(directory)))
             } catch {
@@ -60,11 +142,16 @@ final class SkinPackageStore {
     }
 
     func inspect(_ archive: URL) async throws -> SkinPackageManifest {
+        try await inspectForImport(archive).manifest
+    }
+
+    /// Validates an archive and lists what it brings beyond the scene, for the import confirmation.
+    func inspectForImport(_ archive: URL) async throws -> SkinPackageInspection {
         let directory = try await unpack(archive)
         defer { try? FileManager.default.removeItem(at: directory) }
         let manifest = try readManifest(in: directory)
         _ = try skin(manifest, origin: .installed(directory))
-        return manifest
+        return SkinPackageInspection(manifest: manifest, uses: SkinPackageUse.found(in: directory))
     }
 
     func importPackage(_ archive: URL, disposition: SkinPackageImportDisposition = .copy) async throws -> String {
@@ -72,16 +159,13 @@ final class SkinPackageStore {
         defer { try? FileManager.default.removeItem(at: directory) }
         var manifest = try readManifest(in: directory)
         let registeredSkin = catalog.registeredSkin(for: manifest.descriptor.id)
-        let existingPackage = registeredSkin as? PackagedSkin
-        let previousPackage: PackagedSkin? = {
-            guard disposition == .replace,
-                  let existingPackage,
-                  case .installed = existingPackage.origin else { return nil }
-            return existingPackage
-        }()
-        // Code-registered skins cannot be replaced by an imported archive. Treat
-        // those collisions like bundled skins and give the package a new identity.
-        if registeredSkin != nil && previousPackage == nil {
+        let installedCopy = installedDirectory(for: manifest.descriptor.id)
+        // An import keeps its ID over a shipped package and beside a linked folder. A native
+        // skin keeps its ID, and so does an imported copy unless the user chose to replace it.
+        let isNative = registeredSkin != nil && (registeredSkin as? PackagedSkin)?.origin.precedence == nil
+        let keepsBoth = installedCopy != nil && disposition == .copy
+        let previous = isNative || keepsBoth ? nil : installedCopy
+        if isNative || keepsBoth {
             let original = manifest.descriptor
             manifest.descriptor = original.withIdentity(
                 id: "user.\(UUID().uuidString.lowercased())",
@@ -98,26 +182,23 @@ final class SkinPackageStore {
             try FileManager.default.copyItem(at: directory, to: destination)
             try write(manifest, in: destination)
             prepared = try skin(manifest, origin: .installed(destination))
-            if let previousPackage, case .installed(let previous) = previousPackage.origin {
-                try FileManager.default.removeItem(at: previous)
-            }
+            if let previous { try FileManager.default.removeItem(at: previous) }
         } catch {
             try? FileManager.default.removeItem(at: destination)
             throw error
         }
-        catalog.install(prepared)
+        // A linked development folder with this ID stays in front; the import waits behind it.
+        if Self.outranks(prepared.origin, catalog.registeredSkin(for: manifest.descriptor.id)) {
+            catalog.install(prepared)
+        }
         return manifest.descriptor.id
     }
 
     /// Validate the full definition before publishing a replacement. Failed reloads
     /// leave the catalog and current runtime generation untouched.
     func reloadPackage(_ skinID: String) throws {
-        guard let current = catalog.registeredSkin(for: skinID) as? PackagedSkin else { throw SkinPackageError.bundledSkin }
-        let directory: URL
-        switch current.origin {
-        case .installed(let url), .development(let url): directory = url
-        case .bundled: throw SkinPackageError.bundledSkin
-        }
+        guard let current = catalog.registeredSkin(for: skinID) as? PackagedSkin,
+              let directory = current.origin.packageDirectory else { throw SkinPackageError.bundledSkin }
         let manifest = try readManifest(in: directory)
         guard manifest.descriptor.id == skinID else {
             throw SkinPackageError.invalidManifest("重载时不能更改皮肤 ID")
@@ -133,18 +214,15 @@ final class SkinPackageStore {
         case .bundled: throw SkinPackageError.bundledSkin
         }
         catalog.removeInstalled(skinID)
+        restoreFallback(skinID)
     }
 
     func exportPackage(_ skin: any NowPlayingSkin, to archive: URL) async throws {
         guard let packaged = skin as? PackagedSkin else { throw SkinPackageError.unsupportedVersion }
-        guard packaged.isExportable else { throw SkinPackageError.bundledSkin }
+        guard let source = packaged.origin.packageDirectory else { throw SkinPackageError.bundledSkin }
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
-        switch packaged.origin {
-        case .bundled: throw SkinPackageError.bundledSkin
-        case .installed(let source), .development(let source):
-            try FileManager.default.copyItem(at: source, to: directory)
-        }
+        try FileManager.default.copyItem(at: source, to: directory)
         try write(packaged.manifest, in: directory)
         try await archiveOperation(["-c", "-k", directory.path, archive.path])
     }
@@ -160,21 +238,31 @@ final class SkinPackageStore {
         }
         let renderer = catalog.nativePreset(for: manifest.nativePreset)
         if let preset = manifest.nativePreset, renderer == nil { throw SkinPackageError.missingPreset(preset) }
+        let resourceRoot = origin.resourceRoot
+        var scripts: SkinScripts?
+        if let packageDirectory = origin.packageDirectory {
+            do { scripts = try SkinScripts.load(from: packageDirectory) }
+            catch { throw SkinPackageError.invalidManifest(error.localizedDescription) }
+        }
         var programs: [String: SkinSceneProgram] = [:]
         if let document = manifest.sceneV2 {
-            programs["default"] = try SkinSceneCompiler.compile(document, parameters: manifest.parameters, requires: manifest.requires, file: manifest.scenePath ?? "manifest.json")
+            programs["default"] = try SkinSceneCompiler.compile(document, parameters: manifest.parameters, requires: manifest.requires, file: manifest.scenePath ?? "manifest.json",
+                                                                lets: manifest.lets, scripts: scripts)
         }
         for (surface, document) in manifest.scenes {
             guard SkinSurface(rawValue: surface) != nil else { throw SkinPackageError.invalidManifest("显示模式无效：\(surface)") }
-            programs[surface] = try SkinSceneCompiler.compile(document, parameters: manifest.parameters, requires: manifest.requires)
+            programs[surface] = try SkinSceneCompiler.compile(document, parameters: manifest.parameters, requires: manifest.requires, lets: manifest.lets, scripts: scripts)
         }
         guard renderer != nil || manifest.descriptor.surfaces.allSatisfy({ programs[$0.rawValue] != nil || programs["default"] != nil }) else {
             throw SkinPackageError.invalidManifest("缺少显示模式的场景")
         }
-        let resourceRoot: URL?
-        switch origin { case .installed(let url), .development(let url): resourceRoot = url; case .bundled: resourceRoot = Bundle.main.resourceURL }
         if let resourceRoot {
             try validateResources(in: resourceRoot, fonts: manifest.fonts)
+            for path in manifest.preview?.paths ?? [] {
+                let url = try SkinResourceResolver.resolve(path, root: resourceRoot)
+                guard SkinPackagePreview.fileExtensions.contains(url.pathExtension.lowercased()),
+                      FileManager.default.fileExists(atPath: url.path) else { throw SkinPackageError.invalidManifest("预览图无效：\(path)") }
+            }
             let assets = programs.values.reduce(into: Set<String>()) { $0.formUnion($1.root.referencedAssets) }
             for path in assets {
                 let url = try SkinResourceResolver.resolve(path, root: resourceRoot)

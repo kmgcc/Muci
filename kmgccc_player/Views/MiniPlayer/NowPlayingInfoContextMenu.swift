@@ -84,7 +84,10 @@ struct TrackActionMenuContent: View {
     var showsPlay: Bool = true
     var showsNavigation: Bool = true
     var showsDeleteFromLibrary: Bool = true
+    var showsLike: Bool = true
     var showsDislike: Bool = false
+    /// Names the playlist in the removal item, for menus away from that playlist's page.
+    var removeFromPlaylistName: String?
     var diagnosticSurface: String = "TrackContextMenu"
 
     @Environment(LibraryViewModel.self) private var libraryVM
@@ -105,7 +108,9 @@ struct TrackActionMenuContent: View {
         showsPlay: Bool = true,
         showsNavigation: Bool = true,
         showsDeleteFromLibrary: Bool = true,
+        showsLike: Bool = true,
         showsDislike: Bool = false,
+        removeFromPlaylistName: String? = nil,
         diagnosticSurface: String = "TrackContextMenu"
     ) {
         let token = FirstUseHitchDiagnostics.begin(
@@ -128,7 +133,9 @@ struct TrackActionMenuContent: View {
         self.showsPlay = showsPlay
         self.showsNavigation = showsNavigation
         self.showsDeleteFromLibrary = showsDeleteFromLibrary
+        self.showsLike = showsLike
         self.showsDislike = showsDislike
+        self.removeFromPlaylistName = removeFromPlaylistName
         self.diagnosticSurface = diagnosticSurface
     }
 
@@ -191,19 +198,21 @@ struct TrackActionMenuContent: View {
             Divider()
         }
 
-        let isManuallyLiked = currentManualLikeState == .liked
-        Button {
-            let nextState: ManualLikeState = isManuallyLiked ? .none : .liked
-            invokeAction(isManuallyLiked ? "unlike" : "like") {
-                Task {
-                    await libraryVM.setManualLikeState(nextState, for: track)
+        if showsLike {
+            let isManuallyLiked = currentManualLikeState == .liked
+            Button {
+                let nextState: ManualLikeState = isManuallyLiked ? .none : .liked
+                invokeAction(isManuallyLiked ? "unlike" : "like") {
+                    Task {
+                        await libraryVM.setManualLikeState(nextState, for: track)
+                    }
                 }
-            }
-        } label: {
-            if isManuallyLiked {
-                Label("取消喜欢", systemImage: "heart.slash")
-            } else {
-                Label("喜欢", systemImage: "heart")
+            } label: {
+                if isManuallyLiked {
+                    Label("取消喜欢", systemImage: "heart.slash")
+                } else {
+                    Label("喜欢", systemImage: "heart")
+                }
             }
         }
 
@@ -237,8 +246,14 @@ struct TrackActionMenuContent: View {
                     onRemoveFromCurrentPlaylist(track)
                 }
             } label: {
-                Label("从当前播放列表移除", systemImage: "minus.circle")
-                    .labelStyle(.titleOnly)
+                Group {
+                    if let removeFromPlaylistName {
+                        Label("从「\(removeFromPlaylistName)」移除", systemImage: "minus.circle")
+                    } else {
+                        Label("从当前播放列表移除", systemImage: "minus.circle")
+                    }
+                }
+                .labelStyle(.titleOnly)
             }
         }
 

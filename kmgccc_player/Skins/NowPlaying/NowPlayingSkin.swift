@@ -24,6 +24,32 @@ protocol NowPlayingSkin {
     func releaseCachedResources() async
 }
 
+/// The App lyrics settings a skin actually reads on one surface.
+struct SkinLyricsSettingsUse: Equatable {
+    /// Native lyric surface only.
+    var renderQuality = true
+    var highlight = true
+    var spring = true
+    var preview = true
+    /// Lyric fonts, also read by scenes that draw their own lyrics.
+    var fonts = true
+    /// The timing group; its overall advance moves every lyric clock.
+    var timing = true
+    /// Lead-in and near-switch gap, unused by a scene that sets its own lyric lead.
+    var lineSwitchTiming = true
+
+    init(renderQuality: Bool = true, highlight: Bool = true, spring: Bool = true, fonts: Bool = true,
+         preview: Bool = true, timing: Bool = true, lineSwitchTiming: Bool = true) {
+        self.renderQuality = renderQuality
+        self.highlight = highlight
+        self.spring = spring
+        self.fonts = fonts
+        self.preview = preview
+        self.timing = timing
+        self.lineSwitchTiming = lineSwitchTiming
+    }
+}
+
 extension NowPlayingSkin {
     var scene: SkinScene? { nil }
     var parameterDefinitions: [SkinParameterDefinition] { [] }
@@ -38,6 +64,26 @@ extension NowPlayingSkin {
     var lyricsSkinOwnedSettings: Set<String> {
         guard let allowed = (self as? PackagedSkin)?.lyricsUserSettings else { return [] }
         return NativeLyricsConfigurationMapper.userSettingGroups.subtracting(allowed)
+    }
+
+    /// Which App lyrics settings reach this skin on `surface`, so settings list only those.
+    /// Built-in skins and skins without a scene use all of them.
+    func lyricsSettingsUse(on surface: SkinSurface) -> SkinLyricsSettingsUse {
+        guard let package = self as? PackagedSkin,
+              let mountsNative = package.sceneMountsNativeLyrics(on: surface) else { return .init() }
+        let readsLyrics = mountsNative || package.sceneReadsLyrics(on: surface) == true
+        // A scene that declares `lyricsLead` times its own line switches.
+        let ownsLineLead = parameterDefinitions.contains { $0.id == "lyricsLead" }
+        let owned = lyricsSkinOwnedSettings
+        return .init(
+            renderQuality: mountsNative,
+            highlight: mountsNative && !owned.contains("highlight"),
+            spring: mountsNative && !owned.contains("spring"),
+            fonts: readsLyrics && !owned.contains("font"),
+            preview: mountsNative,
+            timing: readsLyrics,
+            lineSwitchTiming: mountsNative || (readsLyrics && !ownsLineLead)
+        )
     }
 
     func releaseCachedResources() async {}

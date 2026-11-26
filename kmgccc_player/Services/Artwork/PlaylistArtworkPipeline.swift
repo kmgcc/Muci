@@ -13,6 +13,7 @@ enum PlaylistArtworkVariant: String, Sendable {
     case rowHigh
     case header
     case haloSeed
+    case cover
 }
 
 struct PlaylistArtworkRequest: Sendable {
@@ -357,6 +358,22 @@ extension PlaylistArtworkPipeline {
             artworkData: artworkData,
             fileURL: fileURL,
             pixelSize: CGSize(width: 640, height: 640)
+        )
+    }
+
+    /// A playlist cover tile for Home cards and the playlist grid, decoded at
+    /// the size those tiles draw.
+    nonisolated static func coverRequest(
+        artworkIdentity: String,
+        fileURL: URL?,
+        pixelSide: Int = 320
+    ) -> PlaylistArtworkRequest {
+        PlaylistArtworkRequest(
+            sourceIdentity: "cover-\(artworkIdentity)",
+            variant: .cover,
+            artworkData: nil,
+            fileURL: fileURL,
+            pixelSize: CGSize(width: pixelSide, height: pixelSide)
         )
     }
 

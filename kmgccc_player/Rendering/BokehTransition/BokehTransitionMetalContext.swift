@@ -191,6 +191,15 @@ final class BokehTransitionMetalContext {
         }
     }
 
+    /// The validated runtime library on `device`, for other renderers that read optional entry
+    /// points from it; nil when the resource is absent or fails validation.
+    static func runtimeLibrary(device: MTLDevice) -> MTLLibrary? {
+        guard let resource = locateRuntimeResource(),
+              (try? loadAndValidateManifest(from: resource.manifestURL, libraryURL: resource.libraryURL)) != nil
+        else { return nil }
+        return try? device.makeLibrary(URL: resource.libraryURL)
+    }
+
     private struct RuntimeResource {
         let manifestURL: URL
         let libraryURL: URL

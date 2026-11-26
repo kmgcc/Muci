@@ -1,0 +1,197 @@
+{
+  "fill-specializations" : [
+    {
+      "value" : {
+        "solid" : "srgb:0.94902,0.95294,0.93725,1.00000"
+      }
+    },
+    {
+      "appearance" : "dark",
+      "value" : {
+        "solid" : "srgb:0.12157,0.14118,0.17255,1.00000"
+      }
+    }
+  ],
+  "groups" : [
+    {
+      "blur-material" : null,
+      "hidden" : false,
+      "layers" : [
+        {
+          "glass" : true,
+          "hidden-specializations" : [
+            {
+              "value" : false
+            },
+            {
+              "appearance" : "light",
+              "value" : true
+            }
+          ],
+          "image-name" : "Mudark.svg",
+          "name" : "Mudark",
+          "position" : {
+            "scale" : 3.99,
+            "translation-in-points" : [
+              0,
+              0
+            ]
+          }
+        },
+        {
+          "glass" : false,
+          "hidden-specializations" : [
+            {
+              "appearance" : "dark",
+              "value" : true
+            }
+          ],
+          "image-name" : "Mu.svg",
+          "name" : "Mu",
+          "opacity" : 1,
+          "position" : {
+            "scale" : 3.99,
+            "translation-in-points" : [
+              0,
+              0
+            ]
+          }
+        },
+        {
+          "hidden-specializations" : [
+            {
+              "value" : false
+            },
+            {
+              "appearance" : "light",
+              "value" : true
+            }
+          ],
+          "image-name" : "dotdark.svg",
+          "name" : "dotdark",
+          "position" : {
+            "scale" : 3.97,
+            "translation-in-points" : [
+              272,
+              -284.31
+            ]
+          }
+        },
+        {
+          "hidden-specializations" : [
+            {
+              "value" : false
+            },
+            {
+              "appearance" : "dark",
+              "value" : true
+            }
+          ],
+          "image-name" : "Ellipse 1.svg",
+          "name" : "Ellipse 1",
+          "position" : {
+            "scale" : 3.97,
+            "translation-in-points" : [
+              272,
+              -284.31
+            ]
+          }
+        },
+        {
+          "glass" : false,
+          "hidden-specializations" : [
+            {
+              "value" : false
+            },
+            {
+              "appearance" : "light",
+              "value" : true
+            }
+          ],
+          "image-name" : "叶子 dark.png",
+          "name" : "叶子 dark",
+          "position" : {
+            "scale" : 1.31,
+            "translation-in-points" : [
+              -71,
+              110
+            ]
+          }
+        },
+        {
+          "glass" : false,
+          "hidden-specializations" : [
+            {
+              "value" : false
+            },
+            {
+              "appearance" : "dark",
+              "value" : true
+            },
+            {
+              "appearance" : "tinted",
+              "value" : true
+            }
+          ],
+          "image-name" : "叶子.png",
+          "name" : "叶子",
+          "position" : {
+            "scale" : 1.31,
+            "translation-in-points" : [
+              -7,
+              15
+            ]
+          }
+        }
+      ],
+      "lighting" : "individual",
+      "refractivity" : {
+        "depth" : 0,
+        "enabled" : false,
+        "strength" : 0.5
+      },
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "specular" : true,
+      "translucency" : {
+        "enabled" : false,
+        "value" : 0.3
+      }
+    },
+    {
+      "hidden" : true,
+      "layers" : [
+        {
+          "glass" : false,
+          "hidden" : false,
+          "image-name" : "Frame 7.svg",
+          "name" : "Frame 7",
+          "position" : {
+            "scale" : 4,
+            "translation-in-points" : [
+              0,
+              0
+            ]
+          }
+        }
+      ],
+      "opacity" : 0.25,
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.3
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "circles" : [
+      "watchOS"
+    ],
+    "squares" : "shared"
+  }
+}

@@ -19,13 +19,6 @@ struct FullscreenSkinTabView: View {
     @State private var fullscreenMiniPlayerAutoHideSeconds: Double = AppSettings.shared.fullscreenMiniPlayerAutoHideSeconds
     @State private var fullscreenMiniPlayerGlassMaterial: AppSettings.FullscreenMiniPlayerGlassMaterial = AppSettings.shared.fullscreenMiniPlayerGlassMaterial
 
-    private var slidingKnobColor: Color {
-        if presentationStyle.usesMaterialSectionCards {
-            return presentationStyle.settingsPrimaryTextColor(appColors: appColors)
-        }
-        return themeStore.accentColor
-    }
-
     private let fullscreenMiniPlayerAutoHideOptions: [(title: String, seconds: Double)] = [
         ("关闭自动隐藏", 0),
         ("2 秒", 2),
@@ -42,26 +35,23 @@ struct FullscreenSkinTabView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: presentationStyle.sectionSpacing) {
             SettingsSection("选择外观") {
-                VStack(alignment: .leading, spacing: presentationStyle.groupSpacing) {
-                    if SkinRegistry.customizationEnabled {
-                        SkinPackageSettingsActions(skin: SkinRegistry.fullscreenSkin(for: settings.fullscreen.skinID))
-                    }
-                    SkinSelectorRow(
-                        skins: SkinRegistry.fullscreenOptions,
-                        selectedSkinID: Binding(
-                            get: { settings.fullscreen.skinID },
-                            set: { settings.fullscreen.setSkinID($0) }
-                        ),
-                        cardSize: presentationStyle.skinCardSize,
-                        previewSize: presentationStyle.skinPreviewSize,
-                        cornerRadius: presentationStyle.skinCornerRadius,
-                        titleFontSize: presentationStyle.skinTitleFontSize,
-                        itemSpacing: presentationStyle.skinItemSpacing,
-                        edgePadding: presentationStyle.skinEdgePadding,
-                        verticalPadding: presentationStyle.skinVerticalPadding,
-                        showsScrollButtons: true
-                    )
-                }
+                SkinSelectorRow(
+                    skins: SkinRegistry.fullscreenOptions,
+                    selectedSkinID: Binding(
+                        get: { settings.fullscreen.skinID },
+                        set: { settings.fullscreen.setSkinID($0) }
+                    ),
+                    cardSize: presentationStyle.skinCardSize,
+                    previewSize: presentationStyle.skinPreviewSize,
+                    cornerRadius: presentationStyle.skinCornerRadius,
+                    titleFontSize: presentationStyle.skinTitleFontSize,
+                    itemSpacing: presentationStyle.skinItemSpacing,
+                    edgePadding: presentationStyle.skinEdgePadding,
+                    verticalPadding: presentationStyle.skinVerticalPadding,
+                    showsScrollButtons: true,
+                    managesPackages: SkinRegistry.customizationEnabled,
+                    surface: .fullscreen
+                )
             }
             .settingsSearchAnchor("skin.select")
 
@@ -83,7 +73,8 @@ struct FullscreenSkinTabView: View {
                         if let optionsView = selectedSkin.fullscreenSettingsView { optionsView }
                         if SkinRegistry.customizationEnabled {
                             SkinParameterSettingsView(skinID: selectedSkin.id, surface: .fullscreen,
-                                                      definitions: selectedSkin.parameterDefinitions, store: SkinRegistry.catalog.parameters)
+                                                      definitions: selectedSkin.parameterDefinitions, store: SkinRegistry.catalog.parameters,
+                                                      showsRenderQuality: selectedSkin.scene != nil)
                         }
                     }
                 }
@@ -99,7 +90,8 @@ struct FullscreenSkinTabView: View {
                                 get: { settings.fullscreen.miniPlayerVisualization },
                                 set: { settings.fullscreen.setMiniPlayerVisualization($0) }
                             ),
-                            showsLEDCount: false
+                            showsLEDCount: false,
+                            showsSpectrumCount: false
                         )
 
                         miniPlayerAutoHidePicker
@@ -150,37 +142,12 @@ struct FullscreenSkinTabView: View {
                 .font(presentationStyle.rowLabelFont)
                 .foregroundStyle(presentationStyle.settingsPrimaryTextColor(appColors: appColors))
             Spacer()
-            SlidingSelector(
-                segments: fullscreenMiniPlayerAutoHideOptions.map(\.seconds),
-                selection: $fullscreenMiniPlayerAutoHideSeconds,
-                hSpacing: 0,
-                background: {
-                    Color.clear
-                },
-                knob: {
-                    Capsule()
-                        .fill(slidingKnobColor.opacity(0.18))
-                },
-                content: { seconds, isSelected in
-                    let title = fullscreenMiniPlayerAutoHideOptions.first(where: { $0.seconds == seconds })?.title ?? ""
-                    Text(title)
-                        .font(.system(size: presentationStyle.segmentedFontSize, weight: isSelected ? .medium : .regular))
-                        .padding(.horizontal, presentationStyle.segmentedHorizontalPadding)
-                        .padding(.vertical, presentationStyle.segmentedVerticalPadding)
-                        .foregroundStyle(
-                            isSelected
-                                ? presentationStyle.settingsSelectedTextColor(
-                                    accentColor: themeStore.accentColor,
-                                    appColors: appColors
-                                )
-                                : presentationStyle.settingsSecondaryTextColor(appColors: appColors)
-                        )
-                }
-            )
-            .padding(.horizontal, presentationStyle.segmentedTrackHorizontalPadding)
-            .padding(.vertical, presentationStyle.segmentedTrackVerticalPadding)
-            .background(segmentedTrackBackground)
-            .fixedSize(horizontal: true, vertical: false)
+            SettingsCapsuleSelector(
+                options: fullscreenMiniPlayerAutoHideOptions.map(\.seconds),
+                selection: $fullscreenMiniPlayerAutoHideSeconds
+            ) { seconds in
+                fullscreenMiniPlayerAutoHideOptions.first(where: { $0.seconds == seconds })?.title ?? ""
+            }
         }
     }
 
@@ -190,37 +157,12 @@ struct FullscreenSkinTabView: View {
                 .font(presentationStyle.rowLabelFont)
                 .foregroundStyle(presentationStyle.settingsPrimaryTextColor(appColors: appColors))
             Spacer()
-            SlidingSelector(
-                segments: fullscreenMiniPlayerGlassMaterialOptions.map(\.material),
-                selection: $fullscreenMiniPlayerGlassMaterial,
-                hSpacing: 0,
-                background: {
-                    Color.clear
-                },
-                knob: {
-                    Capsule()
-                        .fill(slidingKnobColor.opacity(0.18))
-                },
-                content: { material, isSelected in
-                    let title = fullscreenMiniPlayerGlassMaterialOptions.first(where: { $0.material == material })?.title ?? ""
-                    Text(title)
-                        .font(.system(size: presentationStyle.segmentedFontSize, weight: isSelected ? .medium : .regular))
-                        .padding(.horizontal, presentationStyle.segmentedHorizontalPadding)
-                        .padding(.vertical, presentationStyle.segmentedVerticalPadding)
-                        .foregroundStyle(
-                            isSelected
-                                ? presentationStyle.settingsSelectedTextColor(
-                                    accentColor: themeStore.accentColor,
-                                    appColors: appColors
-                                )
-                                : presentationStyle.settingsSecondaryTextColor(appColors: appColors)
-                        )
-                }
-            )
-            .padding(.horizontal, presentationStyle.segmentedTrackHorizontalPadding)
-            .padding(.vertical, presentationStyle.segmentedTrackVerticalPadding)
-            .background(segmentedTrackBackground)
-            .fixedSize(horizontal: true, vertical: false)
+            SettingsCapsuleSelector(
+                options: fullscreenMiniPlayerGlassMaterialOptions.map(\.material),
+                selection: $fullscreenMiniPlayerGlassMaterial
+            ) { material in
+                fullscreenMiniPlayerGlassMaterialOptions.first(where: { $0.material == material })?.title ?? ""
+            }
         }
     }
 
@@ -257,40 +199,6 @@ struct FullscreenSkinTabView: View {
                 step: 0.05
             )
             .frame(height: presentationStyle.tabHeight)
-        }
-    }
-
-
-
-    @ViewBuilder
-    private var segmentedTrackBackground: some View {
-        if presentationStyle.usesGlassSectionCards {
-            Capsule()
-                .fill(Color.clear)
-                .liquidGlassPill(
-                    colorScheme: .dark,
-                    accentColor: nil,
-                    prominence: .standard,
-                    materialStyle: presentationStyle.glassMaterialStyle,
-                    isFloating: false
-                )
-                .overlay(
-                    Capsule()
-                        .fill(Color.white.opacity(0.018))
-                )
-        } else {
-            Capsule()
-                .fill(presentationStyle.settingsSegmentedTrackColor(appColors: appColors))
-                .overlay(
-                    Capsule()
-                        .strokeBorder(
-                            presentationStyle.segmentedTrackStrokeColor,
-                            lineWidth: presentationStyle.segmentedTrackStrokeColor == .clear
-                                ? 0
-                                : presentationStyle.scaledHairlineWidth
-                        )
-                        .allowsHitTesting(false)
-                )
         }
     }
 }

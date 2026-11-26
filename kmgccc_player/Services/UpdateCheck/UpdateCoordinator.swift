@@ -90,7 +90,7 @@ final class UpdateCoordinator: NSObject, ObservableObject {
     private var readyChoiceReply: ((SPUUserUpdateChoice) -> Void)?
     private var readyMetadata: UpdateReadyMetadata?
     private var updateInstallationRequested = false
-    private var releaseNotesTask: Task<Void, Never>?
+
     private var retryTerminationHandler: (() -> Void)?
     private var retryTerminationInFlight = false
     private var retryTerminationGeneration = 0
@@ -367,8 +367,7 @@ final class UpdateCoordinator: NSObject, ObservableObject {
         // Normal quits answer the prepared-update reply in
         // prepareUpdateForOrdinaryTermination(). This hook only releases
         // transient work after termination has been accepted.
-        releaseNotesTask?.cancel()
-        releaseNotesTask = nil
+
         expiryTimer?.invalidate()
     }
 
@@ -462,8 +461,6 @@ final class UpdateCoordinator: NSObject, ObservableObject {
         pendingPrimaryError = nil
         attemptedFallback = false
 
-        releaseNotesTask?.cancel()
-        releaseNotesTask = nil
         currentUpdateReleaseNotes = nil
         readyMetadata = nil
         UpdatePreferences.setReadyMetadata(nil)
@@ -619,41 +616,10 @@ final class UpdateCoordinator: NSObject, ObservableObject {
 
         let version = item.displayVersionString
         let build = item.versionString
+        let notes = UpdateReleaseNotesParser.parse(item.itemDescription ?? "")
         let fallbackNotes = item.title.map { [$0] } ?? ["包含改进和修复。"]
-        UpdateReleaseNotesStore.save(
-            version: version,
-            build: build,
-            notes: fallbackNotes
-        )
+        UpdateReleaseNotesStore.save(version: version, build: build, notes: notes.isEmpty ? fallbackNotes : notes)
         currentUpdateReleaseNotes = UpdateReleaseNotesStore.notice(forBuild: build)
-
-        releaseNotesTask?.cancel()
-        releaseNotesTask = nil
-        guard let notesURL = item.releaseNotesURL else { return }
-        let requestURL = UpdateReleaseNotesSource.requestURL(for: notesURL)
-
-        releaseNotesTask = Task { [weak self] in
-            guard let (data, response) = try? await URLSession.shared.data(from: requestURL),
-                  let httpResponse = response as? HTTPURLResponse,
-                  (200..<300).contains(httpResponse.statusCode),
-                  !Task.isCancelled else {
-                return
-            }
-
-            let notes = UpdateReleaseNotesSource.parseResponse(data, from: requestURL)
-            guard !notes.isEmpty, !Task.isCancelled else { return }
-
-            await MainActor.run {
-                guard let self,
-                      self.currentItem?.versionString == build else {
-                    return
-                }
-                UpdateReleaseNotesStore.updateNotes(notes, forBuild: build)
-                self.currentUpdateReleaseNotes = UpdateReleaseNotesStore.notice(
-                    forBuild: build
-                )
-            }
-        }
     }
 
     private func shouldSuppress(_ item: SUAppcastItem, userInitiated: Bool) -> Bool {
@@ -683,7 +649,7 @@ final class UpdateCoordinator: NSObject, ObservableObject {
         let alert = NSAlert()
         alert.alertStyle = .informational
         alert.messageText = "发现新版本 \(item.displayVersionString)"
-        alert.informativeText = "下载完成后重启，即可更新到最新版本的 kmgccc_player，体验新功能或问题修复。"
+        alert.informativeText = "下载完成后重启，即可更新到最新版 Muci。"
         alert.addButton(withTitle: "下载更新")
         alert.addButton(withTitle: "稍后")
         NSApp.activate(ignoringOtherApps: true)
@@ -843,8 +809,7 @@ final class UpdateCoordinator: NSObject, ObservableObject {
         downloadCancellation = nil
         readyChoiceReply = nil
         currentItem = nil
-        releaseNotesTask?.cancel()
-        releaseNotesTask = nil
+
         currentUpdateReleaseNotes = nil
         updateInstallationRequested = false
         readyMetadata = nil
@@ -934,9 +899,7 @@ extension UpdateCoordinator: SPUUserDriver {
     }
 
     func showUpdateReleaseNotes(with downloadData: SPUDownloadData) {
-        // Release notes are fetched from the appcast item's releaseNotesURL in
-        // captureUpdate so the same notes are available during download, once
-        // the package is ready, and after the relaunch.
+        // The native notice uses the inline notes from the signed Appcast.
     }
 
     func showUpdateReleaseNotesFailedToDownloadWithError(_ error: Error) {
@@ -1081,8 +1044,7 @@ extension UpdateCoordinator: SPUUserDriver {
             UpdatePreferences.setReadyMetadata(nil)
             UpdatePreferences.setSuppressedBuild(nil)
             readyMetadata = nil
-            releaseNotesTask?.cancel()
-            releaseNotesTask = nil
+
             currentUpdateReleaseNotes = nil
             state = .idle
         } else {

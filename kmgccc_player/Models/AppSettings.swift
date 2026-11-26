@@ -923,6 +923,8 @@ public final class AppSettings {
     @ObservationIgnored
     @AppStorage("lyricsGlobalAdvanceMs") var lyricsGlobalAdvanceMs: Double = 0
 
+    /// Render quality for lyric surfaces and skin scenes: the share of display resolution their
+    /// glyph masks and offscreen effect surfaces render at (`renderScale`).
     enum AMLLLyricsRenderQuality: String, CaseIterable, Identifiable {
         case low
         case medium
@@ -1026,7 +1028,7 @@ public final class AppSettings {
         defaults.set(true, forKey: AMLLKeys.springDefaultsMigration)
     }
 
-    /// Shared render quality for user-facing AMLL lyric surfaces.
+    /// Shared render quality for user-facing AMLL lyric surfaces and skin scenes.
     var amllLyricsRenderQuality: AMLLLyricsRenderQuality {
         get {
             access(keyPath: \.amllLyricsRenderQuality)
@@ -1684,6 +1686,12 @@ public final class AppSettings {
         markFullscreenLyricsTypographyDidChange()
     }
 
+    /// The last decoded profiles and the stored bytes they came from. Views read
+    /// the effective typography on every update; the JSON is decoded only when
+    /// the stored value changes.
+    @ObservationIgnored
+    private var typographyProfilesCache: (data: Data, profiles: [String: FullscreenLyricsTypography])?
+
     private func loadFullscreenLyricsTypographyProfiles()
         -> [String: FullscreenLyricsTypography]
     {
@@ -1692,6 +1700,19 @@ public final class AppSettings {
         ) else {
             return [:]
         }
+        if let cached = typographyProfilesCache, cached.data == data {
+            return cached.profiles
+        }
+        let profiles = decodeFullscreenLyricsTypographyProfiles(data)
+        if let stored = UserDefaults.standard.data(forKey: FullscreenLyricsKeys.perSkinTypographyProfiles) {
+            typographyProfilesCache = (stored, profiles)
+        }
+        return profiles
+    }
+
+    private func decodeFullscreenLyricsTypographyProfiles(_ data: Data)
+        -> [String: FullscreenLyricsTypography]
+    {
         var decoded = (try? JSONDecoder().decode(
             [String: FullscreenLyricsTypography].self,
             from: data

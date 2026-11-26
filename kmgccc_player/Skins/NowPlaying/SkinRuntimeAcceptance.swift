@@ -151,7 +151,7 @@ enum SkinRuntimeAcceptance {
             fullscreen.showFullscreenWindow()
             check(await waitUntil {
                 fullscreen.presentationMode == .systemFullscreenSpace && !fullscreen.isTransitioning
-                    && NSApp.windows.contains { $0.title == "kmgccc_player - Fullscreen" && $0.styleMask.contains(.fullScreen) }
+                    && NSApp.windows.contains { $0.title == "\(Constants.appName) - Fullscreen" && $0.styleMask.contains(.fullScreen) }
             }, "native fullscreen entry timed out")
             await settle()
             sample("system.entered")

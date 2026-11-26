@@ -90,13 +90,15 @@ final class ThemeStore: ObservableObject {
     private var averageColorCache: NSColor?
     /// The swatch engine is heavy and `artworkSwatchColors` runs from view
     /// bodies, so its last result is reused until its inputs change.
-    private var artworkSwatchCache: ArtworkSwatchCache?
+    private var artworkSwatchCache: [Bool: ArtworkSwatchCache] = [:]
+    /// The palette for the scheme the app is not in, built on demand for
+    /// surfaces that always draw on a dark (or light) stage.
+    private var alternatePaletteCache: (generation: UInt64, scheme: ColorScheme, palette: SemanticPalette)?
 
     private struct ArtworkSwatchCache {
-        let isDark: Bool
         let analysis: ArtworkColorAnalysis
         let accent: NSColor
-        let colors: [Color]
+        let colors: [NSColor]
     }
 
     private init() {
@@ -226,7 +228,18 @@ final class ThemeStore: ObservableObject {
         let opToken = FirstUseHitchDiagnostics.begin("ThemeStore.updateTheme", detail: "track=\(FirstUseHitchDiagnostics.trackIDPrefix(assetTrackID))")
         defer { FirstUseHitchDiagnostics.end(opToken) }
 
-        let checksum = data.map(computeChecksum) ?? 0
+        // Hashing the full artwork is a byte loop over hundreds of KB; keep it
+        // off the main actor so the skip animation is not starved. The
+        // following log-state awaits already suspend here, so ordering with
+        // concurrent theme updates is unchanged.
+        let checksum: UInt64
+        if let data, !data.isEmpty {
+            checksum = await Task.detached(priority: .userInitiated) {
+                ColorMath.fnv1a(data)
+            }.value
+        } else {
+            checksum = data.map(computeChecksum) ?? 0
+        }
         let updateState = "identity=\(artworkIdentity ?? "nil")|checksum=\(checksum)"
         if await LogStateTracker.shared.checkStateChanged(
             key: "theme.updateThemeFromArtworkData",
@@ -715,24 +728,56 @@ final class ThemeStore: ObservableObject {
     /// `categoricalColors` when the artwork yields fewer than `count` swatches.
     func artworkSwatchColors(count: Int) -> [Color] {
         guard count > 0 else { return [] }
-        let isDark = colorScheme == .dark
-        let swatches: [Color]
-        if let cached = artworkSwatchCache,
-           cached.isDark == isDark, cached.analysis == analysis, cached.accent == accentNSColor {
-            swatches = cached.colors
-        } else {
-            swatches = BKColorEngine.makeShapeSwatches(
-                seed: Self.artworkSwatchSeed,
-                extracted: analysis.topPalette,
-                fallback: [accentNSColor],
-                isDark: isDark,
-                analysis: analysis
-            ).colors.map { Color(cgColor: $0) }
-            artworkSwatchCache = ArtworkSwatchCache(
-                isDark: isDark, analysis: analysis, accent: accentNSColor, colors: swatches
-            )
-        }
+        let swatches = artworkSwatches.map { Color(nsColor: $0) }
         return swatches.count >= count ? Array(swatches.prefix(count)) : categoricalColors(count: count)
+    }
+
+    /// The art background's shape swatches for the current artwork, as many as
+    /// the artwork's colour richness gives (two tones of one hue for a plain
+    /// cover, up to six for a colourful one), dominant colour first.
+    var artworkSwatches: [NSColor] {
+        artworkSwatches(for: colorScheme)
+    }
+
+    /// The art background's shape swatches as they read in `scheme`.
+    func artworkSwatches(for scheme: ColorScheme) -> [NSColor] {
+        let isDark = scheme == .dark
+        let accent = accentNSColor(for: scheme)
+        if let cached = artworkSwatchCache[isDark], cached.analysis == analysis, cached.accent == accent {
+            return cached.colors
+        }
+        let swatches = BKColorEngine.makeShapeSwatches(
+            seed: Self.artworkSwatchSeed,
+            extracted: analysis.topPalette,
+            fallback: [accent],
+            isDark: isDark,
+            analysis: analysis
+        ).colors.compactMap { NSColor(cgColor: $0) }
+        artworkSwatchCache[isDark] = ArtworkSwatchCache(analysis: analysis, accent: accent, colors: swatches)
+        return swatches
+    }
+
+    /// The semantic palette as it resolves in `scheme`. A skin that always draws
+    /// on a dark stage reads the night palette here while the app is in day mode.
+    func semanticPalette(for scheme: ColorScheme) -> SemanticPalette {
+        guard scheme != colorScheme else { return semanticPalette }
+        if let cached = alternatePaletteCache, cached.generation == themeGeneration, cached.scheme == scheme {
+            return cached.palette
+        }
+        let palette = SemanticPaletteFactory.make(
+            from: analysis,
+            scheme: scheme,
+            userFallbackAccent: NSColor(AppSettings.shared.accentColor),
+            useArtworkTint: AppSettings.shared.globalArtworkTintEnabled && hasArtworkThemeColor
+        )
+        alternatePaletteCache = (themeGeneration, scheme, palette)
+        return palette
+    }
+
+    /// The accent as it resolves in `scheme`.
+    func accentNSColor(for scheme: ColorScheme) -> NSColor {
+        guard scheme != colorScheme else { return accentNSColor }
+        return ColorRenderingAdapter.makeNSColor(semanticPalette(for: scheme).globalAccent)
     }
 
     private static let artworkSwatchSeed: UInt64 = 0x5A3C_91E2_7D4B_C0F1

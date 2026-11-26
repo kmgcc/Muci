@@ -10,18 +10,18 @@ History、Metadata、Lyrics Job、Diagnostics、scope policy 和 MCP stdio。完
 在仓库根目录执行：
 
 ~~~sh
-swift run --package-path Dependencies/PlayerAutomation player-automation cli system info --json
-swift run --package-path Dependencies/PlayerAutomation player-automation cli library list --json
-swift run --package-path Dependencies/PlayerAutomation player-automation cli library tracks --query "artist" --json
-swift run --package-path Dependencies/PlayerAutomation player-automation cli library tracks --source <source-id> --json
-swift run --package-path Dependencies/PlayerAutomation player-automation cli playlist list --json
-swift run --package-path Dependencies/PlayerAutomation player-automation cli source refresh <source-id> --json
-swift run --package-path Dependencies/PlayerAutomation player-automation cli automation capabilities --json
-swift run --package-path Dependencies/PlayerAutomation player-automation cli automation call library.tracks \
+swift run --package-path Dependencies/PlayerAutomation muci-automation cli system info --json
+swift run --package-path Dependencies/PlayerAutomation muci-automation cli library list --json
+swift run --package-path Dependencies/PlayerAutomation muci-automation cli library tracks --query "artist" --json
+swift run --package-path Dependencies/PlayerAutomation muci-automation cli library tracks --source <source-id> --json
+swift run --package-path Dependencies/PlayerAutomation muci-automation cli playlist list --json
+swift run --package-path Dependencies/PlayerAutomation muci-automation cli source refresh <source-id> --json
+swift run --package-path Dependencies/PlayerAutomation muci-automation cli automation capabilities --json
+swift run --package-path Dependencies/PlayerAutomation muci-automation cli automation call library.tracks \
   --params-json '{"filter":{"all":[{"hasLyrics":true}]},"limit":20}' --json
 ~~~
 
-CLI 默认通过 LaunchServices 启动 kmgccc_player，并连接当前用户的：
+CLI 默认通过 LaunchServices 按 Bundle ID 启动 Muci，并连接当前用户的：
 
 ~~~text
 ~/Library/Application Support/kmgccc.player/Automation/automation.sock
@@ -78,9 +78,9 @@ lifecycle 和其它高风险操作使用 `--dry-run` 主动生成 preview。高�
 由 App 前台再次确认：
 
 ~~~sh
-swift run player-automation cli playlist add <playlist-id> <track-id> --json
-swift run player-automation cli playlist add <playlist-id> <track-id> --yes --json
-swift run player-automation cli playlist remove <playlist-id> <track-id> --yes --json
+swift run muci-automation cli playlist add <playlist-id> <track-id> --json
+swift run muci-automation cli playlist add <playlist-id> <track-id> --yes --json
+swift run muci-automation cli playlist remove <playlist-id> <track-id> --yes --json
 ~~~
 
 普通 mutation 不需要伪造确认；高风险操作必须满足 App policy。查询得到的 Playlist revision 可以通过
@@ -111,7 +111,7 @@ macOS 废纸篓。`library.create/open/relocate` 的路径参数仅用于打开 
 以独立 executable 运行 MCP adapter：
 
 ~~~sh
-swift run player-automation mcp-stdio
+swift run muci-automation mcp-stdio
 ~~~
 
 adapter 的 stdout 只输出 MCP JSON-RPC 消息，诊断走 stderr。它支持标准

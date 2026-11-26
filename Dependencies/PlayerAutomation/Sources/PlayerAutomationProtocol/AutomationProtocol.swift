@@ -3605,7 +3605,7 @@ public struct AutomationScopeMutationResult: Codable, Equatable, Sendable {
 /// examples and troubleshooting material live under `docs/`.
 public enum AutomationDocumentation {
     public static let agentBehaviorGuide = """
-    kmgccc_player automation semantics:
+    Muci automation semantics:
     - Track, Library membership, Playlist membership, Source membership and a real audio File are different relationships.
     - Removing a Track from a Playlist does not remove it from the Library or delete its file. Deleting a Playlist also retains Tracks and files.
     - When a referenced Source file disappears, the default is to preserve the Track, metadata, history and Playlist membership while marking it missing/unavailable.

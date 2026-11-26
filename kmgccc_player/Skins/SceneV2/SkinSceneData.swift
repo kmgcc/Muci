@@ -32,6 +32,8 @@ final class SkinSceneData {
     var audioAvailability = "inactive"
     var seekRevision: UInt64 = 0
 
+    /// The package's own scripts, read by `script()`.
+    @ObservationIgnored var scripts: SkinScripts?
     @ObservationIgnored var clock = SkinPlaybackClock()
     @ObservationIgnored let audio = SkinSceneAudio()
     @ObservationIgnored let lyricsTimeline = SkinLyricsTimeline()
@@ -293,7 +295,7 @@ final class SkinLyricsTimeline {
     private(set) var lines: [SkinValue] = []
     private var starts: [Double] = []
     private var ranges: [(start: Double, end: Double)] = []
-    private var words: [[(start: Double, end: Double)]] = []
+    private var words: [[(start: Double, end: Double, blank: Bool)]] = []
     private var songParts: [String] = []
     private var cacheTime: Double = .nan
     private var cacheIndex = -1
@@ -303,21 +305,31 @@ final class SkinLyricsTimeline {
     func load(_ document: LyricsDocument?, timing: LyricsTimingConfiguration? = nil) {
         let groups = (document?.groups ?? []).map { group in
             var group = group
-            group.main = Self.spreadingSingleSpan(group.main, mode: document?.timingMode ?? .word)
-            group.background = group.background.map { Self.spreadingSingleSpan($0, mode: document?.timingMode ?? .word) }
+            group.main = Self.timingSpaces(Self.spreadingSingleSpan(group.main, mode: document?.timingMode ?? .word))
+            group.background = group.background.map { Self.timingSpaces(Self.spreadingSingleSpan($0, mode: document?.timingMode ?? .word)) }
             return group
         }
         lines = groups.enumerated().map { Self.record(for: $0.element, index: $0.offset) }
         ranges = groups.map { ($0.main.range.start, max($0.main.range.end, $0.background?.range.end ?? 0)) }
-        starts = ranges.enumerated().map { index, range in
-            guard let timing, timing.enabled, index > 0 else { return range.start }
-            let gap = range.start - ranges[index - 1].end
-            let near = gap <= timing.nearSwitchGap
-            let leadInStart = max(0, range.start - (near ? timing.leadIn : 1))
-            // A switch never moves before the previous line's own start.
-            return max(ranges[index - 1].start, near ? leadInStart : max(ranges[index - 1].end, leadInStart))
+        // A line whose first word comes after its own begin (some exports give two lines one
+        // begin) takes over at that word, so it never replaces a line still being sung with a
+        // silent one.
+        let openings = groups.enumerated().map { index, group in
+            let first = (group.main.words.map(\.range.start) + (group.background?.words.map(\.range.start) ?? [])).min()
+            return max(ranges[index].start, first ?? ranges[index].start)
         }
-        words = groups.map { $0.main.words.map { ($0.range.start, $0.range.end) } }
+        var switches = openings.enumerated().map { index, opening in
+            guard let timing, timing.enabled, index > 0 else { return opening }
+            let gap = opening - ranges[index - 1].end
+            let near = gap <= timing.nearSwitchGap
+            let leadInStart = max(0, opening - (near ? timing.leadIn : 1))
+            // A switch never moves before the previous line's own start.
+            return max(openings[index - 1], near ? leadInStart : max(ranges[index - 1].end, leadInStart))
+        }
+        // Kept in order for the binary search.
+        for index in switches.indices.dropFirst() { switches[index] = max(switches[index], switches[index - 1]) }
+        starts = switches
+        words = groups.map { $0.main.words.map { ($0.range.start, $0.range.end, Self.isBlank($0.text)) } }
         songParts = groups.map { $0.main.songPart ?? "" }
         cacheTime = .nan
         cacheIndex = -1
@@ -361,6 +373,22 @@ final class SkinLyricsTimeline {
         }
         return spread
     }
+
+    /// Text between two timed spans (often a single space) arrives as a word carrying the whole
+    /// line's time, so it would count as sung from the line's first moment. It takes the gap
+    /// between its neighbours instead.
+    static func timingSpaces(_ line: LyricLine) -> LyricLine {
+        guard line.words.count > 1, line.words.contains(where: { isBlank($0.text) }) else { return line }
+        var timed = line
+        for index in timed.words.indices where isBlank(timed.words[index].text) {
+            let start = index > 0 ? timed.words[index - 1].range.end : line.range.start
+            let next = timed.words[(index + 1)...].first { !isBlank($0.text) }?.range.start ?? line.range.end
+            timed.words[index].range = LyricRange(start, max(start, next))
+        }
+        return timed
+    }
+
+    static func isBlank(_ text: String) -> Bool { text.allSatisfy(\.isWhitespace) }
 
     private static func isCJK(_ character: Character) -> Bool {
         character.unicodeScalars.contains { (0x2E80...0x9FFF).contains($0.value) || (0xAC00...0xD7AF).contains($0.value) || (0xF900...0xFAFF).contains($0.value) }
@@ -490,7 +518,8 @@ final class SkinLyricsTimeline {
         case "lyrics.wordIndex", "lyrics.wordProgress":
             guard words.indices.contains(index) else { return .number(key == "lyrics.wordIndex" ? -1 : 0) }
             let lineWords = words[index]
-            let wordIndex = (lineWords.lastIndex { $0.start <= time }) ?? -1
+            // Spaces are never sung, so the current word is the last sung word before them.
+            let wordIndex = (lineWords.lastIndex { !$0.blank && $0.start <= time }) ?? -1
             if key == "lyrics.wordIndex" { return .number(Double(wordIndex)) }
             guard lineWords.indices.contains(wordIndex) else { return .number(0) }
             let word = lineWords[wordIndex]
@@ -516,18 +545,13 @@ final class SkinLyricsTimeline {
 
 // MARK: - Audio
 
-/// A lease on the shared analysis Hub and LED provider. The scene holds at most one, only
-/// while a visible node reads audio and local playback is running. External sources report
-/// that no PCM is available rather than inventing data.
+/// The scene's latest analysis frame. The host feeds it while a visible node reads audio and
+/// local playback is running; external sources report that no PCM is available.
 @MainActor
 final class SkinSceneAudio {
     enum Availability: String { case inactive, localAudio, externalAudioUnavailable }
 
-    private(set) var availability = Availability.inactive
-    private var consumerID: UUID?
-    private var ledConsumerID: UUID?
-    private var provider: LEDMeterServiceProvider?
-    private var generation: UInt64 = 0
+    var availability = Availability.inactive
 
     private var magnitudes: [Float] = []
     private var pcm: [Float] = []
@@ -549,59 +573,26 @@ final class SkinSceneAudio {
         "audio.vocal": (1000, 3500), "audio.treble": (3500, 16_000),
     ]
 
-    func update(provider: LEDMeterServiceProvider, source: PlaybackSource, active: Bool, isPlaying: Bool, usesLED: Bool) {
-        let next: Availability = !active ? .inactive : (source != .local ? .externalAudioUnavailable : (isPlaying ? .localAudio : .inactive))
-        let keepsPausedFrame = active && source == .local && !isPlaying
-        guard next != availability || (next == .localAudio && usesLED != (ledConsumerID != nil)) else { return }
-        release(clear: !keepsPausedFrame)
-        availability = next
-        guard next == .localAudio else { return }
-        self.provider = provider
-        provider.acquireSession()
-        let expected = generation
-        consumerID = AudioAnalysisHub.shared.addConsumer { [weak self] frame in
-            Task { @MainActor [weak self] in
-                guard let self, self.generation == expected, self.availability == .localAudio else { return }
-                self.receive(frame)
-            }
-        }
-        if usesLED {
-            ledConsumerID = provider.addFrameConsumer { [weak self] metrics, _ in
-                guard let self, self.generation == expected else { return }
-                self.ledLevel = Double(metrics.level)
-                self.leds = metrics.leds.map(Double.init)
-            }
-        }
+    func clear() {
+        magnitudes = []; pcm = []
+        rms = 0; peak = 0; fastRMS = 0; fastPeak = 0; ledLevel = 0; leds = []
     }
 
-    func stop() {
-        release(clear: true)
-        availability = .inactive
-    }
-
-    private func release(clear: Bool) {
-        generation &+= 1
-        if let consumerID { AudioAnalysisHub.shared.removeConsumer(consumerID) }
-        if let ledConsumerID { provider?.removeFrameConsumer(ledConsumerID) }
-        consumerID = nil
-        ledConsumerID = nil
-        provider?.releaseSession()
-        provider = nil
-        if clear {
-            magnitudes = []; pcm = []
-            rms = 0; peak = 0; fastRMS = 0; fastPeak = 0; ledLevel = 0; leds = []
-        }
-    }
-
-    /// Preview hosts feed synthetic frames through the same path.
-    func receive(_ frame: AudioAnalysisData) {
+    /// `magnitudes` are FFT power bins of `fftSize`, `pcm` the analysis window in −1…1.
+    func receive(magnitudes: [Float], pcm: [Float], sampleRate: Double, fftSize: Int,
+                 rms: Double, peak: Double, fastRMS: Double, fastPeak: Double) {
         timestamp = Date.timeIntervalSinceReferenceDate
-        magnitudes = frame.magnitudes
-        pcm = frame.pcmSamples
-        sampleRate = Double(frame.sampleRate)
-        fftSize = frame.fftSize
-        rms = Double(frame.rms); peak = Double(frame.peak)
-        fastRMS = Double(frame.fastRMS); fastPeak = Double(frame.fastPeak)
+        self.magnitudes = magnitudes
+        self.pcm = pcm
+        self.sampleRate = sampleRate
+        self.fftSize = fftSize
+        self.rms = rms; self.peak = peak
+        self.fastRMS = fastRMS; self.fastPeak = fastPeak
+    }
+
+    func receiveMeter(level: Double, leds: [Double]) {
+        ledLevel = level
+        self.leds = leds
     }
 
     func receiveSynthetic(magnitudes: [Float], pcm: [Float], level: Double) {
@@ -720,6 +711,7 @@ enum SkinHostCapabilities {
         "shader@1", "particles@1", "video@1", "fonts@1", "animation@1", "keyframes@1",
         "state@1", "events@1", "gestures@1", "actions@1", "components@1", "templates@1",
         "audio.spectrum@1", "lyrics.native@1", "glyphMotion@1", "fog@1", "camera@1", "stroke@1",
+        "scripts@1", "comet@1", "render.gpu@1", "filters.lut@1", "filters.bokeh@1", "filters.fov@1",
     ]
 
     static var all: Set<String> {

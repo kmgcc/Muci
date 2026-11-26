@@ -1,0 +1,70 @@
+{
+  "type": "shape",
+  "id": "latch",
+  "opacity": 0,
+  "hitTesting": false,
+  "frame": { "x": 0, "y": 0, "width": 1, "height": 1 },
+  "watch": [
+    {
+      "value": "=(track.id + '') + '|' + str(lyrics.currentIndex) + '|' + (lyrics.current.text ?? '')",
+      "initial": true,
+      "do": [
+        {
+          "do": "state.set", "key": "line",
+          "value": "=script('nextLine', state.line, { index: lyrics.currentIndex, line: lyrics.current, next: lyrics.next, before: lyrics.previous, after: lyrics.upcoming[1], duet: lyrics.hasDuet, now: clock.lyrics, track: track.id + '', title: track.title ?? '', duration: track.duration ?? 0, width: viewport.width, height: viewport.height, min: viewport.min, translate: lyrics.prefs.showTranslation, hidden: !host.lyricsVisible, fonts: { latin: let.fontLatin, cjk: let.fontCJK, weight: let.fontWeight, tr: let.fontCaption, trw: let.fontCaptionWeight, trk: let.captionK }, params: { size: let.size, font: params.font, layout: params.layout, accent: let.accentEnergy, comets: params.comets, bounce: params.bounce, entry: let.entryTime, entryMin: let.entryMin, spinChance: params.spinChance, spinAngle: params.spinAngle, defocus: params.defocus } }) ?? state.line"
+        },
+        { "do": "state.set", "key": "slots", "value": "=script('placeSlots', { slots: state.slots, line: state.line }) ?? state.slots" }
+      ]
+    },
+    {
+      "value": "=str(state.line.index) + '|' + str(let.wordIndex)",
+      "initial": true,
+      "do": [
+        { "do": "state.set", "key": "word", "value": "=state.line.items[let.wordIndex] ?? { x: 0, y: 0, w: 0, h: 0 }" }
+      ]
+    },
+    {
+      "value": "=str(let.inGap) + '|' + str(state.line.index) + '|' + str(let.gapTurn)",
+      "initial": true,
+      "do": [
+        { "do": "state.set", "key": "gap", "value": "=script('nextInterlude', state.gap, { on: let.inGap, now: clock.lyrics, start: (lyrics.current.end ?? clock.lyrics) + (isNull(lyrics.next) ? 3 : 0), left: isNull(lyrics.next) ? ((track.duration ?? 0) > 0 ? clock.remaining - 12 : 100000) : lyrics.next.start - clock.lyrics, title: track.title ?? '' }) ?? state.gap" }
+      ]
+    },
+    {
+      "value": "=let.lyricsDone",
+      "initial": true,
+      "do": [
+        { "do": "state.set", "key": "lyricsDone", "value": "=let.lyricsDone ? 1 : 0" }
+      ]
+    },
+    {
+      "value": "=let.stageHidden",
+      "initial": true,
+      "do": [
+        { "do": "state.set", "key": "stageHidden", "value": "=let.stageHidden ? 1 : 0" }
+      ]
+    },
+    {
+      "value": "=host.detailVisible",
+      "do": [
+        { "do": "state.set", "key": "infoScroll", "value": 0 },
+        { "do": "state.set", "key": "infoScrollX", "value": 0 },
+        { "do": "state.set", "key": "infoZoom", "value": 1 },
+        { "do": "state.set", "key": "infoCloseHover", "value": 0 },
+        { "do": "state.set", "key": "infoBg", "value": "={x: let.camScrollX, y: let.camScrollY, zoom: let.lyricsShown ? let.camLineZoom : 1}", "when": "=host.detailVisible" }
+      ]
+    },
+    {
+      "value": "=host.detailVisible ? (host.detail.title ?? '') + '|' + (host.detail.text ?? '') + '|' + (host.detail.note ?? '') : ''",
+      "do": [
+        { "do": "state.set", "key": "infoDoc", "value": "=host.detail", "when": "=host.detailVisible" }
+      ]
+    },
+    {
+      "value": "=!host.detailVisible && let.infoK < 0.02",
+      "do": [
+        { "do": "state.set", "key": "infoDoc", "value": "={}", "when": "=!host.detailVisible && let.infoK < 0.02" }
+      ]
+    }
+  ]
+}

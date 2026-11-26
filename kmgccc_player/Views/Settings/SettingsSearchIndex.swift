@@ -121,7 +121,7 @@ nonisolated enum SettingsSearchIndex {
             ("托盘播放进度", "Dock 图标 进度"), ("自动更新", "检查更新 update")
         ])
         add(.general, nil, nil, "general.privacy", [
-            ("帮助改进 kmgccc_player", "数据共享 匿名统计 遥测"),
+            ("帮助改进 Muci", "数据共享 匿名统计 遥测"),
             ("自动发送崩溃报告", "数据共享 隐私 错误报告")
         ])
         add(.appearance, nil, nil, "appearance.general", [
@@ -137,7 +137,7 @@ nonisolated enum SettingsSearchIndex {
         for category in [SettingsCategory.nowPlaying, .fullscreen] {
             add(category, 0, "皮肤", "skin.select", [("选择外观", "皮肤 主题 自定义 导入")])
             add(category, 1, "歌词", "lyrics.appearance", [
-                ("歌词渲染质量", "清晰度 性能"), ("减弱高亮", "逐字 扫光")
+                ("歌词与皮肤渲染质量", "清晰度 性能 皮肤 特效"), ("减弱高亮", "逐字 扫光")
             ])
             add(category, 1, "歌词", "lyrics.spring", [
                 ("滚动弹性", "歌词 动画 持续时间 反弹")

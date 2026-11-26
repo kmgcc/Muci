@@ -8,7 +8,6 @@
 import SwiftUI
 
 /// A reusable capsule-style picker with buttons inside a capsule container.
-/// Matches the Liquid Glass aesthetic used throughout the app.
 /// Positions setting label on the left and options right-aligned on the right.
 struct CapsulePicker<Option: Hashable, Value: Hashable>: View {
     let label: String
@@ -20,8 +19,7 @@ struct CapsulePicker<Option: Hashable, Value: Hashable>: View {
     /// Supplementary note shown from an info mark beside the label.
     var info: String? = nil
 
-    @EnvironmentObject private var themeStore: ThemeStore
-    @Environment(\.settingsAppForegroundColors) private var appColors
+    @Environment(\.fullscreenSettingsPresentationStyle) private var presentationStyle
 
     /// Initializer for Identifiable options where selection is Option.ID
     init(
@@ -59,44 +57,21 @@ struct CapsulePicker<Option: Hashable, Value: Hashable>: View {
         self.info = info
     }
 
-    private var resolvedAccentColor: Color {
-        accentColor ?? themeStore.accentColor
-    }
-
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: presentationStyle.compactInlineSpacing) {
             Text(label)
                 .settingsRowLabelStyle()
                 .settingsInfoHint(info)
 
             Spacer()
 
-            SlidingSelector(
-                segments: options.map(optionID),
+            SettingsCapsuleSelector(
+                options: options.map(optionID),
                 selection: $selection,
-                hSpacing: 0,
-                background: {
-                    Color.clear
-                },
-                knob: {
-                    Capsule()
-                        .fill(resolvedAccentColor.opacity(0.18))
-                },
-                content: { id, isSelected in
-                    let title = options.first(where: { optionID($0) == id }).map(displayName) ?? ""
-                    Text(title)
-                        .font(.system(size: 11, weight: isSelected ? .medium : .regular))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
-                        .foregroundStyle(isSelected ? resolvedAccentColor : (appColors?.secondary ?? .secondary))
-                }
-            )
-            .padding(3)
-            .background(
-                Capsule()
-                    .fill((appColors?.secondary ?? .secondary).opacity(0.08))
-            )
-            .fixedSize(horizontal: true, vertical: false)
+                accentColor: accentColor
+            ) { id in
+                options.first(where: { optionID($0) == id }).map(displayName) ?? ""
+            }
         }
     }
 }

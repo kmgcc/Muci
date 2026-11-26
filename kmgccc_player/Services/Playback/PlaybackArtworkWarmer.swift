@@ -87,13 +87,22 @@ final class PlaybackArtworkWarmer {
             }
         }
 
+        // Capture only plain inputs here. Probing artwork files and hashing
+        // inline artwork for the source keys happens in the scheduled work,
+        // off the main actor, so a track switch never waits on them.
         var seen = Set<UUID>()
-        let sources = targets.compactMap { track -> TrackArtworkSource? in
+        let sourceInputs = targets.compactMap { track -> PlaybackArtworkWarmSourceInput? in
             guard seen.insert(track.id).inserted else { return nil }
             let fallbackData = track.id == currentTrack.id
                 ? presentation.artworkData
                 : nil
-            return track.trackArtworkSource(fallbackData: fallbackData)
+            return PlaybackArtworkWarmSourceInput(
+                trackID: track.id,
+                artworkFileName: track.artworkFileName,
+                candidateURLs: track.artworkFileCandidateURLs,
+                fallbackData: fallbackData,
+                storedArtworkData: track.artworkData
+            )
         }
 
         // The display queue is already in the shuffle session's actual order.
@@ -108,7 +117,7 @@ final class PlaybackArtworkWarmer {
             }
         }
 
-        guard !sources.isEmpty || !motionResources.isEmpty else {
+        guard !sourceInputs.isEmpty || !motionResources.isEmpty else {
             handle?.cancel()
             handle = nil
             signature = nil
@@ -116,7 +125,7 @@ final class PlaybackArtworkWarmer {
         }
 
         let motionSignature = motionResources.map { "\($0.url.absoluteString):\($0.startTime):\($0.duration)" }
-        let nextSignature = (sources.map(\.sourceKey) + motionSignature).joined(separator: "||")
+        let nextSignature = (sourceInputs.map(\.signature) + motionSignature).joined(separator: "||")
         guard nextSignature != signature else { return }
 
         signature = nextSignature
@@ -130,6 +139,9 @@ final class PlaybackArtworkWarmer {
             priority: .upcoming,
             resources: [.compute, .disk]
         ) { context in
+            let sources = await Task.detached(priority: .utility) {
+                sourceInputs.compactMap { $0.makeSource() }
+            }.value
             await artworkCache.warmPlaybackArtwork(
                 for: Array(sources.prefix(1)),
                 reason: "playback-current-window",
@@ -152,5 +164,40 @@ final class PlaybackArtworkWarmer {
         handle = nil
         signature = nil
         presentationSignature = nil
+    }
+}
+
+/// Main-actor snapshot of what `Track.trackArtworkSource(fallbackData:)`
+/// reads, so the file probe and inline-artwork hash can run elsewhere.
+private nonisolated struct PlaybackArtworkWarmSourceInput: Sendable {
+    let trackID: UUID
+    let artworkFileName: String?
+    let candidateURLs: [URL]
+    let fallbackData: Data?
+    let storedArtworkData: Data?
+
+    /// Cheap dedupe key; the full source key needs the file probe.
+    var signature: String {
+        [
+            trackID.uuidString,
+            artworkFileName ?? "-",
+            candidateURLs.first?.path ?? "-",
+            ArtworkDataFingerprint.sampledString(for: fallbackData),
+            ArtworkDataFingerprint.sampledString(for: storedArtworkData),
+        ].joined(separator: "|")
+    }
+
+    func makeSource() -> TrackArtworkSource? {
+        let snapshot = TrackArtworkFileSnapshot.read(from: candidateURLs)
+        let artworkFileURL = snapshot?.url
+        let inlineArtworkData = fallbackData.flatMap { $0.isEmpty ? nil : $0 }
+            ?? (artworkFileURL == nil ? storedArtworkData : nil)
+        return TrackArtworkSource(
+            trackID: trackID,
+            artworkFileName: artworkFileName,
+            artworkFileURL: artworkFileURL,
+            inlineArtworkData: inlineArtworkData,
+            artworkFileSnapshot: snapshot
+        )
     }
 }

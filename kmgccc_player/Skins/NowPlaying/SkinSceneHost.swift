@@ -41,6 +41,26 @@ struct SkinSceneSwitchTransition: ViewModifier {
     }
 }
 
+/// The play queue over a skin scene, coloured by the skin's control foreground as the fullscreen
+/// queue is; chrome skins keep the App's own colours.
+struct SkinSceneQueuePanel: View {
+    @Environment(\.skinScenePresentation) private var presentation
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(UIStateViewModel.self) private var uiState
+    @EnvironmentObject private var themeStore: ThemeStore
+
+    var body: some View {
+        let style = presentation.controlForeground
+        let foreground = style == .chrome ? nil : FullscreenMiniPlayerForegroundStrategy.resolveOverlaySurface(
+            palette: themeStore.semanticPalette, localArtworkPolarity: nil,
+            controlForeground: style, colorScheme: colorScheme
+        )
+        WindowPlaybackQueuePanelView(foreground: foreground)
+            .environment(\.colorScheme, foreground?.colorScheme ?? colorScheme)
+            .background { if uiState.isWindowPlaybackQueueVisible { SkinScrollYieldRegion() } }
+    }
+}
+
 /// Authors own content; the host owns the single native surface and recovery affordances.
 struct SkinSceneHost: View {
     let skin: any NowPlayingSkin
@@ -57,6 +77,8 @@ struct SkinSceneHost: View {
     @Environment(UIStateViewModel.self) private var uiState
     @Environment(\.motionArtworkFullscreenCoordinator) private var motionFullscreen
     @AppStorage(AppSettings.motionArtworkEnabledDefaultsKey) private var motionArtworkEnabled = true
+    /// The render quality setting the lyrics share; it sets the scene's offscreen resolution.
+    @AppStorage("amllLyricsRenderQuality") private var renderQuality: String = "medium"
     @ObservedObject private var fullscreen = FullscreenWindowManager.shared
     @State private var lyricsConfiguration: SkinComponentConfiguration?
     @State private var reloadError: String?
@@ -80,7 +102,10 @@ struct SkinSceneHost: View {
         SkinSceneControlHost(
             surface: viewport.surface, lyricsVisible: viewport.surface == .fullscreen ? lyricsVisible : uiState.skinSceneLyricsVisible,
             onExit: exit, onRestore: onRestore, onReload: reload,
-            onToggleLyrics: toggleLyrics, controlForeground: skin.descriptor.presentation.controlForeground
+            onToggleLyrics: toggleLyrics, controlForeground: skin.descriptor.presentation.controlForeground,
+            panelPlacement: skin.descriptor.presentation.panelPlacement,
+            trackDetailPresentation: skin.descriptor.presentation.trackDetail,
+            scrollVolume: skin.descriptor.presentation.scrollVolume
         ) {
           ZStack(alignment: .topLeading) {
             if isActive {
@@ -91,6 +116,7 @@ struct SkinSceneHost: View {
                             skinManager.catalog.parameters.set(skinID: skin.id, surface: viewport.surface, definition: definition, value: value)
                         }
                     }
+                    .environment(\.skinRenderScale, AppSettings.AMLLLyricsRenderQuality(rawValue: renderQuality)?.renderScale ?? 0.75)
                     .frame(width: viewport.size.width, height: viewport.size.height)
                     .id(skin.id)
                     .onPreferenceChange(SkinSceneControlsKey.self) { sceneDrawsQueue = $0.contains(.queue) }
@@ -105,11 +131,29 @@ struct SkinSceneHost: View {
             )
 
             if uiState.isWindowPlaybackQueueVisible && isActive && !sceneDrawsQueue {
-                WindowPlaybackQueuePanelView()
+                SkinSceneQueuePanel()
                     .frame(width: min(viewport.size.width, 620), height: viewport.size.height)
                     .frame(maxWidth: .infinity, alignment: .trailing)
                     .skinControlRegion()
             }
+          }
+          // Inside the control host, so the items reach its sheets and the scene's actions.
+          .contentShape(Rectangle())
+          .contextMenuWithVisibleIcons {
+              SkinSceneTrackMenuItems()
+              if let videoFullscreenAction {
+                  Divider()
+                  Button("全屏播放", action: videoFullscreenAction)
+              }
+              if viewport.surface == .fullscreen {
+                  Divider()
+                  SkinSceneQuickAppearanceMenuItem()
+              }
+              if SkinRegistry.customizationEnabled {
+                  Divider()
+                  Button("刷新皮肤", action: reload)
+                  Button("恢复默认皮肤", action: onRestore)
+              }
           }
         }
         .environment(\.skinSceneSurface, viewport.surface)
@@ -119,20 +163,11 @@ struct SkinSceneHost: View {
         .environment(\.skinSceneLyricsVisible, lyricsVisible && (viewport.surface == .fullscreen || uiState.skinSceneLyricsVisible))
         .environment(\.skinSceneIsActive, isActive)
         .environment(\.skinSceneSession, session)
+        .environment(\.skinSceneHost, SkinSceneAppHost())
         .environment(\.skinPackageResources, resourceDirectory)
         .environment(\.skinPackageFonts, (skin as? PackagedSkin)?.manifest.fonts ?? [])
         .onPreferenceChange(SkinLyricsSlotKey.self) { configuration in
             lyricsConfiguration = configuration
-        }
-        .contentShape(Rectangle())
-        .contextMenuWithVisibleIcons {
-            if let videoFullscreenAction {
-                Button("全屏播放", action: videoFullscreenAction)
-            }
-            if SkinRegistry.customizationEnabled {
-                Button("刷新皮肤", action: reload)
-                Button("恢复外观", action: onRestore)
-            }
         }
         .alert("皮肤包", isPresented: Binding(get: { reloadError != nil }, set: { if !$0 { reloadError = nil } })) {
             Button("好", role: .cancel) { reloadError = nil }
@@ -168,12 +203,7 @@ struct SkinSceneHost: View {
     }
 
     private var resourceDirectory: URL? {
-        guard let skin = skin as? PackagedSkin else { return nil }
-        switch skin.origin {
-        case .bundled: return Bundle.main.resourceURL
-        case .installed(let url): return url
-        case .development(let url): return url
-        }
+        (skin as? PackagedSkin)?.origin.resourceRoot
     }
 
     private func reload() {
@@ -192,6 +222,15 @@ struct SkinSceneHost: View {
         case .systemFullscreenSpace: fullscreen.closeFullscreenWindow()
         case .embeddedInWindow: fullscreen.closeFullscreenPlayerInWindow()
         case .none: break
+        }
+    }
+}
+
+private struct SkinSceneQuickAppearanceMenuItem: View {
+    @Environment(\.skinSceneActions) private var actions
+    var body: some View {
+        Button(action: actions.openQuickPanel) {
+            Label("快速外观", systemImage: "slider.horizontal.3")
         }
     }
 }

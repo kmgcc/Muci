@@ -15,7 +15,7 @@ final class LibraryLifecycleTransactionTests: XCTestCase {
             displayName: "Music"
         )
         guard case .created(let context, _) = result else { return XCTFail("Expected creation") }
-        XCTAssertEqual(context.rootURL.lastPathComponent, "kmgccc_player Library - Music")
+        XCTAssertEqual(context.rootURL.lastPathComponent, "Muci Library - Music")
         XCTAssertTrue(FileManager.default.fileExists(atPath: context.paths.librarySettingsURL.path))
         XCTAssertEqual(fixture.controller.activeLibraryContext?.id, context.id)
         let registry = await fixture.registry.snapshot()
@@ -26,7 +26,7 @@ final class LibraryLifecycleTransactionTests: XCTestCase {
         let fixture = try Fixture()
         defer { fixture.cleanup() }
         let parent = fixture.root.appendingPathComponent("parent")
-        let destination = parent.appendingPathComponent("kmgccc_player Library - Music")
+        let destination = parent.appendingPathComponent("Muci Library - Music")
         try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
         try Data("foreign".utf8).write(to: destination.appendingPathComponent("keep.txt"))
 
@@ -81,7 +81,7 @@ final class LibraryLifecycleTransactionTests: XCTestCase {
         XCTAssertEqual(opened.id, original.id)
         XCTAssertFalse(
             FileManager.default.fileExists(
-                atPath: selectedRoot.appendingPathComponent("kmgccc_player Library - Should Not Nest").path
+                atPath: selectedRoot.appendingPathComponent("Muci Library - Should Not Nest").path
             )
         )
         XCTAssertEqual(
@@ -90,16 +90,61 @@ final class LibraryLifecycleTransactionTests: XCTestCase {
         )
     }
 
+    func testInvalidLegacyRootDoesNotHideValidMuciRoot() async throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        let parent = fixture.root.appendingPathComponent("Music")
+        let legacyRoot = parent.appendingPathComponent(LibraryPaths.legacyRootDirectoryName)
+        let currentRoot = parent.appendingPathComponent(LibraryPaths.rootDirectoryName)
+        _ = try fixture.makeLibrary(at: legacyRoot, mode: .referenced)
+        let invalidManifest = LibraryPaths(rootURL: legacyRoot).manifestURL
+        try Data("invalid".utf8).write(to: invalidManifest)
+        let current = try fixture.makeLibrary(at: currentRoot, mode: .managed)
+
+        XCTAssertEqual(LibraryLocationStore.existingFactoryDefaultRoot(in: [legacyRoot, currentRoot]), currentRoot)
+        let opened = try await fixture.openService.open(selectedURL: parent)
+        XCTAssertEqual(opened.context.id, current.libraryID)
+        XCTAssertEqual(try Data(contentsOf: invalidManifest), Data("invalid".utf8))
+    }
+
+    func testOfflineRegisteredLibraryDoesNotPermitAutomaticEmptyLibrary() async throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        let root = fixture.root.appendingPathComponent("external")
+        let manifest = try fixture.makeLibrary(at: root, mode: .managed)
+        _ = try await fixture.openService.open(selectedURL: root)
+        try FileManager.default.removeItem(at: root)
+
+        let resolution = await LibraryStartupContextResolver(
+            registryStore: fixture.registry,
+            bookmarkResolver: fixture.bookmarks
+        ).resolve()
+        guard case .unavailable = resolution else { return XCTFail("Expected the reconnect path") }
+        var registry = await fixture.registry.snapshot()
+        XCTAssertEqual(registry.activeLibraryID, manifest.libraryID)
+        XCTAssertFalse(LibraryStartupFailurePolicy.permitsFactoryDefaultCreation(in: registry))
+        registry.pendingFactoryDefaultReplacement = true
+        XCTAssertTrue(LibraryStartupFailurePolicy.permitsFactoryDefaultCreation(in: registry))
+        XCTAssertTrue(LibraryStartupFailurePolicy.permitsFactoryDefaultCreation(in: MusicLibraryRegistry()))
+    }
+
     func testCreationInLegacyDefaultParentKeepsExistingLibraryUnchanged() async throws {
         let fixture = try Fixture()
         defer { fixture.cleanup() }
         let parent = fixture.root.appendingPathComponent("Music")
-        let legacyRoot = parent.appendingPathComponent(LibraryPaths.rootDirectoryName)
+        let legacyRoot = parent.appendingPathComponent(LibraryPaths.legacyRootDirectoryName)
         let legacy = try fixture.makeLibrary(at: legacyRoot, mode: .referenced, displayName: "旧资料库")
         let legacyPaths = LibraryPaths(rootURL: legacyRoot)
         let manifestBefore = try Data(contentsOf: legacyPaths.manifestURL)
         let settingsBefore = try Data(contentsOf: legacyPaths.librarySettingsURL)
-        _ = try await fixture.openService.open(selectedURL: parent)
+        let currentRoot = parent.appendingPathComponent(LibraryPaths.rootDirectoryName, isDirectory: true)
+        let current = try fixture.makeLibrary(at: currentRoot, mode: .managed)
+        XCTAssertEqual(LibraryLocationStore.existingFactoryDefaultRoot(in: [legacyRoot, currentRoot]), legacyRoot)
+        let adopted = try await fixture.openService.open(selectedURL: parent)
+        XCTAssertEqual(adopted.context.id, legacy.libraryID)
+        XCTAssertEqual(adopted.context.rootURL.path, legacyRoot.path)
+        let openedCurrent = try await fixture.openService.open(selectedURL: currentRoot)
+        XCTAssertEqual(openedCurrent.context.id, current.libraryID)
 
         var createdIDs: [UUID] = []
         for (name, mode) in [("古典", MusicLibraryMode.managed), ("爵士", .referenced)] {
@@ -110,7 +155,7 @@ final class LibraryLifecycleTransactionTests: XCTestCase {
                 allowAlternateDestinationWhenOccupied: true
             )
             guard case .created(let context, _) = result else { return XCTFail("Expected a new sibling") }
-            XCTAssertEqual(context.rootURL.lastPathComponent, "kmgccc_player Library - \(name)")
+            XCTAssertEqual(context.rootURL.lastPathComponent, "Muci Library - \(name)")
             XCTAssertEqual(context.rootURL.deletingLastPathComponent().path, parent.standardizedFileURL.path)
             createdIDs.append(context.id)
         }
@@ -123,7 +168,7 @@ final class LibraryLifecycleTransactionTests: XCTestCase {
         XCTAssertEqual(reopened.context.id, legacy.libraryID)
         XCTAssertEqual(reopened.context.rootURL.path, legacyRoot.standardizedFileURL.path)
         let registry = await fixture.registry.snapshot()
-        XCTAssertEqual(registry.libraries.count, 3)
+        XCTAssertEqual(registry.libraries.count, 4)
     }
 
     func testFirstRunCreationCanReuseDefaultParentAndNameInEitherMode() async throws {
@@ -149,7 +194,7 @@ final class LibraryLifecycleTransactionTests: XCTestCase {
                 allowAlternateDestinationWhenOccupied: true
             )
             guard case .created(let context, _) = result else { return XCTFail("Expected a numbered sibling") }
-            XCTAssertEqual(context.rootURL.lastPathComponent, "kmgccc_player Library - 音乐资料库 \(index + 2)")
+            XCTAssertEqual(context.rootURL.lastPathComponent, "Muci Library - 音乐资料库 \(index + 2)")
             XCTAssertNotEqual(context.id, original.id)
             XCTAssertEqual(context.mode, mode)
             XCTAssertEqual(fixture.controller.activeLibraryContext?.id, context.id)
@@ -165,12 +210,12 @@ final class LibraryLifecycleTransactionTests: XCTestCase {
         let fixture = try Fixture()
         defer { fixture.cleanup() }
         let parent = fixture.root.appendingPathComponent("parent")
-        let occupied = parent.appendingPathComponent("kmgccc_player Library - Music")
+        let occupied = parent.appendingPathComponent("Muci Library - Music")
         try FileManager.default.createDirectory(at: occupied, withIntermediateDirectories: true)
         let manifest = kmgccc_player.MusicLibraryManifest(displayName: "Existing", mode: .referenced)
         try manifest.write(to: LibraryPaths(rootURL: occupied).manifestURL)
         let manifestBefore = try Data(contentsOf: LibraryPaths(rootURL: occupied).manifestURL)
-        let unknown = parent.appendingPathComponent("kmgccc_player Library - Music 2")
+        let unknown = parent.appendingPathComponent("Muci Library - Music 2")
         try FileManager.default.createDirectory(at: unknown, withIntermediateDirectories: true)
         let sentinel = unknown.appendingPathComponent("keep.txt")
         try Data("foreign".utf8).write(to: sentinel)
@@ -182,7 +227,7 @@ final class LibraryLifecycleTransactionTests: XCTestCase {
             allowAlternateDestinationWhenOccupied: true
         )
         guard case .created(let context, _) = result else { return XCTFail("Expected an available sibling") }
-        XCTAssertEqual(context.rootURL.lastPathComponent, "kmgccc_player Library - Music 3")
+        XCTAssertEqual(context.rootURL.lastPathComponent, "Muci Library - Music 3")
         XCTAssertEqual(try Data(contentsOf: LibraryPaths(rootURL: occupied).manifestURL), manifestBefore)
         XCTAssertFalse(FileManager.default.fileExists(atPath: LibraryPaths(rootURL: occupied).settingsRootURL.path))
         XCTAssertEqual(try Data(contentsOf: sentinel), Data("foreign".utf8))
@@ -199,7 +244,7 @@ final class LibraryLifecycleTransactionTests: XCTestCase {
             displayName: displayName
         )
         guard case .created(let context, _) = result else { return XCTFail() }
-        XCTAssertEqual(context.rootURL.lastPathComponent, "kmgccc_player Library - 古典-现场-精选-收藏-终版")
+        XCTAssertEqual(context.rootURL.lastPathComponent, "Muci Library - 古典-现场-精选-收藏-终版")
         XCTAssertEqual(context.rootURL.deletingLastPathComponent().path, parent.standardizedFileURL.path)
         XCTAssertEqual(
             try MusicLibraryManifest.read(from: context.paths.manifestURL).displayName,
@@ -891,7 +936,7 @@ final class LibraryLifecycleTransactionTests: XCTestCase {
         await XCTAssertThrowsErrorAsync(
             try await fixture.creationService().create(mode: .managed, parentURL: parent, displayName: "New")
         ) { XCTAssertEqual($0 as? LibraryCreationError, .sessionActivationFailed) }
-        XCTAssertTrue(FileManager.default.fileExists(atPath: parent.appendingPathComponent("kmgccc_player Library - New").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: parent.appendingPathComponent("Muci Library - New").path))
         let registry = await fixture.registry.snapshot()
         XCTAssertTrue(registry.libraries.isEmpty)
         XCTAssertNil(fixture.controller.activeLibraryContext)
@@ -901,7 +946,7 @@ final class LibraryLifecycleTransactionTests: XCTestCase {
         let fixture = try Fixture()
         defer { fixture.cleanup() }
         let parent = fixture.root.appendingPathComponent("parent")
-        let destination = parent.appendingPathComponent("kmgccc_player Library - New")
+        let destination = parent.appendingPathComponent("Muci Library - New")
         let replacement = kmgccc_player.MusicLibraryManifest(displayName: "Replacement", mode: .managed)
         fixture.factory.beforeNextMake = { context in
             try replacement.write(to: context.paths.manifestURL)

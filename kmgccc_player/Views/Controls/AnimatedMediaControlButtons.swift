@@ -8,12 +8,16 @@
 //  relay keeps its staged choreography while using the same Apple spring
 //  vocabulary as the other control states.
 //
-//  All motion is driven by SwiftUI system springs and the relay state machine
-//  — no per-frame timers, no display links. Idle cost is zero.
+//  Play/pause motion is driven by SwiftUI system springs; the skip relay runs
+//  as Core Animation keyframes sampled from the same MotionKit springs, so a
+//  busy main thread during the track switch never stops it. No per-frame
+//  timers, no display links. Idle cost is zero.
 //
 
-import SwiftUI
+import AppKit
+import CoreImage
 import MotionKit
+import SwiftUI
 
 // MARK: - Metrics
 
@@ -336,9 +340,10 @@ struct AnimatedPlayPauseButton: View {
 
 // MARK: - Previous / Next
 
-/// Animated previous/next button with a dual-channel ping-pong relay.
-/// The command is handed off after one render opportunity so the first relay
-/// frame is not competing with the track-switching state graph.
+/// Animated previous/next button with a three-arrow relay. The relay and the
+/// press springs are Core Animation animations, which the render server plays
+/// on its own: the track switch a click starts can hold the main thread without
+/// stopping the arrows. The springs are sampled from the same MotionKit specs.
 struct AnimatedSkipButton: View {
     enum Direction {
         case previous
@@ -357,15 +362,7 @@ struct AnimatedSkipButton: View {
     @Environment(\.motionTokens) private var motionTokens
     @Environment(\.motionPolicy) private var configuredMotionPolicy
 
-    @State private var symbolScale: CGFloat = 1
-    @State private var symbolOpacity: CGFloat = 1
-
-    // Dual-channel alternating relay state:
-    // Channel A and Channel B alternate on every click so each animation
-    // runs cleanly from a pristine initial state with zero transaction collisions.
-    @State private var isChannelBActive: Bool = false
-    @State private var channelAProgress: CGFloat = 0.0
-    @State private var channelBProgress: CGFloat = 0.0
+    @State private var relay = SkipRelayController()
 
     init(
         direction: Direction,
@@ -390,95 +387,37 @@ struct AnimatedSkipButton: View {
             hitSize: metrics.hitSize,
             enabled: enabled,
             label: Text(direction == .previous ? "Previous Track" : "Next Track"),
-            content: symbolStage
-                .frame(width: metrics.navSymbolSize, height: metrics.navSymbolSize),
+            content: SkipRelayStage(
+                controller: relay,
+                direction: direction,
+                color: enabled ? color : disabledColor,
+                blendMode: enabled ? blendMode : .normal
+            )
+            .frame(width: metrics.navSymbolSize, height: metrics.navSymbolSize),
             onPress: press,
             onCancel: cancelPress,
             onRelease: release
         )
     }
 
-    // MARK: Symbol stage
-
-    private var symbolStage: some View {
-        ZStack {
-            if isChannelBActive {
-                SingleRelayStage(
-                    progress: channelBProgress,
-                    direction: direction,
-                    metrics: metrics
-                )
-                .transition(.identity)
-            } else {
-                SingleRelayStage(
-                    progress: channelAProgress,
-                    direction: direction,
-                    metrics: metrics
-                )
-                .transition(.identity)
-            }
-        }
-        .scaleEffect(symbolScale)
-        .opacity(symbolOpacity)
-        .foregroundStyle(enabled ? color : disabledColor)
-        .compositingGroup()
-        .blendMode(enabled ? blendMode : .normal)
-    }
-
     // MARK: Gesture phases
 
     private func press() {
-        let targetScale: CGFloat = motionPolicy == .full ? 0.62 : 0.85
-        let targetOpacity: CGFloat = motionPolicy == .full ? 0.88 : 0.9
-        withAnimation(pressAnimation) {
-            symbolScale = targetScale
-            symbolOpacity = targetOpacity
-        }
+        let full = motionPolicy == .full
+        relay.settle(scale: full ? 0.62 : 0.85, opacity: full ? 0.88 : 0.9,
+                     spec: motionTokens[.microInteraction], policy: motionPolicy)
     }
 
     private func cancelPress() {
-        withAnimation(cancelAnimation) {
-            symbolScale = 1
-            symbolOpacity = 1
-        }
+        relay.settle(scale: 1, opacity: 1, spec: cancelSpec, policy: motionPolicy)
     }
 
     private func release() {
-        // 1. Immediate visual spring response on button:
-        withAnimation(releaseAnimation) {
-            symbolScale = 1
-            symbolOpacity = 1
-        }
+        relay.settle(scale: 1, opacity: 1, spec: releaseSpec, policy: motionPolicy)
+        if motionPolicy == .full { relay.run(relaySpec) }
 
-        // 2. Immediate arrow relay on alternate channel:
-        if motionPolicy == .full {
-            if isChannelBActive {
-                // Switching to Channel A:
-                var resetTx = Transaction()
-                resetTx.disablesAnimations = true
-                withTransaction(resetTx) {
-                    channelAProgress = 0.0
-                    isChannelBActive = false
-                }
-                withAnimation(relayAnimation) {
-                    channelAProgress = 1.0
-                }
-            } else {
-                // Switching to Channel B:
-                var resetTx = Transaction()
-                resetTx.disablesAnimations = true
-                withTransaction(resetTx) {
-                    channelBProgress = 0.0
-                    isChannelBActive = true
-                }
-                withAnimation(relayAnimation) {
-                    channelBProgress = 1.0
-                }
-            }
-        }
-
-        // 3. Give the relay one render opportunity before entering the
-        // track-switching pipeline.
+        // The animations above are committed at the end of this turn of the run
+        // loop; the track switch starts after them.
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(16))
             guard !Task.isCancelled else { return }
@@ -492,114 +431,263 @@ struct AnimatedSkipButton: View {
         configuredMotionPolicy.resolving(accessibilityReduceMotion: reduceMotion)
     }
 
-    private var pressAnimation: Animation? {
-        motionPolicy.animation(for: motionTokens[.microInteraction])
+    private var cancelSpec: MotionSpec {
+        motionTokens.phaseSpec(for: .gestureSettle, duration: motionTokens[.gestureSettle].duration, bounce: 0.16)
     }
 
-    private var cancelAnimation: Animation? {
-        motionPolicy.animation(
-            for: motionTokens.phaseSpec(
-                for: .gestureSettle,
-                duration: motionTokens[.gestureSettle].duration,
-                bounce: 0.16
-            )
-        )
-    }
-
-    private var releaseAnimation: Animation? {
-        motionPolicy.animation(
-            for: motionTokens.phaseSpec(
-                for: .emphasis,
-                duration: motionTokens[.emphasis].duration,
-                bounce: 0.40
-            )
-        )
+    private var releaseSpec: MotionSpec {
+        motionTokens.phaseSpec(for: .emphasis, duration: motionTokens[.emphasis].duration, bounce: 0.40)
     }
 
     /// Keeps the relay's deliberate 0.58s visual window while deriving its
-    /// spring behavior and Reduce Motion response from the emphasis token.
-    private var relayAnimation: Animation? {
-        let relaySpec = motionTokens.phaseSpec(
-            for: .emphasis,
-            duration: 0.58,
-            bounce: 0.40
-        )
-        return motionPolicy.animation(for: relaySpec)
+    /// spring behavior from the emphasis token.
+    private var relaySpec: MotionSpec {
+        motionTokens.phaseSpec(for: .emphasis, duration: 0.58, bounce: 0.40)
     }
 }
 
-// MARK: - Single Relay Stage
+// MARK: - Relay layers
 
-/// Renders the three arrows for a single relay run.
-///
-/// Geometric alignment:
-/// - Arrow width on screen is exactly `navSymbolSize * (39.5677 / 134)`.
-/// - Lane separation between arrows is `navSymbolSize * (40 / 134)`.
-/// - The gliding arrow moves from `homeLane` to `awayLane`:
-///     `glidingX = homeLane + progress * (awayLane - homeLane)`
-/// - The standby arrow sits at `homeLane`, anchored at its flat vertical back edge:
-///     `scaleEffect(progress, anchor: backAnchor)`
-/// - Because the anchor is at the flat back edge, the standby arrow's sharp tip
-///   expands forward at `homeLane - halfWidth + progress * arrowWidth`.
-/// - The gliding arrow's flat back edge is at `glidingX - halfWidth = homeLane - halfWidth + progress * lane`.
-///   Since `lane == arrowWidth`, `tip(standby) == back(gliding)` at EVERY frame!
-///   The two triangles are in 100% gap-free contact across the entire animation!
-/// - The exiting arrow shrinks to scale 0 and opacity 0 towards its tip in the first 35% of the duration (~0.2s),
-///   matching the web demo's 0.2s ease-out exit.
-/// - At the end of the animation (`progress == 1`), the gliding arrow settles at `awayLane` (scale 1.0),
-///   the standby arrow settles at `homeLane` (scale 1.0), and the exiting arrow is invisible (scale 0.0).
-private struct SingleRelayStage: View, Animatable {
-    var progress: CGFloat
-    let direction: AnimatedSkipButton.Direction
-    let metrics: AnimatedMediaControlMetrics
+/// Drives one skip button's layers directly, so a click never waits for a
+/// SwiftUI update to start its animations.
+@MainActor
+private final class SkipRelayController {
+    weak var view: SkipRelayNSView?
 
-    var animatableData: CGFloat {
-        get { progress }
-        set { progress = newValue }
+    /// Springs the whole symbol to a press scale and opacity from wherever it is.
+    func settle(scale: CGFloat, opacity: CGFloat, spec: MotionSpec, policy: MotionPolicy) {
+        guard let layer = view?.container else { return }
+        let shown = layer.presentation() ?? layer
+        let fromScale = (shown.value(forKeyPath: "transform.scale") as? NSNumber)?.doubleValue ?? 1
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        MotionLayerAnimator.animate(layer: layer, keyPath: "transform.scale", fromValue: fromScale, toValue: Double(scale),
+                                    spec: spec, policy: policy, animationKey: "press.scale")
+        MotionLayerAnimator.animate(layer: layer, keyPath: "opacity", fromValue: shown.opacity, toValue: Float(opacity),
+                                    spec: spec, policy: policy, animationKey: "press.opacity")
+        CATransaction.commit()
     }
 
-    var body: some View {
-        let lane = metrics.navLaneWidth
+    func run(_ spec: MotionSpec) { view?.relay(spec) }
+}
+
+/// The relay as SwiftUI places it; all motion happens in `SkipRelayNSView`.
+private struct SkipRelayStage: NSViewRepresentable {
+    let controller: SkipRelayController
+    let direction: AnimatedSkipButton.Direction
+    let color: Color
+    let blendMode: BlendMode
+
+    func makeNSView(context: Context) -> SkipRelayNSView {
+        let view = SkipRelayNSView(direction: direction)
+        controller.view = view
+        return view
+    }
+
+    func updateNSView(_ view: SkipRelayNSView, context: Context) {
+        controller.view = view
+        view.direction = direction
+        view.style(color: NSColor(color), blendMode: blendMode,
+                   animated: context.transaction.animation != nil && !context.transaction.disablesAnimations)
+    }
+}
+
+/// Three arrows for the relay.
+///
+/// Geometric alignment, at relay progress `p` (0 when a click starts, 1 at rest):
+/// - Lane separation between arrows is `size * (40 / 134)`, the arrow's own width.
+/// - The gliding arrow moves from `homeLane` to `awayLane`.
+/// - The standby arrow sits at `homeLane` and scales by `p` from its flat back
+///   edge, so its tip always touches the gliding arrow's back edge.
+/// - The exiting arrow shrinks towards its tip and fades in the first 35% of
+///   the motion (~0.2s).
+/// - At `p == 0` and `p == 1` two arrows show in the same two lanes, so each
+///   relay starts where the last one ended.
+private final class SkipRelayNSView: NSView {
+    let container = CALayer()
+    /// Standby, gliding, exiting.
+    private let arrows = [CAShapeLayer(), CAShapeLayer(), CAShapeLayer()]
+    private var color = NSColor.labelColor
+    private var blendMode = BlendMode.normal
+    var direction: AnimatedSkipButton.Direction {
+        didSet { if direction != oldValue { place() } }
+    }
+
+    init(direction: AnimatedSkipButton.Direction) {
+        self.direction = direction
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.addSublayer(container)
+        arrows.forEach(container.addSublayer)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    /// The SwiftUI hit area above owns the pointer.
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        place()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        matchBackingScale()
+    }
+
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        matchBackingScale()
+    }
+
+    /// Sublayers added by hand keep a scale of 1 unless told the screen's.
+    private func matchBackingScale() {
+        let scale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        container.contentsScale = scale
+        arrows.forEach { $0.contentsScale = scale }
+        CATransaction.commit()
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        applyColor(animated: false)
+    }
+
+    func style(color: NSColor, blendMode: BlendMode, animated: Bool) {
+        if color != self.color {
+            self.color = color
+            applyColor(animated: animated)
+        }
+        if blendMode != self.blendMode {
+            self.blendMode = blendMode
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            container.compositingFilter = Self.filter(blendMode)
+            CATransaction.commit()
+        }
+    }
+
+    private func applyColor(animated: Bool) {
+        var resolved: CGColor?
+        effectiveAppearance.performAsCurrentDrawingAppearance { resolved = color.cgColor }
+        CATransaction.begin()
+        CATransaction.setDisableActions(!animated)
+        CATransaction.setAnimationDuration(0.35)
+        arrows.forEach { $0.fillColor = resolved }
+        CATransaction.commit()
+    }
+
+    /// Plays one relay: the MotionKit spring sampled at 120 Hz into keyframes,
+    /// which Core Animation plays without the main thread.
+    func relay(_ spec: MotionSpec) {
+        guard container.bounds.width > 0 else { return }
+        let evaluator = MotionSpringEvaluator(spec: spec)
+        let duration = max(0.05, spec.visualCompletionDelay())
+        let steps = max(2, Int((duration * 120).rounded(.up)))
+        var poses = (0...steps).map { pose(CGFloat(evaluator.normalizedValue(at: duration * Double($0) / Double(steps)))) }
+        poses[steps] = pose(1)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        apply(pose(1))
+        for (index, arrow) in arrows.enumerated() {
+            func add(_ keyPath: String, _ values: [Any]) {
+                let animation = CAKeyframeAnimation(keyPath: keyPath)
+                animation.values = values
+                animation.duration = duration
+                animation.calculationMode = .linear
+                arrow.add(animation, forKey: "relay." + keyPath)
+            }
+            // The outline itself moves and scales, so every frame is drawn from
+            // the vector at full resolution rather than a moved bitmap.
+            add("path", poses.map { outline($0[index], arrow: index) })
+            add("opacity", poses.map { Float($0[index].opacity) })
+        }
+        CATransaction.commit()
+    }
+
+    /// The arrow at rest, centred in the stage.
+    private var basePath = CGMutablePath() as CGPath
+    /// Each arrow's scaling origin as a fraction of the stage's width: the
+    /// standby's flat back edge, the gliding arrow's centre, the exiting arrow's tip.
+    private var anchors: [CGFloat] = [0.35236, 0.5, 0.64764]
+
+    private func place() {
+        let size = min(bounds.width, bounds.height)
+        guard size > 0 else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        container.bounds = CGRect(x: 0, y: 0, width: size, height: size)
+        container.position = CGPoint(x: bounds.midX, y: bounds.midY)
+        basePath = MediaControlSkipArrowSymbol(mirrored: direction == .previous).path(in: container.bounds).cgPath
         let isNext = direction == .next
+        anchors = [isNext ? 0.35236 : 0.64764, 0.5, isNext ? 0.64764 : 0.35236]
+        for arrow in arrows { arrow.frame = container.bounds }
+        apply(pose(1))
+        CATransaction.commit()
+    }
 
-        let homeLane: CGFloat = isNext ? -lane / 2 : lane / 2
-        let awayLane: CGFloat = -homeLane
+    /// The arrow's outline scaled about its anchor and moved to its pose.
+    private func outline(_ pose: ArrowPose, arrow index: Int) -> CGPath {
+        let origin = anchors[index] * container.bounds.width
+        let midY = container.bounds.midY
+        var transform = CGAffineTransform(translationX: pose.x, y: midY)
+            .scaledBy(x: pose.scale, y: pose.scale)
+            .translatedBy(x: -origin, y: -midY)
+        return basePath.copy(using: &transform) ?? basePath
+    }
 
-        // Anchors inside the arrow stage:
-        // Flat vertical back edge is at 0.35236 (or 0.64764 for mirrored).
-        // Sharp tip is at 0.64764 (or 0.35236 for mirrored).
-        let backAnchor = UnitPoint(x: isNext ? 0.35236 : 0.64764, y: 0.5)
-        let tipAnchor = UnitPoint(x: isNext ? 0.64764 : 0.35236, y: 0.5)
+    private typealias ArrowPose = (x: CGFloat, scale: CGFloat, opacity: CGFloat)
 
-        // Gliding arrow: starts at homeLane, glides to awayLane.
-        let glidingX = homeLane + progress * (awayLane - homeLane)
+    private func pose(_ p: CGFloat) -> [ArrowPose] {
+        let size = container.bounds.width
+        let lane = size * (40 / 134)
+        let isNext = direction == .next
+        let home: CGFloat = isNext ? -lane / 2 : lane / 2
+        let away = -home
+        let back: CGFloat = isNext ? 0.35236 : 0.64764
+        let tip: CGFloat = isNext ? 0.64764 : 0.35236
+        let exit = min(1, max(0, p / 0.35))
+        return [
+            (back * size + home, max(0.001, p), min(1, max(0, p * 3))),
+            (size / 2 + home + p * (away - home), 1, 1),
+            (tip * size + away, max(0.001, 1 - exit), 1 - exit)
+        ]
+    }
 
-        // Exiting arrow: shrinks from 1.0 to 0.0 towards tip in first 35% of motion (~200ms).
-        let exitFraction = min(1.0, max(0.0, progress / 0.35))
-        let exitingScale = 1.0 - exitFraction
-        let exitingOpacity = 1.0 - exitFraction
+    private func apply(_ poses: [ArrowPose]) {
+        for (index, arrow) in arrows.enumerated() {
+            arrow.path = outline(poses[index], arrow: index)
+            arrow.opacity = Float(poses[index].opacity)
+        }
+    }
 
-        // Standby arrow: sits at homeLane.
-        // Anchored at flat back edge. Tip stays touching the back edge of the gliding arrow!
-        let standbyScale = max(0.0, progress)
-        let standbyOpacity = min(1.0, progress * 3.0)
-
-        ZStack {
-            // 1. Standby arrow (emerges from behind at homeLane):
-            MediaControlSkipArrowSymbol(mirrored: direction == .previous)
-                .scaleEffect(standbyScale, anchor: backAnchor)
-                .opacity(standbyOpacity)
-                .offset(x: homeLane)
-
-            // 2. Gliding arrow (moves from homeLane to awayLane):
-            MediaControlSkipArrowSymbol(mirrored: direction == .previous)
-                .offset(x: glidingX)
-
-            // 3. Exiting arrow (shrinks away at awayLane):
-            MediaControlSkipArrowSymbol(mirrored: direction == .previous)
-                .scaleEffect(exitingScale, anchor: tipAnchor)
-                .opacity(exitingOpacity)
-                .offset(x: awayLane)
+    /// SwiftUI's blend modes as Core Animation compositing filters.
+    private static func filter(_ mode: BlendMode) -> Any? {
+        switch mode {
+        case .normal: nil
+        case .plusLighter: "plusL"
+        case .plusDarker: "plusD"
+        case .destinationOut: "destOut"
+        case .multiply: CIFilter(name: "CIMultiplyBlendMode")
+        case .screen: CIFilter(name: "CIScreenBlendMode")
+        case .overlay: CIFilter(name: "CIOverlayBlendMode")
+        case .darken: CIFilter(name: "CIDarkenBlendMode")
+        case .lighten: CIFilter(name: "CILightenBlendMode")
+        case .colorDodge: CIFilter(name: "CIColorDodgeBlendMode")
+        case .colorBurn: CIFilter(name: "CIColorBurnBlendMode")
+        case .softLight: CIFilter(name: "CISoftLightBlendMode")
+        case .hardLight: CIFilter(name: "CIHardLightBlendMode")
+        case .difference: CIFilter(name: "CIDifferenceBlendMode")
+        case .exclusion: CIFilter(name: "CIExclusionBlendMode")
+        case .hue: CIFilter(name: "CIHueBlendMode")
+        case .saturation: CIFilter(name: "CISaturationBlendMode")
+        case .color: CIFilter(name: "CIColorBlendMode")
+        case .luminosity: CIFilter(name: "CILuminosityBlendMode")
+        default: nil
         }
     }
 }

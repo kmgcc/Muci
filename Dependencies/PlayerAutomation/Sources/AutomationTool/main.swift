@@ -62,13 +62,7 @@ enum AutomationToolDefaults {
            !override.isEmpty {
             return override
         }
-        let appSupport = FileManager.default.urls(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask
-        ).first ?? URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
-        return appSupport
-            .appendingPathComponent("kmgccc.player", isDirectory: true)
-            .appendingPathComponent("Automation", isDirectory: true)
+        return AutomationSkillInstaller.supportDirectory()
             .appendingPathComponent("automation.sock", isDirectory: false)
             .path
     }
@@ -1652,14 +1646,10 @@ private struct AutomationCLI {
     }
 
     private func launchAppIfNeeded() {
-        let appName = ProcessInfo.processInfo.environment["KMGCCC_PLAYER_APP"] ?? "kmgccc_player"
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-        process.arguments = ["-a", appName]
         do {
-            try process.run()
+            try AutomationAppLauncher.launch()
         } catch {
-            writeDiagnostic("could not launch \(appName): \(error.localizedDescription)")
+            writeDiagnostic("could not launch Muci: \(error.localizedDescription)")
         }
     }
 
@@ -1938,7 +1928,7 @@ private struct AutomationCLI {
 
     private func printUsage(to handle: FileHandle) {
         let usage = """
-        player-automation [cli] <command> [options]
+        muci-automation [cli] <command> [options]
 
         Commands:
           mcp-stdio [--profile core|full]

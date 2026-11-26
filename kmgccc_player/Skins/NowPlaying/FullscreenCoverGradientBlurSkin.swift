@@ -1185,13 +1185,6 @@ private struct CoverGradientBlurSettingsView: View {
         CoverEdgeFillMode(rawValue: edgeFillMode) ?? .pixelStretch
     }
 
-    private var slidingKnobColor: Color {
-        if presentationStyle.usesMaterialSectionCards {
-            return presentationStyle.settingsPrimaryTextColor(appColors: appColors)
-        }
-        return themeStore.accentColor
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: presentationStyle.groupSpacing) {
             edgeFillModePicker
@@ -1209,52 +1202,14 @@ private struct CoverGradientBlurSettingsView: View {
 
             Spacer()
 
-            SlidingSelector(
-                segments: CoverEdgeFillMode.allCases,
+            SettingsCapsuleSelector(
+                options: CoverEdgeFillMode.allCases,
                 selection: Binding(
                     get: { currentEdgeFillMode },
                     set: { edgeFillMode = $0.rawValue }
                 ),
-                hSpacing: 0,
-                background: {
-                    Color.clear
-                },
-                knob: {
-                    Capsule()
-                        .fill(slidingKnobColor.opacity(0.18))
-                },
-                content: { mode, isSelected in
-                    Text(mode.displayName)
-                        .font(presentationStyle.segmentedLabelFont.weight(isSelected ? .medium : .regular))
-                        .padding(.horizontal, presentationStyle.segmentedHorizontalPadding)
-                        .padding(.vertical, presentationStyle.segmentedVerticalPadding)
-                        .foregroundStyle(
-                            isSelected
-                                ? presentationStyle.settingsSelectedTextColor(
-                                    accentColor: themeStore.accentColor,
-                                    appColors: appColors
-                                )
-                                : presentationStyle.settingsSecondaryTextColor(appColors: appColors)
-                        )
-                }
+                title: \.displayName
             )
-            .padding(.horizontal, presentationStyle.segmentedTrackHorizontalPadding)
-            .padding(.vertical, presentationStyle.segmentedTrackVerticalPadding)
-            .background(
-                Capsule()
-                    .fill(presentationStyle.settingsSegmentedTrackColor(appColors: appColors))
-                    .overlay(
-                        Capsule()
-                            .strokeBorder(
-                                presentationStyle.segmentedTrackStrokeColor,
-                                lineWidth: presentationStyle.segmentedTrackStrokeColor == .clear
-                                    ? 0
-                                    : presentationStyle.scaledHairlineWidth
-                            )
-                            .allowsHitTesting(false)
-                    )
-            )
-            .fixedSize(horizontal: true, vertical: false)
         }
     }
 

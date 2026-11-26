@@ -1,0 +1,57 @@
+{
+  "type": "layer",
+  "id": "lyrics",
+  "visible": "=(let.lyricsShown && lyrics.available && lyrics.lineCount > 0 && state.stageHidden == 0 && let.queueOut < 0.99) || host.detailVisible || let.infoK > 0.01",
+  "opacity": "=mix((1 - let.queueOut) * let.stageFade, 1, let.infoK)",
+  "enter": { "type": "fade", "token": "backgroundTransition" },
+  "transition": { "type": "fade", "token": "backgroundTransition" },
+  "hitTesting": false,
+  "render": "gpu",
+  "motionBlur": "=params.motionBlur",
+  "frame": { "x": "50%", "y": "50%", "width": "100%", "height": "100%" },
+  "filter": [
+    { "type": "fov", "distortion": "=let.distortion", "chromatic": "=let.aberration", "blur": "=let.edgeBlur", "start": "=let.edgeStart" },
+    { "type": "lut", "file": "=params.lut", "amount": "=params.lutAmount" },
+    { "type": "grain", "amount": "=let.grain * 0.7", "rate": "=params.grainRate" },
+    { "type": "bokeh", "at": "=host.detailVisible ? null : state.line.accent.focusAt", "seed": "=state.line.accent.focusSeed ?? 0", "wave": "=let.defocusWave", "radius": "=params.defocusRadius", "speed": "=params.defocusSpeed", "breathing": "=0.006 * params.defocusBreathing", "detail": "=params.defocusDetail", "glow": "=params.defocusGlow", "threshold": "=params.defocusThreshold", "swirl": "=params.defocusSwirl" }
+  ],
+  "camera": {
+    "x": "=let.viewX",
+    "y": "=let.viewY",
+    "zoom": "=let.viewZoom",
+    "rotation": "=let.viewRoll",
+    "rotationX": "=let.viewTiltX",
+    "rotationY": "=let.viewTiltY",
+    "perspective": "=params.perspective"
+  },
+  "children": [
+    {
+      "type": "layer",
+      "id": "lines",
+      "visible": "=let.lyricsShown && lyrics.available && lyrics.lineCount > 0 && state.stageHidden == 0 && let.infoK < 0.995",
+      "opacity": "=1 - smoothstep(0, 0.6, let.infoK)",
+      "frame": { "x": "50%", "y": "50%", "width": "100%", "height": "100%" },
+      "children": [
+        { "type": "use", "name": "decor", "props": { "line": "=state.slots[0] ?? {}" } },
+        { "type": "use", "name": "decor", "props": { "line": "=state.slots[1] ?? {}" } },
+        { "type": "use", "name": "decor", "props": { "line": "=state.slots[2] ?? {}" } },
+        { "type": "use", "name": "comet", "props": { "line": "=state.slots[0] ?? {}" } },
+        { "type": "use", "name": "comet", "props": { "line": "=state.slots[1] ?? {}" } },
+        { "type": "use", "name": "comet", "props": { "line": "=state.slots[2] ?? {}" } },
+        { "type": "use", "name": "handoff", "props": { "line": "=state.slots[0] ?? {}" } },
+        { "type": "use", "name": "handoff", "props": { "line": "=state.slots[1] ?? {}" } },
+        { "type": "use", "name": "handoff", "props": { "line": "=state.slots[2] ?? {}" } },
+        { "type": "use", "name": "backing", "props": { "line": "=state.slots[0] ?? {}", "group": "=0" } },
+        { "type": "use", "name": "backing", "props": { "line": "=state.slots[0] ?? {}", "group": "=1" } },
+        { "type": "use", "name": "backing", "props": { "line": "=state.slots[1] ?? {}", "group": "=0" } },
+        { "type": "use", "name": "backing", "props": { "line": "=state.slots[1] ?? {}", "group": "=1" } },
+        { "type": "use", "name": "backing", "props": { "line": "=state.slots[2] ?? {}", "group": "=0" } },
+        { "type": "use", "name": "backing", "props": { "line": "=state.slots[2] ?? {}", "group": "=1" } },
+        { "type": "use", "name": "slot", "props": { "line": "=state.slots[0] ?? {}" } },
+        { "type": "use", "name": "slot", "props": { "line": "=state.slots[1] ?? {}" } },
+        { "type": "use", "name": "slot", "props": { "line": "=state.slots[2] ?? {}" } }
+      ]
+    },
+    { "type": "use", "name": "info" }
+  ]
+}

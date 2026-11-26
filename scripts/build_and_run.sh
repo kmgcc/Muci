@@ -5,6 +5,7 @@ set -euo pipefail
 CONFIGURATION="${CONFIGURATION:-Debug}"
 MODE="${1:-run}"
 APP_NAME="kmgccc_player"
+APP_PRODUCT="Muci"
 BUNDLE_ID="kmgccc.player"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -14,7 +15,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # DerivedData lets a rebuild swap the App bundle while another session's XCTest
 # host is running from it. Override with DERIVED_DATA_PATH when needed.
 DERIVED_DATA_PATH="${DERIVED_DATA_PATH:-$REPO_ROOT/build/DerivedData-run}"
-APP_BUNDLE="$DERIVED_DATA_PATH/Build/Products/$CONFIGURATION/$APP_NAME.app"
+APP_BUNDLE="$DERIVED_DATA_PATH/Build/Products/$CONFIGURATION/$APP_PRODUCT.app"
 PREBUILT_APP="${KMGCCC_PREBUILT_APP:-}"
 if [[ -n "$PREBUILT_APP" ]]; then
     APP_BUNDLE="$PREBUILT_APP"
@@ -155,7 +156,7 @@ prepare_for_test
 
 if [[ -z "$PREBUILT_APP" ]]; then
 echo "========================================"
-echo "Building $APP_NAME ($CONFIGURATION) via xcodebuild..."
+echo "Building $APP_PRODUCT ($CONFIGURATION) via xcodebuild..."
 echo "========================================"
 
 mkdir -p "$(dirname "$BUILD_LOG")"

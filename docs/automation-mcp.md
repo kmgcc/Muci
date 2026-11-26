@@ -4,12 +4,22 @@
 
 ```sh
 cd Dependencies/PlayerAutomation
-swift run player-automation mcp-stdio
+swift run muci-automation mcp-stdio
 ```
 
 它通过本用户 AF_UNIX socket 连接已经运行或由 LaunchServices 启动的
-`kmgccc_player`，不 shell out 到 CLI，也不复制 Library business logic。stdio stdout 只
+`Muci`，不 shell out 到 CLI，也不复制 Library business logic。stdio stdout 只
 能出现 newline-delimited JSON-RPC message，诊断走 stderr。
+
+## 已有配置
+
+在「设置 › 自动化」获取固定路径的 MCP 配置。如果原配置的 command 指向旧 App 内部，
+将 command 改为下方命令的绝对路径，沿用原 server key、参数和授权。
+
+    ~/Library/Application Support/kmgccc.player/Automation/bin/muci-automation
+
+已导出的 `player-automation` 命令继续可用。
+`serverInfo.name` 沿用 `kmgccc_player`，显示标题为 Muci。已有 `kmgccc://` 资源地址继续使用。
 
 ## Protocol lifecycle
 
@@ -218,7 +228,7 @@ manifest `tracks[].audioPath`，先相对 bundle 根目录解析；metadata 导�
 
 正常操作只依赖 MCP tools、resources 和内置说明，不假设用户电脑上存在项目源码。只有遇到机制不明、
 异常无法由现有工具诊断，或存在无法安全处理的数据风险时，才可临时查阅官方开源仓库：
-[kmgccc/kmgccc_player](https://github.com/kmgcc/kmgccc_player)。查阅后立即删除下载的源码和临时工程文件。
+[kmgcc/Muci](https://github.com/kmgcc/Muci)。查阅后立即删除下载的源码和临时工程文件。
 
 ## DSP 与完整预设
 

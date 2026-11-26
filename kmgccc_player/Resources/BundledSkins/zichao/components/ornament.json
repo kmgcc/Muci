@@ -1,0 +1,91 @@
+{
+  "type": "layer",
+  "id": "ornament",
+  "hitTesting": false,
+  "visible": "=props.show",
+  "frame": { "x": "50%", "y": "50%", "width": "100%", "height": "100%" },
+  "children": [
+    {
+      "type": "shape",
+      "id": "sharp",
+      "shape": "path",
+      "points": "=props.points",
+      "stroke": { "width": "=props.width * (params.brush > 0 ? 3 : 1)", "color": "=params.brush > 0 ? withLightness(saturate(theme.accent, 1.3), 0.5) : alpha(mix(theme.accent, #FFFFFF, 0.8), 0.5)", "cap": "round", "join": "round" },
+      "brush": { "amount": "=params.brush", "dry": "=params.brushDry * 0.6", "wobble": "=params.brushWobble", "warp": "=params.brushWobble * 0.35", "seed": "=props.turn" },
+      "trimEnd": "=props.draw",
+      "opacity": "=props.opacity",
+      "rotation": "=props.turn + time * motion.speed * props.spin",
+      "hitTesting": false,
+      "frame": { "x": "=props.x", "y": "=props.y", "size": "=props.size" },
+      "mask": {
+        "type": "gradient",
+        "mode": "angular",
+        "stops": [
+          { "color": "#FFFFFFFF", "at": 0 }, { "color": "=params.brush > 0 ? #FFFFFFFF : #FFFFFF00", "at": 0.0833 }, { "color": "=params.brush > 0 ? #FFFFFFFF : #FFFFFF00", "at": 0.1667 },
+          { "color": "#FFFFFFFF", "at": 0.25 }, { "color": "=params.brush > 0 ? #FFFFFFFF : #FFFFFF00", "at": 0.3333 }, { "color": "=params.brush > 0 ? #FFFFFFFF : #FFFFFF00", "at": 0.4167 },
+          { "color": "#FFFFFFFF", "at": 0.5 }, { "color": "=params.brush > 0 ? #FFFFFFFF : #FFFFFF00", "at": 0.5833 }, { "color": "=params.brush > 0 ? #FFFFFFFF : #FFFFFF00", "at": 0.6667 },
+          { "color": "#FFFFFFFF", "at": 0.75 }, { "color": "=params.brush > 0 ? #FFFFFFFF : #FFFFFF00", "at": 0.8333 }, { "color": "=params.brush > 0 ? #FFFFFFFF : #FFFFFF00", "at": 0.9167 },
+          { "color": "#FFFFFFFF", "at": 1 }
+        ],
+        "rotation": "=props.turn * 0.5 + time * motion.speed * props.drift",
+        "frame": { "x": "50%", "y": "50%", "width": "100%", "height": "100%" }
+      }
+    },
+    {
+      "type": "shape",
+      "id": "soft",
+      "shape": "path",
+      "visible": "=params.brush <= 0",
+      "points": "=props.points",
+      "stroke": { "width": "=props.width * 1.5 * (params.brush > 0 ? 1.8 : 1)", "color": "=alpha(mix(theme.accent, #FFFFFF, 0.76), 0.42)", "cap": "round", "join": "round" },
+      "brush": { "amount": "=params.brush * 0.6", "dry": "=params.brushDry * 0.5", "wobble": "=params.brushWobble", "seed": "=props.turn" },
+      "trimEnd": "=props.draw",
+      "opacity": "=props.opacity",
+      "rotation": "=props.turn + time * motion.speed * props.spin",
+      "blur": "=min(4, 0.35 * (2 + props.size * 0.016))",
+      "hitTesting": false,
+      "frame": { "x": "=props.x", "y": "=props.y", "size": "=props.size" },
+      "mask": {
+        "type": "gradient",
+        "mode": "angular",
+        "stops": [
+          { "color": "#FFFFFF00", "at": 0 }, { "color": "#FFFFFFFF", "at": 0.0833 }, { "color": "#FFFFFF00", "at": 0.1667 },
+          { "color": "#FFFFFF00", "at": 0.25 }, { "color": "#FFFFFFFF", "at": 0.3333 }, { "color": "#FFFFFF00", "at": 0.4167 },
+          { "color": "#FFFFFF00", "at": 0.5 }, { "color": "#FFFFFFFF", "at": 0.5833 }, { "color": "#FFFFFF00", "at": 0.6667 },
+          { "color": "#FFFFFF00", "at": 0.75 }, { "color": "#FFFFFFFF", "at": 0.8333 }, { "color": "#FFFFFF00", "at": 0.9167 },
+          { "color": "#FFFFFF00", "at": 1 }
+        ],
+        "rotation": "=props.turn * 0.5 + time * motion.speed * props.drift",
+        "frame": { "x": "50%", "y": "50%", "width": "100%", "height": "100%" }
+      }
+    },
+    {
+      "type": "shape",
+      "id": "haze",
+      "shape": "path",
+      "visible": "=params.brush <= 0",
+      "points": "=props.points",
+      "stroke": { "width": "=props.width * 2.4 * (params.brush > 0 ? 1.8 : 1)", "color": "=alpha(mix(theme.accent, #FFFFFF, 0.72), 0.34)", "cap": "round", "join": "round" },
+      "brush": { "amount": "=params.brush * 0.6", "dry": "=params.brushDry * 0.5", "wobble": "=params.brushWobble", "seed": "=props.turn" },
+      "trimEnd": "=props.draw",
+      "opacity": "=props.opacity * (params.brush > 0 ? 0.4 : 1)",
+      "rotation": "=props.turn + time * motion.speed * props.spin",
+      "blur": "=min(10, 2 + props.size * 0.016)",
+      "hitTesting": false,
+      "frame": { "x": "=props.x", "y": "=props.y", "size": "=props.size" },
+      "mask": {
+        "type": "gradient",
+        "mode": "angular",
+        "stops": [
+          { "color": "#FFFFFF00", "at": 0 }, { "color": "#FFFFFF00", "at": 0.0833 }, { "color": "#FFFFFFFF", "at": 0.1667 },
+          { "color": "#FFFFFF00", "at": 0.25 }, { "color": "#FFFFFF00", "at": 0.3333 }, { "color": "#FFFFFFFF", "at": 0.4167 },
+          { "color": "#FFFFFF00", "at": 0.5 }, { "color": "#FFFFFF00", "at": 0.5833 }, { "color": "#FFFFFFFF", "at": 0.6667 },
+          { "color": "#FFFFFF00", "at": 0.75 }, { "color": "#FFFFFF00", "at": 0.8333 }, { "color": "#FFFFFFFF", "at": 0.9167 },
+          { "color": "#FFFFFF00", "at": 1 }
+        ],
+        "rotation": "=props.turn * 0.5 + time * motion.speed * props.drift",
+        "frame": { "x": "50%", "y": "50%", "width": "100%", "height": "100%" }
+      }
+    }
+  ]
+}

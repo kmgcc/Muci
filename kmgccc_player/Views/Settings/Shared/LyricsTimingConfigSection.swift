@@ -17,6 +17,9 @@ struct LyricsTimingConfigSection: View {
         static let globalAdvanceMs: Double = 0
     }
 
+    /// Lead-in and near-switch gap; a skin that times its own line switches leaves them out.
+    var showsLineSwitchTiming = true
+
     @Environment(AppSettings.self) private var settings
     @Environment(LyricsViewModel.self) private var lyricsVM
     @EnvironmentObject private var themeStore: ThemeStore
@@ -33,6 +36,10 @@ struct LyricsTimingConfigSection: View {
     @State private var globalAdvanceMs: Double = Defaults.globalAdvanceMs
     @State private var isExpanded = false
 
+    init(showsLineSwitchTiming: Bool = true) {
+        self.showsLineSwitchTiming = showsLineSwitchTiming
+    }
+
     var body: some View {
         GroupBox {
             VStack(alignment: .leading, spacing: presentationStyle.groupSpacing) {
@@ -40,10 +47,12 @@ struct LyricsTimingConfigSection: View {
                     .settingsDescriptionStyle()
 
                 if isExpanded {
-                    leadInSection
-                    Divider().padding(.vertical, presentationStyle.dividerVerticalPadding)
-                    nearSwitchGapSection
-                    Divider().padding(.vertical, presentationStyle.dividerVerticalPadding)
+                    if showsLineSwitchTiming {
+                        leadInSection
+                        Divider().padding(.vertical, presentationStyle.dividerVerticalPadding)
+                        nearSwitchGapSection
+                        Divider().padding(.vertical, presentationStyle.dividerVerticalPadding)
+                    }
                     globalAdvanceSection
                 }
             }
@@ -121,9 +130,12 @@ struct LyricsTimingConfigSection: View {
         }
     }
 
+    /// Resets only the rows on screen; hidden ones still serve the window lyrics.
     private func resetToDefaults() {
-        leadInMs = Defaults.leadInMs
-        nearSwitchGapMs = Defaults.nearSwitchGapMs
+        if showsLineSwitchTiming {
+            leadInMs = Defaults.leadInMs
+            nearSwitchGapMs = Defaults.nearSwitchGapMs
+        }
         globalAdvanceMs = Defaults.globalAdvanceMs
         syncToSettings()
     }

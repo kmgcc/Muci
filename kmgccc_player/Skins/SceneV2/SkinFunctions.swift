@@ -31,6 +31,41 @@ struct SkinFunction {
 enum SkinFunctions {
     static let maximumGeneratedListCount = 1024
 
+    /// Functions of one number, including easings over a 0…1 progress (clamped).
+    static let unary: [String: @MainActor (Double) -> Double] = [
+        "abs": { abs($0) },
+        "floor": { Foundation.floor($0) },
+        "ceil": { Foundation.ceil($0) },
+        "sqrt": { Foundation.sqrt(max(0, $0)) },
+        "exp": { Foundation.exp($0) },
+        "log": { Foundation.log(max(1e-12, $0)) },
+        "log2": { Foundation.log2(max(1e-12, $0)) },
+        "log10": { Foundation.log10(max(1e-12, $0)) },
+        "sin": { Foundation.sin($0) },
+        "cos": { Foundation.cos($0) },
+        "tan": { Foundation.tan($0) },
+        "asin": { Foundation.asin(min(1, max(-1, $0))) },
+        "acos": { Foundation.acos(min(1, max(-1, $0))) },
+        "atan": { Foundation.atan($0) },
+        "sign": { $0 > 0 ? 1 : ($0 < 0 ? -1 : 0) },
+        "fract": { $0 - Foundation.floor($0) },
+        "deg": { $0 * 180 / .pi },
+        "rad": { $0 * .pi / 180 },
+        "easeIn": { let t = min(1, max(0, $0)); return t * t * t },
+        "easeOut": { let t = 1 - min(1, max(0, $0)); return 1 - t * t * t },
+        "easeInOut": { let t = min(1, max(0, $0)); return t < 0.5 ? 4 * t * t * t : 1 - Foundation.pow(-2 * t + 2, 3) / 2 },
+        "random": { SkinFunctions.hash01($0) },
+        "noise": { SkinFunctions.valueNoise($0) },
+    ]
+
+    /// Functions of exactly two numbers.
+    static let binary: [String: @MainActor (Double, Double) -> Double] = [
+        "pow": { Foundation.pow($0, $1) },
+        "atan2": { Foundation.atan2($0, $1) },
+        "mod": { $1 == 0 ? 0 : $0 - $1 * Foundation.floor($0 / $1) },
+        "step": { $1 < $0 ? 0 : 1 },
+    ]
+
     static let table: [String: SkinFunction] = {
         var table: [String: SkinFunction] = [:]
         @MainActor func number(_ name: String, _ arity: ClosedRange<Int>, _ body: @escaping @MainActor ([Double]) -> Double) {
@@ -39,33 +74,14 @@ enum SkinFunctions {
             }
         }
 
-        // Maths
-        number("abs", 1...1) { abs($0[0]) }
-        number("floor", 1...1) { Foundation.floor($0[0]) }
-        number("ceil", 1...1) { Foundation.ceil($0[0]) }
+        // Maths. The one- and two-number functions live in `unary` and `binary`, which the
+        // compiler also calls directly.
+        for (name, body) in SkinFunctions.unary { number(name, 1...1) { body($0[0]) } }
+        for (name, body) in SkinFunctions.binary { number(name, 2...2) { body($0[0], $0[1]) } }
         number("round", 1...2) { $0.count == 2 && $0[1] > 0 ? ($0[0] / $0[1]).rounded() * $0[1] : $0[0].rounded() }
-        number("sqrt", 1...1) { Foundation.sqrt(max(0, $0[0])) }
-        number("pow", 2...2) { Foundation.pow($0[0], $0[1]) }
-        number("exp", 1...1) { Foundation.exp($0[0]) }
-        number("log", 1...1) { Foundation.log(max(1e-12, $0[0])) }
-        number("log2", 1...1) { Foundation.log2(max(1e-12, $0[0])) }
-        number("log10", 1...1) { Foundation.log10(max(1e-12, $0[0])) }
-        number("sin", 1...1) { Foundation.sin($0[0]) }
-        number("cos", 1...1) { Foundation.cos($0[0]) }
-        number("tan", 1...1) { Foundation.tan($0[0]) }
-        number("asin", 1...1) { Foundation.asin(min(1, max(-1, $0[0]))) }
-        number("acos", 1...1) { Foundation.acos(min(1, max(-1, $0[0]))) }
-        number("atan", 1...1) { Foundation.atan($0[0]) }
-        number("atan2", 2...2) { Foundation.atan2($0[0], $0[1]) }
-        number("sign", 1...1) { $0[0] > 0 ? 1 : ($0[0] < 0 ? -1 : 0) }
-        number("fract", 1...1) { $0[0] - Foundation.floor($0[0]) }
-        number("mod", 2...2) { $0[1] == 0 ? 0 : $0[0] - $0[1] * Foundation.floor($0[0] / $0[1]) }
         number("min", 1...Int.max) { $0.min() ?? 0 }
         number("max", 1...Int.max) { $0.max() ?? 0 }
         number("clamp", 3...3) { min(max($0[0], $0[1]), $0[2]) }
-        number("deg", 1...1) { $0[0] * 180 / .pi }
-        number("rad", 1...1) { $0[0] * .pi / 180 }
-        number("step", 2...2) { $0[1] < $0[0] ? 0 : 1 }
         number("smoothstep", 3...3) { arguments in
             let range = arguments[1] - arguments[0]
             guard range != 0 else { return arguments[2] < arguments[0] ? 0 : 1 }
@@ -78,16 +94,16 @@ enum SkinFunctions {
             if arguments.count == 6, arguments[5] != 0 { t = min(1, max(0, t)) }
             return arguments[3] + (arguments[4] - arguments[3]) * t
         }
-        // Easing over a 0…1 progress, clamped; `backOut` overshoots by its optional second argument.
-        number("easeIn", 1...1) { let t = min(1, max(0, $0[0])); return t * t * t }
-        number("easeOut", 1...1) { let t = 1 - min(1, max(0, $0[0])); return 1 - t * t * t }
-        number("easeInOut", 1...1) { let t = min(1, max(0, $0[0])); return t < 0.5 ? 4 * t * t * t : 1 - Foundation.pow(-2 * t + 2, 3) / 2 }
+        // `backOut` overshoots by its optional second argument; the other easings are in `unary`.
         number("backOut", 1...2) { arguments in
             let t = min(1, max(0, arguments[0])) - 1, s = arguments.count == 2 ? arguments[1] : 1.70158
             return 1 + (s + 1) * t * t * t + s * t * t
         }
-        number("random", 1...1) { SkinFunctions.hash01($0[0]) }
-        number("noise", 1...1) { SkinFunctions.valueNoise($0[0]) }
+        // `focusHunt(t, seed, wave)`: the `bokeh` filter's focus hunt, 0 to 1, `t` seconds in;
+        // lets other values (a camera push, an exposure dip) move with the defocus.
+        number("focusHunt", 2...3) { arguments in
+            SkinFocusHunt.value(age: arguments[0], seed: arguments[1], wave: arguments.count == 3 ? SkinFocusHunt.waveIndex(arguments[2]) : -1)
+        }
         // `spring(token, t)`: the MotionKit spring of a token (or a retuning record, or one of the
         // skin's own tokens) from 0 to 1 over `t` seconds, at the user's motion speed, overshoot
         // included; `springVelocity` is its rate per second. Reduced motion lands at 1 at once.
@@ -117,6 +133,11 @@ enum SkinFunctions {
             guard context.moves else { return .number(1) }
             let duration = min(10, max(0.05, arguments[1].number())), bounce = min(0.9, max(-0.9, arguments[2].number()))
             let spec = context.motionTokens.phaseSpec(for: .emphasis, duration: duration, bounce: bounce, blendDuration: 0)
+            // Long settled: the slowest mode, exp(-rate·2π·t/duration), is under 1e-4 here, so a
+            // resting glyph skips evaluating a spring every frame.
+            let damping = spec.bounce >= 0 ? 1 - spec.bounce : 1 / (1 + spec.bounce)
+            let rate = spec.bounce >= 0 ? max(0.1, damping) : damping - (damping * damping - 1).squareRoot()
+            if spec.duration > 0, rate > 0, t > spec.duration * 1.5 / rate { return .number(1) }
             return .number(SkinFunctions.sanitized(MotionSpringEvaluator(spec: spec).normalizedValue(at: t)))
         }
 
@@ -312,6 +333,18 @@ enum SkinFunctions {
             .number(SkinTextMeasure.width(arguments[0].textValue, size: arguments[1].number(), weight: arguments.count > 2 ? arguments[2].textValue : "",
                                           font: arguments.count > 3 ? arguments[3].textValue : ""))
         }
+        // `textHeight(text, size, width, weight, font, lineSpacing, lineLimit)`: the height of the
+        // text broken to `width` (0 for one unbroken line), as a GPU text lays it out.
+        table["textHeight"] = SkinFunction(arity: 2...7, argumentTypes: [.any], result: { _ in .number }, tier: .change) { arguments, _ in
+            func argument(_ index: Int) -> SkinValue? { arguments.count > index ? arguments[index] : nil }
+            let width = argument(2)?.number(0) ?? 0
+            let limit = argument(6)?.number(0) ?? 0
+            let layout = SkinGPUTextLayouts.layout(arguments[0].textValue, font: argument(4)?.textValue ?? "", weight: argument(3)?.textValue ?? "regular",
+                                                   size: max(0.5, arguments[1].number()), width: width > 0 ? width : nil,
+                                                   lineLimit: limit >= 1 ? Int(limit) : nil, alignment: "leading", tracking: 0,
+                                                   lineSpacing: argument(5)?.number(0) ?? 0)
+            return .number(arguments[0].textValue.isEmpty ? 0 : Double(layout.size.height))
+        }
         // One width per item; items are texts or records with `text`.
         table["measureEach"] = SkinFunction(arity: 2...4, argumentTypes: [.any], result: { _ in .list }, tier: .change) { arguments, _ in
             let weight = arguments.count > 2 ? arguments[2].textValue : "", font = arguments.count > 3 ? arguments[3].textValue : ""
@@ -320,9 +353,9 @@ enum SkinFunctions {
                 return .number(SkinTextMeasure.width(text, size: arguments[1].number(), weight: weight, font: font))
             })
         }
-        // A lyric line composed as poster typography; see `SkinKineticLayout`.
-        table["kineticLayout"] = SkinFunction(arity: 1...10, argumentTypes: [.any], result: { _ in .record }, tier: .change) { arguments, _ in
-            SkinKineticLayout.layout(arguments[0].listValue, options: Array(arguments.dropFirst()))
+        // `script(name, …)`: a top-level function of the package's `scripts/*.js`; see `SkinScripts`.
+        table["script"] = SkinFunction(arity: 1...16, argumentTypes: [.text, .any], result: { _ in .any }, tier: .change) { arguments, context in
+            context.data.scripts?.call(arguments[0].textValue, Array(arguments.dropFirst())) ?? .null
         }
 
         // Logic

@@ -49,7 +49,7 @@ public enum AutomationIPCError: Error, Equatable, LocalizedError, Sendable {
         case .invalidSharedSecret:
             return "The automation shared secret is invalid."
         case .sharedSecretUnavailable:
-            return "The player App automation credential is unavailable. Open or relaunch kmgccc_player; with --no-launch, start the App manually before retrying."
+            return "The player App automation credential is unavailable. Open or relaunch Muci; with --no-launch, start the App manually before retrying."
         case .readFailed(let code):
             return "The automation socket read failed (errno \(code))."
         case .writeFailed(let code):

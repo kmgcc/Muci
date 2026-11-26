@@ -73,9 +73,13 @@ final class AppSessionHost: ObservableObject {
     private var didAutoPresentLibrarySetup = false
     /// Set when this launch auto-created the factory-default library because
     /// the machine had no library at all (true fresh install / full reset).
-    /// Drives the first-run setup wizard after What's New is dismissed.
+    /// Drives the first-run setup wizard after the welcome overview.
     private var shouldPresentFirstRunLibrarySetup = false
-    private var whatsNewDismissalCancellable: AnyCancellable?
+    /// The one slot for prompts the App shows on its own initiative.
+    let promptCoordinator = AppPromptCoordinator.shared
+    /// Feature discovery for this App process; created when launch setup
+    /// records the install history, started once launch prompts are queued.
+    private(set) var featureDiscovery: FeatureDiscoveryEngine?
 
     let uiState: UIStateViewModel
     let audioDSPController = AudioDSPController()
@@ -425,10 +429,10 @@ final class AppSessionHost: ObservableObject {
         guard let libraryOpenService else { throw LibraryOpenError.libraryNotFound }
         let previousSession = activeLibraryBinding.activeSession
         let selectedURL = url.standardizedFileURL
-        let defaultRoot = LibraryLocationStore.defaultLibraryRootURL.standardizedFileURL
-        let isDefaultLibrarySelection = selectedURL == defaultRoot
-            || selectedURL.appendingPathComponent(LibraryPaths.rootDirectoryName, isDirectory: true)
-                .standardizedFileURL == defaultRoot
+        let isDefaultLibrarySelection = LibraryLocationStore.factoryDefaultRootURLs.contains { root in
+            let defaultRoot = root.standardizedFileURL
+            return selectedURL.path == defaultRoot.path || selectedURL.path == defaultRoot.deletingLastPathComponent().path
+        }
         let opened = try await libraryOpenService.open(
             selectedURL: selectedURL,
             expectedContext: expectedContext,
@@ -1359,6 +1363,7 @@ final class AppSessionHost: ObservableObject {
     private func performInitialSetup() async {
         guard !hasSetupDependencies else { return }
         hasSetupDependencies = true
+        recordInstallHistoryForLaunch()
         startLaunchDiagnosticsIfNeeded()
         await Task.yield()
 
@@ -1503,13 +1508,12 @@ final class AppSessionHost: ObservableObject {
         }
         if activeLibraryBinding.activeSession != nil { libraryStartupFailureMessage = nil }
 
-        AppVersionGate.shared.recordCurrentAppLaunch()
 #if DEBUG
         DebugCrashTrigger.scheduleIfRequested()
 #endif
         hasCompletedInitialSetup = true
         showPreservedRelocationCopiesIfNeeded()
-        finishLaunchPromptsIfReady()
+        scheduleDeferredLaunchPromptsIfNeeded()
         DebugUIHooks.installIfEnabled(appSession: self)
         if AppSettings.shared.automationEndpointEnabled {
             do {
@@ -1527,11 +1531,6 @@ final class AppSessionHost: ObservableObject {
                 )
             }
         }
-        // Covers the path where deferred prompts ran before
-        // `hasCompletedInitialSetup` flipped (no crash-report prompt
-        // queued); when prompts are crash-gated the drained handler calls
-        // this again after What's New appears.
-        autoPresentLibrarySetupIfNeeded()
         CacheManager.trimProcessMemory()
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(1))
@@ -1885,19 +1884,24 @@ final class AppSessionHost: ObservableObject {
             guard !Task.isCancelled, let self else { return }
             self.hasPreparedLaunchDiagnostics = true
             self.launchDiagnosticsTask = nil
-            self.finishLaunchPromptsIfReady()
+            self.scheduleDeferredLaunchPromptsIfNeeded()
         }
     }
 
-    private func finishLaunchPromptsIfReady() {
-        guard hasCompletedInitialSetup, hasPreparedLaunchDiagnostics else { return }
-        if CrashReportService.shared.hasPendingPrompt {
-            CrashReportService.shared.setPromptQueueDrainedHandler { [weak self] in
-                self?.scheduleDeferredLaunchPromptsIfNeeded()
-            }
-        } else {
-            scheduleDeferredLaunchPromptsIfNeeded()
-        }
+    /// Runs before the launch creates any library, so a fresh install still
+    /// looks fresh to the cohort check.
+    private func recordInstallHistoryForLaunch() {
+        #if DEBUG
+        PromptDebugLaunchOptions.current.prepareBeforeLaunchRecord(history: .shared)
+        #endif
+        let launch = AppInstallHistory.shared.recordLaunch()
+        FeatureTipStore.shared.applyUpgrade(launch)
+        let hasPriorInstallTraces = !launch.isFreshInstall || initialLibraryContext != nil
+        featureDiscovery = FeatureDiscoveryEngine.makeLive(
+            appSession: self,
+            coordinator: promptCoordinator,
+            hasPriorInstallTraces: hasPriorInstallTraces
+        )
     }
 
     private func ensureFactoryDefaultLibraryWithRetries() async -> LibraryContext? {
@@ -1917,11 +1921,8 @@ final class AppSessionHost: ObservableObject {
         return nil
     }
 
-    /// Restores the startup invariant: when there is no active, reachable
-    /// library, the factory-default root is opened if present; otherwise an
-    /// empty library is created under `~/Music` before the main window is
-    /// shown. This keeps the normal empty-library shell available while the
-    /// setup wizard floats above it.
+    /// Reopens an existing library or creates the first or explicitly replaced
+    /// default library. Offline registrations keep their reconnect path.
     private func ensureFactoryDefaultLibraryIfNeeded(
         allowUnreachableActiveLibrary: Bool = false
     ) async -> LibraryContext? {
@@ -1976,12 +1977,23 @@ final class AppSessionHost: ObservableObject {
             return activeLibraryBinding.context
         }
         let defaultRoot = LibraryLocationStore.defaultLibraryRootURL
-        if FileManager.default.fileExists(atPath: defaultRoot.path) {
+        let replacementPath = registry.activeLibraryID.flatMap { registry.library(id: $0)?.lastKnownPath }
+        let defaultCandidates = LibraryLocationStore.factoryDefaultRootURLs.filter { root in
+            preferRegisteredLibraries || root == defaultRoot || root.path == replacementPath
+        }
+        if preferRegisteredLibraries, let activeID = registry.activeLibraryID,
+           registry.library(id: activeID) != nil {
+            libraryStartupFailureMessage = LibraryOpenFailure.message(
+                for: RegisteredLibraryActivationError.reconnectRequired(activeID)
+            )
+            return nil
+        }
+        if let existingRoot = LibraryLocationStore.existingFactoryDefaultRoot(in: defaultCandidates) {
             if registry.pendingFactoryDefaultReplacement == true {
-                guard let manifest = try? MusicLibraryManifest.read(from: LibraryPaths(rootURL: defaultRoot).manifestURL),
+                guard let manifest = try? MusicLibraryManifest.read(from: LibraryPaths(rootURL: existingRoot).manifestURL),
                       let descriptor = registry.library(id: manifest.libraryID),
                       descriptor.modeProjection == manifest.mode,
-                      descriptor.lastKnownPath == defaultRoot.path else {
+                      descriptor.lastKnownPath == existingRoot.path else {
                     Log.warning("[LibrarySession] replacement default path is occupied; waiting for recovery", category: .library)
                     return nil
                 }
@@ -1991,13 +2003,15 @@ final class AppSessionHost: ObservableObject {
                 // the default path for a different library identifier. The
                 // physical library is never removed by this recovery path.
                 let context = try await libraryOpenService.open(
-                    selectedURL: defaultRoot,
+                    selectedURL: existingRoot,
                     allowStalePathConflictRepair: true
                 ).context
                 await completeFactoryDefaultReplacementIfPossible(libraryID: context.id)
                 return context
             } catch {
-                guard LibraryStartupFailurePolicy.permitsFactoryDefaultFallback(after: error) else {
+                guard existingRoot == defaultRoot,
+                      LibraryStartupFailurePolicy.permitsFactoryDefaultFallback(after: error) else {
+                    libraryStartupFailureMessage = LibraryOpenFailure.message(for: error)
                     Log.warning(
                         "[LibrarySession] default library activation deferred; alternate creation suppressed: \(error)",
                         category: .library
@@ -2014,6 +2028,9 @@ final class AppSessionHost: ObservableObject {
         guard !Task.isCancelled,
               activeLibraryBinding.generation == observedGeneration else {
             return activeLibraryBinding.context
+        }
+        guard LibraryStartupFailurePolicy.permitsFactoryDefaultCreation(in: registry) else {
+            return nil
         }
         let parentURL = defaultRoot.deletingLastPathComponent()
         do {
@@ -2063,26 +2080,18 @@ final class AppSessionHost: ObservableObject {
     }
 
     /// First-launch onboarding: after a fresh install the factory-default
-    /// library is already open, so present the setup wizard once the
-    /// What's New window has been dismissed. The panel floats above the
+    /// library is already open, so the setup wizard queues as a blocking
+    /// prompt right behind the welcome overview. The panel floats above the
     /// main window and never blocks its loading or rendering.
     func autoPresentLibrarySetupIfNeeded() {
         guard hasCompletedInitialSetup, didScheduleDeferredLaunchPrompts,
-              !didAutoPresentLibrarySetup else { return }
+              shouldPresentFirstRunLibrarySetup, !didAutoPresentLibrarySetup else { return }
         didAutoPresentLibrarySetup = true
-        guard shouldPresentFirstRunLibrarySetup,
-              librarySetupFlow.presentation == .none else { return }
-        let whatsNew = WhatsNewWindowManager.shared
-        if whatsNew.isPresented {
-            whatsNewDismissalCancellable = whatsNew.$isPresented
-                .filter { !$0 }
-                .first()
-                .sink { [weak self] _ in
-                    self?.presentFirstRunLibrarySetupPanel()
-                }
-        } else {
-            presentFirstRunLibrarySetupPanel()
-        }
+        promptCoordinator.submit(AppPromptRequest(id: .firstRunLibrarySetup, tier: .blocking) { [weak self] in
+            guard let self, self.librarySetupFlow.presentation == .none else { return false }
+            self.presentFirstRunLibrarySetupPanel()
+            return true
+        })
     }
 
     private func presentFirstRunLibrarySetupPanel() {
@@ -2090,24 +2099,32 @@ final class AppSessionHost: ObservableObject {
             // Let the main window finish its first render before floating
             // the panel above it.
             try? await Task.sleep(nanoseconds: 350_000_000)
-            guard librarySetupFlow.presentation == .none else { return }
+            guard librarySetupFlow.presentation == .none else {
+                promptCoordinator.finish(.firstRunLibrarySetup)
+                return
+            }
             librarySetupFlow.present(.setup(.referenced))
-            LibrarySetupPanelPresenter.present(appSession: self)
+            LibrarySetupPanelPresenter.present(appSession: self, onClose: { [weak self] in
+                self?.promptCoordinator.finish(.firstRunLibrarySetup)
+            })
         }
     }
 
+    /// Queues every launch prompt, then ends the coordinator's launch hold so
+    /// tier decides the order: crash review and onboarding, release notes,
+    /// then discovery and tips after the cooldown.
     private func scheduleDeferredLaunchPromptsIfNeeded() {
         guard hasCompletedInitialSetup, hasPreparedLaunchDiagnostics,
               !didScheduleDeferredLaunchPrompts else { return }
         didScheduleDeferredLaunchPrompts = true
-        WhatsNewWindowManager.shared.showIfNeeded()
-        Log.debug("[Lifecycle] WhatsNew window check completed", category: .ui)
+        WhatsNewWindowManager.shared.requestPresentationIfNeeded(coordinator: promptCoordinator)
+        autoPresentLibrarySetupIfNeeded()
+        promptCoordinator.endLaunchSequence()
+        featureDiscovery?.start()
+        Log.debug("[Lifecycle] launch prompts queued", category: .ui)
 
         UpdateCoordinator.shared.bindBackgroundWork(scheduler: backgroundWorkScheduler)
         UpdateCoordinator.shared.startAutomaticUpdatesIfNeeded()
-        // Deferred prompts are settled (What's New is already visible when
-        // applicable); the first-run wizard can queue behind them now.
-        autoPresentLibrarySetupIfNeeded()
     }
 
     func switchLibrary(to context: LibraryContext) async throws {
@@ -2645,6 +2662,7 @@ final class AppSessionHost: ObservableObject {
             playerVM?.prepareForTermination()
             activeLibraryBinding.activeSession?.preferenceStatsService.checkpointPendingStats()
             savePlaybackMemory()
+            featureDiscovery?.flush()
         }
 
         guard !terminationPreparationStarted else { return }

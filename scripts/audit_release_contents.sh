@@ -139,8 +139,8 @@ path_risk() {
   esac
 
   case "$lower" in
-    */privateartruntimeloader.swift)
-      # Loader boundary; the runtime implementation is packaged separately.
+    */privateartruntimeloader.swift|kmgccc_player/skins/scenev2/skingpubokeh.metal)
+      # Public loader boundary / public SceneV2 fallback bokeh shader.
       return
       ;;
     *bokeh*.metal|*bokeh*.metallib|*/bokehtransition/*.metal|*/bokehtransition/*.metallib|*/privateshaders/*|*/privatebokeh/*)
@@ -314,8 +314,8 @@ scan_history() {
           else if (lower ~ /(^|\/)bkthemes(\/|$)/) risk = "art-master-or-theme"
           else if (lower ~ /(^|\/)bkart\.bundle(\/|$)/) risk = "art-bundle"
           else if (lower ~ /(^|\/)scripts\/encrypt_art_assets\.swift$/ || lower ~ /(^|\/)scripts\/encrypted_asset_allowlist\.json$/) risk = "art-encryption-tooling"
+          else if (lower ~ /(^|\/)privateartruntimeloader\.swift$/ || lower == "kmgccc_player/skins/scenev2/skingpubokeh.metal") risk = ""
           else if (lower ~ /bokeh.*\.met(al|allib)$/ || lower ~ /(^|\/)bokehtransition\/.*\.met(al|allib)$/ || lower ~ /(^|\/)privateshaders(\/|$)/ || lower ~ /(^|\/)privatebokeh(\/|$)/) risk = "bokeh-metal-library"
-          else if (lower ~ /(^|\/)privateartruntimeloader\.swift$/) risk = ""
           else if (lower ~ /privateart|private_art|privateartwork|private_artwork|privateassets|private_assets/) risk = "legacy-art-path"
           else if (lower ~ /(bokeh|bktheme|bkart|encryptedart|privateart).*(backup|archive|copy|old|orig)/ || lower ~ /(backup|archive|copy|old|orig).*(bokeh|bktheme|bkart|encryptedart|privateart)/) risk = "art-material-backup-or-archive"
           if (risk != "") print commit "\t" $0 "\t" risk

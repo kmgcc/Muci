@@ -14,6 +14,10 @@ nonisolated struct SkinPresentationPolicy: Codable, Sendable {
     enum LyricsBackdrop: String, Codable, Sendable { case standard, coverBlur, mesh }
     enum ControlForeground: String, Codable, Sendable { case chrome, artworkAdaptive, fixedLight, artistic }
     enum ArtBackgroundResourceProfile: String, Codable, Sendable { case standard, foreground }
+    /// Where a scene skin's Quick Panel opens.
+    enum PanelPlacement: String, Codable, Sendable { case center, leading, trailing }
+    /// Who draws the track detail: the host's glass card, or the scene from `host.detail`.
+    enum TrackDetailPresentation: String, Codable, Sendable { case host, scene }
 
     var windowBackgroundPlacement: WindowBackgroundPlacement = .content
     var backgroundOwner: BackgroundOwner = .host
@@ -23,6 +27,10 @@ nonisolated struct SkinPresentationPolicy: Codable, Sendable {
     var controlForeground: ControlForeground = .chrome
     var movesArtworkWithControls: Bool = true
     var artBackgroundResourceProfile: ArtBackgroundResourceProfile = .standard
+    var panelPlacement: PanelPlacement = .center
+    /// The scroll wheel sets the volume anywhere over the scene that has nothing else to scroll.
+    var scrollVolume: Bool = false
+    var trackDetail: TrackDetailPresentation = .host
 }
 
 struct SkinAudioDefaults: Codable {

@@ -3,7 +3,7 @@
 > [!NOTE]
 > 应用现已启用纯原生 Swift 歌词引擎（`MelismaKit`），基于 Core Text 与 Core Animation 实现高刷新率排版。设计原理与原生渲染架构详见 [原生 Swift 歌词系统](native-lyrics.md)。本文档主要记录跨 surface 的统一调度生命周期和时间偏移预处理算法。AMLL 资源仅保留给 Now Playing 的网格背景，不参与歌词渲染。
 
-kmgccc_player 采用统一的分层调度管理多 surface 歌词显示。播放状态、颜色计算与 surface 生命周期始终由 Swift 原生层持有，核心原则是让渲染层专注绘制，而播放事实与界面切换统一收敛在服务层。
+Muci 采用统一的分层调度管理多 surface 歌词显示。播放状态、颜色计算与 surface 生命周期始终由 Swift 原生层持有，核心原则是让渲染层专注绘制，而播放事实与界面切换统一收敛在服务层。
 
 ```mermaid
 flowchart LR

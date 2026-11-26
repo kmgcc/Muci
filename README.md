@@ -1,8 +1,11 @@
 <p align="center">
-  <img src="pages/assets/icon.png" width="192" alt="kmgccc_player Icon" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="pages/assets/icon-dark.png" />
+    <img src="pages/assets/icon.png" width="192" alt="Muci Icon" />
+  </picture>
 </p>
 
-<h1 align="center">kmgccc_player</h1>
+<h1 align="center">Muci</h1>
 
 <p align="center">
   面向 macOS 26 的本地音乐播放器。<br>
@@ -10,9 +13,9 @@
 </p>
 
 > [!WARNING]
-> kmgccc_player 是个人项目，可能存在缺陷、未完成特性或行为变动。不建议在重要环境中作为唯一播放器使用。欢迎通过官网或 Issue 反馈问题。
+> Muci 是个人项目，可能存在缺陷、未完成特性或行为变动。不建议在重要环境中作为唯一播放器使用。欢迎通过官网或 Issue 反馈问题。
 
-[kmgccc_player 官网](https://player.kmgccc.cn)
+[Muci 官网](https://player.kmgccc.cn)
 
 作为喜欢音乐，绘画多年的枸，我想为音乐播放器添加一份随性与独特的美感。感谢你的使用和喜欢！
 
@@ -38,6 +41,13 @@ CUE 和 SACD 按曲目入库，每首独立匹配歌曲资料与歌词，同一�
 
 WavPack 混合模式的 `.wvc` 校正文件应与 `.wv` 放在同一目录并保持同名。导入、拖放和原位扫描使用统一的格式列表，入库前由对应解码器读取 PCM 验证。
 
+## 安装与更新
+
+打开下载的 DMG，将 `Muci.app` 拖入「应用程序」。已安装旧版的用户可通过播放器内的更新功能升级，原有资料库仍从原位置打开。
+
+- [下载安装包](https://github.com/kmgcc/Muci/releases/latest)
+- [接入 MCP、CLI 或 Agent Skill](docs/automation-mcp.md)
+
 ## 系统要求
 
 - macOS 26.0 或更新版本
@@ -46,8 +56,8 @@ WavPack 混合模式的 `.wvc` 校正文件应与 `.wv` 放在同一目录并保
 ## 从源码构建
 
 ```sh
-git clone --recurse-submodules https://github.com/kmgcc/kmgccc_player.git
-cd kmgccc_player
+git clone --recurse-submodules https://github.com/kmgcc/Muci.git
+cd Muci
 ./scripts/bootstrap.sh
 ./scripts/verify.sh
 open kmgccc_player.xcodeproj
@@ -110,18 +120,20 @@ git submodule update --init --recursive
 
 ## 参与贡献
 
-缺陷和功能建议可提交到 [GitHub Issues](https://github.com/kmgcc/kmgccc_player/issues)。请先搜索已有 Issue，附上 macOS 版本、Mac 架构、复现步骤和预期结果。安全问题不要发公开 Issue，请按 `SECURITY.md` 的私密渠道报告。
+缺陷和功能建议可提交到 [GitHub Issues](https://github.com/kmgcc/Muci/issues)。请先搜索已有 Issue，附上 macOS 版本、Mac 架构、复现步骤和预期结果。安全问题不要发公开 Issue，请按 `SECURITY.md` 的私密渠道报告。
 
 贡献代码前请阅读 `CONTRIBUTING.md`。
 
 ## 致谢
 
-本项目在开发过程中使用并修改了以下开源项目：
+### 开源组件
+
+本项目在开发过程中使用或集成了以下开源项目：
 
 - **[applemusic-like-lyrics (AMLL)](https://github.com/amll-dev/applemusic-like-lyrics)** — 歌词背景网格动效，通过项目维护的 [integration fork](https://github.com/kmgcc/applemusic-like-lyrics-kmgcccplayer-integration) 集成
 - **[MelismaKit](https://github.com/kmgcc/melismakit)** — 原生 Swift 歌词排版与动效渲染引擎
+- **[apple-like-waves](https://github.com/kmgcc/apple-like-waves)** — 胶囊音频频谱与物理波形可视化算法
 - **[LDDC](https://github.com/chenmozhijin/LDDC)** — 歌词获取与匹配
-- **[apple-audio-visualization](https://github.com/taterboom/apple-audio-visualization)** — 音频频谱分析与可视化算法
 - **[FFmpeg](https://ffmpeg.org)** — 通用音频解封装、解码与 DSD/DST 转 PCM
 - **[WavPack](https://www.wavpack.com)** — WavPack 无损、混合模式与校正文件读取
 - **[DSD Nexus](https://github.com/wichers/dsd-nexus)** — SACD ISO 目录与音频帧读取
@@ -132,6 +144,12 @@ git submodule update --init --recursive
 - **[WhatsNewKit](https://github.com/SvenTiigi/WhatsNewKit)** — 应用更新说明展示
 - **[PLCrashReporter](https://github.com/microsoft/plcrashreporter)** — 主 App 进程崩溃报告捕获
 - **[Sparkle](https://github.com/sparkle-project/Sparkle)** — 软件自动更新检查与交付框架
+
+### 灵感与设计参考
+
+本项目在界面设计与动态歌词视觉上吸收了以下开源项目的灵感与思路：
+
+- **[Folia](https://github.com/chthollyphile/folia-major)** — 界面设计与沉浸式动态歌词动效灵感
 
 ## 美术素材版权声明
 

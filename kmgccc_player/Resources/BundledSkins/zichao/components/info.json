@@ -1,0 +1,69 @@
+{
+  "type": "layer",
+  "id": "info",
+  "visible": "=let.infoK > 0.005 && (state.infoDoc.title ?? '') != ''",
+  "opacity": "=smoothstep(0.15, 0.85, let.infoK)",
+  "frame": { "x": "50%", "y": "50%", "width": "100%", "height": "100%" },
+  "children": [
+    {
+      "type": "text",
+      "id": "infoTitle",
+      "text": "=state.infoDoc.title ?? ''",
+      "font": "=let.fontCJK",
+      "weight": "=let.fontWeight",
+      "fontSize": "=let.infoTitleSize",
+      "alignment": "leading",
+      "lineLimit": 2,
+      "color": "=mix(theme.accent, #FFFFFF, 0.94)",
+      "glyphMotion": {
+        "opacity": "=smoothstep(0, motion.emphasis * 0.4, glyph.age - glyph.index * motion.microInteraction * 0.3)",
+        "y": "=(1 - springTo(glyph.age - glyph.index * motion.microInteraction * 0.3, max(let.entryMin, let.entryTime) * 1.2, params.bounce * 0.5)) * viewport.min * 0.04"
+      },
+      "frame": { "x": "50%", "y": "=let.infoTop + let.infoTitleH / 2", "width": "=let.infoW" }
+    },
+    {
+      "type": "text",
+      "id": "infoArtist",
+      "text": "=let.infoArtistText",
+      "font": "=let.fontCaption",
+      "weight": "medium",
+      "fontSize": "=let.infoArtistSize",
+      "alignment": "leading",
+      "lineLimit": 2,
+      "color": "=alpha(mix(theme.accent, #FFFFFF, 0.8), 0.72)",
+      "frame": { "x": "50%", "y": "=let.infoArtistY + let.infoArtistH / 2", "width": "=let.infoW" }
+    },
+    {
+      "type": "shape",
+      "id": "infoRule",
+      "shape": "rectangle",
+      "color": "=withLightness(saturate(theme.accent, 1.5), 0.64)",
+      "opacity": 0.8,
+      "frame": { "x": "=let.infoX0", "y": "=let.infoRuleY", "anchor": "topLeading", "width": "=let.infoW", "height": 1.5 }
+    },
+    {
+      "type": "text",
+      "id": "infoText",
+      "text": "=state.infoDoc.text ?? ''",
+      "font": "=let.fontCaption",
+      "weight": "=let.fontCaptionWeight",
+      "fontSize": "=let.infoTextSize",
+      "lineSpacing": "=let.infoTextSize * 0.7",
+      "alignment": "leading",
+      "color": "=alpha(mix(theme.accent, #FFFFFF, 0.9), 0.88)",
+      "frame": { "x": "50%", "y": "=let.infoTextY + let.infoTextH / 2", "width": "=let.infoW" }
+    },
+    {
+      "type": "text",
+      "id": "infoNote",
+      "visible": "=(state.infoDoc.note ?? '') != ''",
+      "text": "=state.infoDoc.note ?? ''",
+      "font": "=let.fontCaption",
+      "weight": "regular",
+      "fontSize": "=let.infoNoteSize",
+      "alignment": "leading",
+      "color": "=alpha(mix(theme.accent, #FFFFFF, 0.8), 0.5)",
+      "frame": { "x": "50%", "y": "=let.infoNoteY + let.infoNoteH / 2", "width": "=let.infoW" }
+    }
+  ]
+}
