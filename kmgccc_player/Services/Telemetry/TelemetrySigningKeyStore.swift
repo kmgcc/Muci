@@ -12,8 +12,8 @@ import CryptoKit
 /// `kSecClassKey` entries are simply not read. If the software key file is
 /// absent (new install, or migrated from the old store), a fresh key is
 /// generated and `needsRegistration` is set so the caller forces re-registration
-/// with the server. If the file exists but is corrupted, the same path applies:
-/// discard, regenerate, re-register.
+/// with the server. Read and decode failures keep the existing signing identity
+/// on disk so a transient failure cannot rotate the installation ID.
 ///
 /// Public key registration, canonical string, ECDSA-P256-SHA256 signing,
 /// timestamp, nonce, and body-hash formats are unchanged - the server-side
@@ -52,10 +52,15 @@ final class TelemetrySigningKeyStore {
             Log.debug("[TelemetrySigning] privateKey cache hit", category: .telemetry)
             return cachedKey
         }
-        if let loaded = loadKeyFromFile() {
-            Log.info("[TelemetrySigning] loaded existing software key from disk", category: .telemetry)
-            cachedKey = loaded
-            return loaded
+        do {
+            if let loaded = try loadKeyFromFile() {
+                Log.info("[TelemetrySigning] loaded existing software key from disk", category: .telemetry)
+                cachedKey = loaded
+                return loaded
+            }
+        } catch {
+            Log.warning("[TelemetrySigning] existing signing key unavailable: \(error)", category: .telemetry)
+            return nil
         }
         Log.info("[TelemetrySigning] no key file found, generating new software P-256 key", category: .telemetry)
         let new = P256.Signing.PrivateKey()
@@ -107,18 +112,15 @@ final class TelemetrySigningKeyStore {
 
     // MARK: - File I/O
 
-    private func loadKeyFromFile() -> P256.Signing.PrivateKey? {
+    private func loadKeyFromFile() throws -> P256.Signing.PrivateKey? {
         let url = Self.keyFileURL
-        guard let data = try? Data(contentsOf: url) else {
-            Log.debug("[TelemetrySigning] key file not found at \(url.path)", category: .telemetry)
-            return nil
-        }
+        let data: Data
         do {
-            return try P256.Signing.PrivateKey(rawRepresentation: data)
-        } catch {
-            Log.warning("[TelemetrySigning] key file exists but could not be decoded (\(data.count) bytes), will regenerate: \(error)", category: .telemetry)
+            data = try Data(contentsOf: url)
+        } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
             return nil
         }
+        return try P256.Signing.PrivateKey(rawRepresentation: data)
     }
 
     private func saveKeyToFile(_ key: P256.Signing.PrivateKey) throws {
