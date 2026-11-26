@@ -59,11 +59,14 @@ static void relaunch(NSURL *url, BOOL skipMigration)
                                    completionHandler:^(NSRunningApplication *app, NSError *error) {
         if (app == nil || error != nil) {
             os_log_error(OS_LOG_DEFAULT, "Muci migration relaunch failed (%ld)", (long)error.code);
+            [NSWorkspace.sharedWorkspace activateFileViewerSelectingURLs:@[url]];
             exit(EXIT_FAILURE);
         }
         exit(EXIT_SUCCESS);
     }];
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 15 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+        os_log_error(OS_LOG_DEFAULT, "Muci migration relaunch timed out");
+        [NSWorkspace.sharedWorkspace activateFileViewerSelectingURLs:@[url]];
         exit(EXIT_FAILURE);
     });
     dispatch_main();
@@ -126,6 +129,7 @@ int main(int argc, const char *argv[])
         struct timespec timeout = {10, 0};
         if (kevent(events, NULL, 0, &watch, 1, &timeout) != 1 ||
             (watch.fflags & NOTE_EXIT) == 0 || hasOtherInstance(oldPID)) {
+        os_log_error(OS_LOG_DEFAULT, "Muci migration stopped before rename: exit not observed or another instance is running");
             return EXIT_FAILURE;
         }
 
