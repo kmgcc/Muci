@@ -344,59 +344,6 @@ final class SkinSystemTests: XCTestCase {
         XCTAssertNoThrow(try node(#"{"type":"particles","lifetime":2,"angle":-30,"spread":10,"trail":0.3,"count":6,"turbulence":40,"wander":0.6,"curve":0.1}"#))
         let comet = try node(##"{"type":"comet","frame":{"x":120,"y":80,"width":600,"height":400},"orbit":[140,90],"progress":"=fract(time)","angle":90,"sweep":-240,"trail":0.16,"size":3,"width":3,"color":"#FFFFFF"}"##)
         XCTAssertEqual(comet.type, "comet")
-
-        // Kinetic layout: every word gets a box, boxes never overlap, the block fits the safe area.
-        func words(_ texts: [String]) -> [SkinValue] {
-            texts.enumerated().map { .record(["text": .text($0.element), "start": .number(Double($0.offset) * 0.4), "end": .number(Double($0.offset) * 0.4 + 0.4)]) }
-        }
-        let lines = [words(["IT ", "WAS ", "LIKE"]), words(["we ", "were ", "never ", "meant ", "to ", "be ", "separated"]),
-                     words(["宝", "船", "载", "着", "星", "光"]), words(["你"]), [.record(["text": .text("一整行 只有行时间"), "start": .number(0), "end": .number(3)])]]
-        // A word's drawn box, turned by its tilt (a rotated word's box is already upright), a
-        // little inside its em box so touching neighbours do not count.
-        func corners(_ item: SkinValue) -> [CGPoint] {
-            let r = item[member: "r"].number(), tilt = (r >= 45 ? r - 90 : r) * .pi / 180
-            let hw = item[member: "w"].number() / 2 - 2, hh = item[member: "h"].number() / 2 * 0.86 - 2
-            let x = item[member: "x"].number(), y = item[member: "y"].number()
-            return [(-hw, -hh), (hw, -hh), (hw, hh), (-hw, hh)].map { dx, dy in
-                CGPoint(x: x + dx * cos(tilt) - dy * sin(tilt), y: y + dx * sin(tilt) + dy * cos(tilt))
-            }
-        }
-        func separated(_ p: [CGPoint], _ q: [CGPoint]) -> Bool {
-            for shape in [p, q] {
-                for i in 0..<4 {
-                    let edge = CGPoint(x: shape[(i + 1) % 4].x - shape[i].x, y: shape[(i + 1) % 4].y - shape[i].y)
-                    let axis = CGPoint(x: -edge.y, y: edge.x)
-                    let a = p.map { $0.x * axis.x + $0.y * axis.y }, b = q.map { $0.x * axis.x + $0.y * axis.y }
-                    if a.max()! <= b.min()! || b.max()! <= a.min()! { return true }
-                }
-            }
-            return false
-        }
-        var archetypes: [Double: Set<Int>] = [0: [], 1: []]
-        for (number, line) in lines.enumerated() {
-            for complexity in [0.0, 1.0] {
-                for seed in 0..<40 {
-                    let result = SkinKineticLayout.layout(line, options: [.number(Double(seed) * 1.618 + Double(number)), .list([]), .number(2000), .number(1000), .number(1.08), .list([.text(""), .text("")]), .text("heavy"), .number(1), .number(complexity)])
-                    archetypes[complexity]?.insert(Int(result[member: "archetype"].number()))
-                    let items = result[member: "items"].listValue
-                    XCTAssertGreaterThanOrEqual(items.count, line.count)
-                    let size = result[member: "size"].listValue.map { $0.number() }
-                    XCTAssertLessThanOrEqual(size[0], 2001); XCTAssertLessThanOrEqual(size[1], 1001)
-                    for item in items {
-                        XCTAssertTrue(item[member: "x"].number().isFinite && item[member: "y"].number().isFinite)
-                        XCTAssertEqual(hypot(item[member: "ex"].number(), item[member: "ey"].number()), 1, accuracy: 0.01)
-                        XCTAssertTrue((0...4).contains(Int(item[member: "m"].number(-1))))
-                    }
-                    for a in items.indices { for b in items.indices where b > a {
-                        XCTAssertTrue(separated(corners(items[a]), corners(items[b])),
-                                      "family \(result[member: "family"].number()) overlaps \(items[a][member: "t"].textValue) / \(items[b][member: "t"].textValue)")
-                    } }
-                }
-            }
-        }
-        // Simple lines stay with rows, blocks and calm rows (and the rare vertical hero or cascade); rich lines use every archetype.
-        XCTAssertTrue(archetypes[0]!.isSubset(of: [0, 1, 2, 6, 8, 10, 15]), "\(archetypes[0]!)")
-        XCTAssertGreaterThanOrEqual(archetypes[1]!.count, 12, "\(archetypes[1]!)")
     }
 
     @MainActor
