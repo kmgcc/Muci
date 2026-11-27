@@ -65,8 +65,8 @@ final class AppSessionHost: ObservableObject {
     @Published private(set) var sidebarVisibleTaskIDs: Set<UUID> = []
     private var sidebarRevealTracker = SidebarTaskRevealTracker()
     private var sidebarRevealTask: Task<Void, Never>?
-    /// Source scans the listener started (Settings, a folder's page). Scans
-    /// that follow file changes, mounts or activation do not count.
+    /// Source scans the user started (Settings, a folder's page). Scans are
+    /// manual/config-driven only, so every scan counts.
     private var userSourceScanCount = 0 {
         didSet { refreshSidebarTaskVisibility() }
     }
@@ -176,11 +176,7 @@ final class AppSessionHost: ObservableObject {
     private var launchDiagnosticsTask: Task<Void, Never>?
     private var hasPreparedLaunchDiagnostics = false
     private var playbackModeObserver: NSObjectProtocol?
-    private var workspaceLibraryObservers: [NSObjectProtocol] = []
-    private var appActiveLibraryObserver: NSObjectProtocol?
     private var backgroundSettingsObserver: NSObjectProtocol?
-    private var activeLibraryRescanTask: Task<Void, Never>?
-    private var lastForegroundLibraryRescan: (libraryID: UUID, uptime: TimeInterval)?
     private var trashedLibraryReconciliationTask: Task<Void, Never>?
     private var playbackMemoryTimer: Timer?
     private var memoryPressureObserverToken: UUID?
@@ -1001,9 +997,7 @@ final class AppSessionHost: ObservableObject {
     /// User-initiated full scan across every referenced source of the active
     /// library (spec 12.1 / 18.1). Scan progress is published through
     /// `referencedSourceScanStatesSnapshot`.
-    /// `automatic` marks a scan the App starts by itself (activation, mounts);
-    /// it stays off the sidebar, while a scan the listener starts shows there.
-    func refreshAllReferencedSources(libraryID: UUID? = nil, automatic: Bool = false) async throws {
+    func refreshAllReferencedSources(libraryID: UUID? = nil) async throws {
         guard let session = activeLibraryBinding.activeSession,
               session.context.mode == .referenced,
               let store = session.referencedSourceStore else { return }
@@ -1013,12 +1007,8 @@ final class AppSessionHost: ObservableObject {
         let sourceIDs = try await store.loadAll().map(\.id)
         guard !sourceIDs.isEmpty else { return }
         beginManualScanOverride(sourceIDs: sourceIDs)
-        if !automatic {
-            userSourceScanCount += 1
-        }
-        defer {
-            if !automatic { userSourceScanCount -= 1 }
-        }
+        userSourceScanCount += 1
+        defer { userSourceScanCount -= 1 }
         do {
             _ = try await session.runLibraryOperation(as: .sourceScan) {
                 try await session.refreshReferencedSources()
@@ -2369,8 +2359,6 @@ final class AppSessionHost: ObservableObject {
         audioDSPController.detachPlayback()
         audioProcessingGlobalsController.detachPlayback()
         await cacheServices?.detachBackgroundSources()
-        activeLibraryRescanTask?.cancel()
-        activeLibraryRescanTask = nil
         playbackMemoryTimer?.invalidate()
         playbackMemoryTimer = nil
         firstUsePrewarmTask?.cancel()
@@ -2406,33 +2394,11 @@ final class AppSessionHost: ObservableObject {
             }
         }
 
-        if workspaceLibraryObservers.isEmpty {
-            let center = NSWorkspace.shared.notificationCenter
-            workspaceLibraryObservers = [
-                NSWorkspace.didMountNotification,
-                NSWorkspace.didUnmountNotification,
-            ].map { name in
-                center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                    MainActor.assumeIsolated {
-                        self?.scheduleActiveLibraryRescan()
-                    }
-                }
-            }
-        }
-
-        if appActiveLibraryObserver == nil {
-            appActiveLibraryObserver = NotificationCenter.default.addObserver(
-                forName: NSApplication.didBecomeActiveNotification,
-                object: nil,
-                queue: .main
-            ) { [weak self] _ in
-                MainActor.assumeIsolated {
-                    // Idle artwork work keeps its place; the scheduler pauses
-                    // it while the listener is using the App.
-                    self?.scheduleActiveLibraryRescan(fromForeground: true)
-                }
-            }
-        }
+        // No NSWorkspace mount/unmount or NSApplication.didBecomeActive
+        // library rescan observers are installed. Automatic library rescans on
+        // file-system events, app activation, and volume changes were removed
+        // deliberately; external changes surface through the explicit
+        // "Rescan" actions (settings, per-source, import) instead.
 
         AppDelegate.applicationWillTerminateHandler = { [weak self] in
             guard let self else { return }
@@ -2544,74 +2510,13 @@ final class AppSessionHost: ObservableObject {
         )
     }
 
-    private func scheduleActiveLibraryRescan(fromForeground: Bool = false) {
-        activeLibraryRescanTask?.cancel()
-        activeLibraryRescanTask = Task { @MainActor [weak self] in
-            if fromForeground {
-                do { try await Task.sleep(for: .milliseconds(500)) }
-                catch { return }
-            }
-            guard let self else { return }
-            await reconcileTrashedMusicLibraries()
-            guard !Task.isCancelled, let session = activeLibraryBinding.activeSession else { return }
-            let libraryID = session.context.id
-            if fromForeground {
-                if let previous = lastForegroundLibraryRescan,
-                   previous.libraryID == libraryID,
-                   ProcessInfo.processInfo.systemUptime - previous.uptime < 30 {
-                    return
-                }
-                lastForegroundLibraryRescan = (libraryID, ProcessInfo.processInfo.systemUptime)
-            }
-            if session.context.mode == .referenced {
-                // A healthy file monitor already reconciles every change
-                // through FSEvents, so a foreground rescan would repeat the
-                // same work. Keep it only as the fallback for a stopped
-                // listener or a failed automatic scan; mount and unmount
-                // notifications never take this path.
-                if fromForeground, await referencedMonitorIsHealthy(session) {
-                    return
-                }
-                do {
-                    try await refreshAllReferencedSources(automatic: true)
-                } catch {
-                    Log.warning(
-                        "[LibrarySession] lifecycle source refresh failed library=\(libraryID) error=\(error)",
-                        category: .library
-                    )
-                }
-            } else if let monitor = session.libraryChangeMonitor {
-                await monitor.markDirty(sourceIDs: [libraryID], fullScan: true)
-            }
-        }
-    }
-
-    /// The change monitor publishes one scan state per watched root, including
-    /// the library root, and clears the snapshot when its event stream stops.
-    /// An empty snapshot therefore means no listener is running; a failed
-    /// state means the last automatic reconcile failed, so activating the App
-    /// remains the fallback retry.
-    private func referencedMonitorIsHealthy(_ session: LibrarySession) async -> Bool {
-        guard let monitor = session.libraryChangeMonitor else { return false }
-        let states = await monitor.sourceStateSnapshot()
-        return !states.isEmpty && !states.values.contains(.failed)
-    }
-
-
     deinit {
         MainActor.assumeIsolated {
             if let playbackModeObserver {
                 NotificationCenter.default.removeObserver(playbackModeObserver)
             }
-            if let appActiveLibraryObserver {
-                NotificationCenter.default.removeObserver(appActiveLibraryObserver)
-            }
             if let backgroundSettingsObserver {
                 NotificationCenter.default.removeObserver(backgroundSettingsObserver)
-            }
-            let workspaceCenter = NSWorkspace.shared.notificationCenter
-            for observer in workspaceLibraryObservers {
-                workspaceCenter.removeObserver(observer)
             }
             playbackMemoryTimer?.invalidate()
             if let memoryPressureObserverToken {
@@ -2619,7 +2524,6 @@ final class AppSessionHost: ObservableObject {
             }
             firstUsePrewarmTask?.cancel()
             launchDiagnosticsTask?.cancel()
-            activeLibraryRescanTask?.cancel()
             AppDelegate.applicationWillTerminateHandler = nil
             AppDelegate.shouldCancelTerminationForPendingUpdateHandler = nil
             UpdateCoordinator.shared.terminationPreparationHandler = nil

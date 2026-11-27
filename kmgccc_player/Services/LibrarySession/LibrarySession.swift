@@ -225,12 +225,8 @@ final class LibrarySession: LibrarySessionLifecycle {
     private let mutationCoordinator: LibraryMutationCoordinator
     private let mutationJournal: LibraryMutationJournal
     private var isLoaded = false
-    /// First source reconcile and source monitor start, running after
-    /// activation. `load()` waits for it; the session controller does not.
-    private var initialReconcileTask: Task<Void, Never>?
     private var isClosed = false
     private var onSlowQuiescenceStage: (@MainActor (String) -> Void)?
-    private(set) var initialReconcileOutcome: InitialReconcileOutcome?
     private(set) var unresolvedMutationIntents: [LibraryMutationIntent] = []
     var unresolvedMutationCount = 0
     var ncmRecoveryService: ReferencedNCMConversionService?
@@ -306,7 +302,6 @@ final class LibrarySession: LibrarySessionLifecycle {
 
     func load() async throws {
         try await activate()
-        await waitForInitialReconcile()
     }
 
     /// Establishes the session and publishes it before the first source
@@ -336,57 +331,43 @@ final class LibrarySession: LibrarySessionLifecycle {
         // writer is allowed to touch the same targets. NCM recovery runs
         // first so an association it can finish is visible to the verifier.
         await recoverPendingMutations()
-        isLoaded = true
-        if referencedSourceReconciler != nil {
-            initialReconcileTask = Task { @MainActor [weak self] in
-                guard let self else { return }
-                await self.runPostActivationWork()
-            }
-        } else if context.mode == .managed, let libraryChangeMonitor {
-            try await startManagedLibraryMonitor(libraryChangeMonitor)
-        }
-    }
-
-    func waitForInitialReconcile() async {
-        _ = await initialReconcileTask?.value
-    }
-
-    /// First source reconcile and source monitor start. Both run after
-    /// activation: the reconcile because it can be slow, the monitor because it
-    /// must replay prepared intents before it starts watching for new events.
-    private func runPostActivationWork() async {
-        guard let reconciler = referencedSourceReconciler else { return }
-        do {
-            initialReconcileOutcome = try await Self.runInitialReconcile(
-                reconciler: reconciler,
-                operationCoordinator: operationCoordinator
-            )
-        } catch is CancellationError {
-            return
-        } catch {
-            Log.error(
-                "[LibrarySession] initial source reconcile failed: \(error.localizedDescription)",
-                category: .library
-            )
-        }
-        guard !Task.isCancelled else { return }
-        do {
-            if let libraryChangeMonitor {
-                try await startReferencedSourceMonitor(
-                    libraryChangeMonitor,
-                    reconciler: reconciler,
-                    roots: try await reconciler.monitoredSourceRoots()
+        // Scans are manual/config-driven only (settings rescan, per-source
+        // rescan, import completion, source config changes). Activation
+        // performs no source reconcile — the persisted index stays
+        // authoritative until an explicit rescan. Only durable-state repairs
+        // remain: intent replay finalizes a reconcile interrupted by a crash
+        // (no file system access — it drives the recorded diff to its
+        // committed end state) and the DB-level orphan repair fixes dangling
+        // source locators. Skipping either would surface as half-applied
+        // mutations or playback failures that a later explicit rescan cannot
+        // attribute.
+        if let referencedSourceReconciler {
+            do {
+                _ = try await operationCoordinator.run {
+                    try await referencedSourceReconciler.replayPending()
+                }
+                _ = try await operationCoordinator.run {
+                    try await referencedSourceReconciler.repairOrphanedFileSources()
+                }
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                Log.warning(
+                    "[LibrarySession] referenced durable-state repair deferred after load failure: \(error)",
+                    category: .library
                 )
             }
-        } catch is CancellationError {
-            return
-        } catch {
-            Log.error(
-                "[LibrarySession] source monitor failed to start after activation: \(error.localizedDescription)",
-                category: .library
-            )
         }
+        isLoaded = true
+        // No FSEvents monitoring is started. Automatic reconciles on FS
+        // events, app activation, and volume mounts were removed deliberately;
+        // external changes surface through an explicit rescan instead.
     }
+
+    /// No-op since scans became manual/config-driven: activation no longer
+    /// spawns a first reconcile to wait for. Kept for the session-controller
+    /// protocol so callers can keep awaiting it safely.
+    func waitForInitialReconcile() async {}
 
     /// Switch-time first reconcile contract: every known source is attempted
     /// exactly once; one failing source never skips the rest. It runs after the
@@ -1384,30 +1365,7 @@ final class LibrarySession: LibrarySessionLifecycle {
             return
         }
         guard !pending.isEmpty else { return }
-        guard let libraryChangeMonitor else {
-            _ = try? await reconciler.pruneUnusedFileSources()
-            return
-        }
-        let originalRoots = (try? await reconciler.monitoredSourceRoots()) ?? [:]
-        await libraryChangeMonitor.stopAndWait()
         _ = try? await reconciler.pruneUnusedFileSources()
-        do {
-            try await startReferencedSourceMonitor(
-                libraryChangeMonitor,
-                reconciler: reconciler,
-                roots: try await reconciler.monitoredSourceRoots()
-            )
-        } catch {
-            Log.error(
-                "[LibrarySession] source monitor restart after file source cleanup failed: \(error.localizedDescription)",
-                category: .library
-            )
-            try? await startReferencedSourceMonitor(
-                libraryChangeMonitor,
-                reconciler: reconciler,
-                roots: originalRoots
-            )
-        }
     }
 
     /// Starts non-blocking session work, such as initial import after the
@@ -1935,51 +1893,15 @@ final class LibrarySession: LibrarySessionLifecycle {
 
     @discardableResult
     func refreshReferencedSources() async throws -> [ReferencedSourceScopeIssue] {
-        guard !isClosed,
-              let referencedSourceReconciler,
-              let libraryChangeMonitor else { return [] }
-        await libraryChangeMonitor.stopAndWait()
-        do {
-            let issues = try await referencedSourceReconciler.refreshSources()
-            try await startReferencedSourceMonitor(
-                libraryChangeMonitor,
-                reconciler: referencedSourceReconciler,
-                roots: try await referencedSourceReconciler.monitoredSourceRoots()
-            )
-            return issues
-        } catch {
-            try? await startReferencedSourceMonitor(
-                libraryChangeMonitor,
-                reconciler: referencedSourceReconciler,
-                roots: try await referencedSourceReconciler.monitoredSourceRoots()
-            )
-            throw error
-        }
+        guard !isClosed, let referencedSourceReconciler else { return [] }
+        return try await referencedSourceReconciler.refreshSources()
     }
 
     func refreshReferencedSource(_ sourceID: UUID) async throws -> [ReferencedSourceScopeIssue] {
-        guard !isClosed,
-              let referencedSourceReconciler,
-              let libraryChangeMonitor else { return [] }
-        let originalRoots = try await referencedSourceReconciler.monitoredSourceRoots()
-        await libraryChangeMonitor.stopAndWait()
-        do {
-            let issues = try await referencedSourceReconciler.refreshSource(sourceID)
-            try await startReferencedSourceMonitor(
-                libraryChangeMonitor,
-                reconciler: referencedSourceReconciler,
-                roots: try await referencedSourceReconciler.monitoredSourceRoots()
-            )
-            await libraryViewModel.reloadLibrary()
-            return issues
-        } catch {
-            try? await startReferencedSourceMonitor(
-                libraryChangeMonitor,
-                reconciler: referencedSourceReconciler,
-                roots: originalRoots
-            )
-            throw error
-        }
+        guard !isClosed, let referencedSourceReconciler else { return [] }
+        let issues = try await referencedSourceReconciler.refreshSource(sourceID)
+        await libraryViewModel.reloadLibrary()
+        return issues
     }
 
     func setReferencedSourceExcludedPath(
@@ -1987,92 +1909,34 @@ final class LibrarySession: LibrarySessionLifecycle {
         relativePath: String,
         excluded: Bool
     ) async throws {
-        guard !isClosed,
-              let referencedSourceReconciler,
-              let libraryChangeMonitor else { return }
-        let originalRoots = try await referencedSourceReconciler.monitoredSourceRoots()
-        await libraryChangeMonitor.stopAndWait()
-        do {
-            try await referencedSourceReconciler.setExcludedRelativePath(
-                sourceID: sourceID,
-                relativePath: relativePath,
-                excluded: excluded
-            )
-            try await startReferencedSourceMonitor(
-                libraryChangeMonitor,
-                reconciler: referencedSourceReconciler,
-                roots: try await referencedSourceReconciler.monitoredSourceRoots()
-            )
-            await libraryViewModel.reloadLibrary()
-        } catch {
-            try? await startReferencedSourceMonitor(
-                libraryChangeMonitor,
-                reconciler: referencedSourceReconciler,
-                roots: originalRoots
-            )
-            throw error
-        }
+        guard !isClosed, let referencedSourceReconciler else { return }
+        try await referencedSourceReconciler.setExcludedRelativePath(
+            sourceID: sourceID,
+            relativePath: relativePath,
+            excluded: excluded
+        )
+        await libraryViewModel.reloadLibrary()
     }
 
-    /// Changes whether filesystem events automatically reconcile one Source.
-    /// Manual refresh remains available for `.off`; changing this policy only
-    /// restarts the monitor and does not remove Track authority.
+    /// Changes whether filesystem events would automatically reconcile one
+    /// Source. This build deliberately runs no FSEvents monitor (external
+    /// changes surface through an explicit rescan), so the policy is persisted
+    /// for correctness of `source.setMonitorPolicy` and honored if a monitor
+    /// is (re)introduced, but it does not start one here.
     func setReferencedSourceMonitorPolicy(
         sourceID: UUID,
         policy: ReferencedSourceMonitorPolicy
     ) async throws {
-        guard !isClosed,
-              let referencedSourceReconciler,
-              let libraryChangeMonitor,
-              let referencedSourceStore else { return }
-        let originalRoots = try await referencedSourceReconciler.monitoredSourceRoots()
-        let originalPolicy = try await referencedSourceStore.load(id: sourceID).monitorPolicy
-        await libraryChangeMonitor.stopAndWait()
-        do {
-            _ = try await referencedSourceStore.updateMonitorPolicy(
-                sourceID: sourceID,
-                policy: policy
-            )
-            try await startReferencedSourceMonitor(
-                libraryChangeMonitor,
-                reconciler: referencedSourceReconciler,
-                roots: try await referencedSourceReconciler.monitoredSourceRoots()
-            )
-        } catch {
-            _ = try? await referencedSourceStore.updateMonitorPolicy(
-                sourceID: sourceID,
-                policy: originalPolicy
-            )
-            try? await startReferencedSourceMonitor(
-                libraryChangeMonitor,
-                reconciler: referencedSourceReconciler,
-                roots: originalRoots
-            )
-            throw error
-        }
+        guard !isClosed, let referencedSourceStore else { return }
+        _ = try await referencedSourceStore.updateMonitorPolicy(
+            sourceID: sourceID,
+            policy: policy
+        )
     }
 
     func removeReferencedSource(_ sourceID: UUID) async throws {
-        guard !isClosed,
-              let referencedSourceReconciler,
-              let libraryChangeMonitor else { return }
-        let originalRoots = try await referencedSourceReconciler.monitoredSourceRoots()
-        await libraryChangeMonitor.stopAndWait()
-        do {
-            try await referencedSourceReconciler.removeSource(sourceID)
-            try await startReferencedSourceMonitor(
-                libraryChangeMonitor,
-                reconciler: referencedSourceReconciler,
-                roots: try await referencedSourceReconciler.monitoredSourceRoots()
-            )
-        } catch {
-            try? await startReferencedSourceMonitor(
-                libraryChangeMonitor,
-                reconciler: referencedSourceReconciler,
-                roots: originalRoots
-            )
-            throw error
-        }
+        guard !isClosed, let referencedSourceReconciler else { return }
+        try await referencedSourceReconciler.removeSource(sourceID)
     }
 
     func prepareSourceReconnect(
@@ -2093,36 +1957,14 @@ final class LibrarySession: LibrarySessionLifecycle {
         planID: String,
         conflictSelections: [UUID: URL]
     ) async throws {
-        guard !isClosed,
-              let sourceReconnectService,
-              let referencedSourceReconciler,
-              let libraryChangeMonitor else {
+        guard !isClosed, let sourceReconnectService else {
             throw LibrarySessionFactoryError.missingReferencedSourceServices
         }
-        let originalRoots = try await referencedSourceReconciler.monitoredSourceRoots()
-        await libraryChangeMonitor.stopAndWait()
-        do {
-            try await sourceReconnectService.reconnectSource(
-                preparation: preparation,
-                planID: planID,
-                conflictSelections: conflictSelections
-            )
-            try await startReferencedSourceMonitor(
-                libraryChangeMonitor,
-                reconciler: referencedSourceReconciler,
-                roots: try await referencedSourceReconciler.monitoredSourceRoots()
-            )
-        } catch {
-            try? await startReferencedSourceMonitor(
-                libraryChangeMonitor,
-                reconciler: referencedSourceReconciler,
-                roots: try await sourceReconnectServiceRoots(
-                    fallback: originalRoots,
-                    reconciler: referencedSourceReconciler
-                )
-            )
-            throw error
-        }
+        try await sourceReconnectService.reconnectSource(
+            preparation: preparation,
+            planID: planID,
+            conflictSelections: conflictSelections
+        )
     }
 
     func prepareTrackRelocation(
@@ -2151,95 +1993,6 @@ final class LibrarySession: LibrarySessionLifecycle {
         )
     }
 
-    private func startReferencedSourceMonitor(
-        _ monitor: LibraryChangeMonitor,
-        reconciler: ReferencedSourceReconciler,
-        roots: [UUID: URL]
-    ) async throws {
-        let libraryID = context.id
-        let libraryFilter = ManagedLibraryFileEventFilter(paths: context.paths)
-        let libraryRootPath = context.rootURL.standardizedFileURL.path
-        var monitoredRoots = roots
-        monitoredRoots[libraryID] = context.rootURL
-        var watchPathsBySource = roots.mapValues { [$0] }
-        watchPathsBySource[libraryID] = libraryMonitorWatchPaths()
-
-        try await monitor.start(
-            sourceRoots: monitoredRoots,
-            watchPathsBySource: watchPathsBySource,
-            eventFilter: { event in
-                let eventPath = URL(fileURLWithPath: event.path).standardizedFileURL.path
-                guard eventPath == libraryRootPath || eventPath.hasPrefix(libraryRootPath + "/") else {
-                    return true
-                }
-                return libraryFilter.shouldProcess(event)
-            },
-            initiallyDirty: false
-        ) { [weak reconciler, weak libraryViewModel] dirtyIDs, _ in
-            if dirtyIDs.contains(libraryID) {
-                await libraryViewModel?.reloadLibrary()
-            }
-
-            let sourceIDs = dirtyIDs.subtracting([libraryID])
-            guard !sourceIDs.isEmpty, let reconciler else { return }
-            // The monitor is itself a session-owned lifecycle boundary:
-            // `stopAndWait()` cancels and awaits this callback before a source
-            // reconnect, library switch, or shutdown proceeds. Keeping the
-            // callback out of the serial mutation coordinator also avoids a
-            // stop/reconcile deadlock when a scan is already queued behind a
-            // user-initiated source operation.
-            let outcome = await reconciler.reconcileBestEffort(sourceIDs: sourceIDs)
-            if !outcome.failedSourceIDs.isEmpty {
-                await monitor.markFailed(sourceIDs: outcome.failedSourceIDs)
-            }
-            // Only pull a fresh snapshot into the UI when the reconcile
-            // actually changed repository/runtime state. Empty-diff rescans
-            // (the common case for FS-event debounces) used to trigger a full
-            // `reloadLibrary()` every time, which stalled the UI on large
-            // referenced libraries.
-            if !outcome.changes.isEmpty {
-                await libraryViewModel?.reloadLibrary()
-            }
-        }
-    }
-
-    private func startManagedLibraryMonitor(_ monitor: LibraryChangeMonitor) async throws {
-        let libraryID = context.id
-        let filter = ManagedLibraryFileEventFilter(paths: context.paths)
-        try await monitor.start(
-            sourceRoots: [libraryID: context.rootURL],
-            watchPathsBySource: [libraryID: libraryMonitorWatchPaths()],
-            eventFilter: { filter.shouldProcess($0) },
-            initiallyDirty: false
-        ) { [weak libraryViewModel] libraryIDs, _ in
-            guard libraryIDs.contains(libraryID), let libraryViewModel else { return }
-            await libraryViewModel.reloadLibrary()
-        }
-    }
-
-    private func libraryMonitorWatchPaths() -> [URL] {
-        let paths = [
-            context.paths.tracksRootURL,
-            context.paths.playlistsRootURL,
-            context.paths.artistsRootURL,
-            context.paths.albumsRootURL,
-            context.rootURL.appendingPathComponent("MediaAssets", isDirectory: true),
-        ]
-        let fileManager = FileManager.default
-        guard paths.allSatisfy({ fileManager.fileExists(atPath: $0.path) }) else {
-            return [context.rootURL]
-        }
-        return paths
-    }
-
-    private func sourceReconnectServiceRoots(
-        fallback: [UUID: URL],
-        reconciler: ReferencedSourceReconciler
-    ) async throws -> [UUID: URL] {
-        let current = try await reconciler.monitoredSourceRoots()
-        return current.isEmpty ? fallback : current
-    }
-
     func flush() async throws {
         // Finder can move or replace an active root before the next refresh.
         // Pending stats must not recreate that path or write into the Trash.
@@ -2266,7 +2019,6 @@ final class LibrarySession: LibrarySessionLifecycle {
     func quiesce() async {
         guard !isClosed else { return }
         operationCoordinator.stopAcceptingNewOperations()
-        initialReconcileTask?.cancel()
         loudnessService.cancel()
         stopStorageMaintenance()
         revokeBackgroundWork()
@@ -2274,7 +2026,6 @@ final class LibrarySession: LibrarySessionLifecycle {
         playbackService.unbindAudioDSPDevices()
         await waitForQuiescenceStage("文件监控") { _ = await libraryChangeMonitor?.stopAndWait() }
         await operationCoordinator.cancelAndWait()
-        await waitForQuiescenceStage("首轮来源对账") { _ = await initialReconcileTask?.value }
         await waitForQuiescenceStage("文件导入") { await fileImportService.quiesce() }
         playerViewModel.stop()
         playerViewModel.stopLevelMeter()
@@ -2288,13 +2039,11 @@ final class LibrarySession: LibrarySessionLifecycle {
     func close() async {
         guard !isClosed else { return }
         operationCoordinator.stopAcceptingNewOperations()
-        initialReconcileTask?.cancel()
         loudnessService.cancel()
         stopStorageMaintenance()
         revokeBackgroundWork()
         await libraryChangeMonitor?.stopAndWait()
         await operationCoordinator.cancelAndWait()
-        _ = await initialReconcileTask?.value
         await fileImportService.quiesce()
         playerViewModel.stop()
         playerViewModel.stopLevelMeter()
