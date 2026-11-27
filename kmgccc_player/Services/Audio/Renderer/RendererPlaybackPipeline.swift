@@ -529,6 +529,11 @@ nonisolated final class RendererPlaybackPipeline: @unchecked Sendable {
     private var rendererObserverTokens: [NSObjectProtocol] = []
 
     var onProgress: ((Double) -> Void)?
+    /// Consulted on the pipeline queue before analysis slices are cut. When it
+    /// returns false the chunk is enqueued to the renderer without copying any
+    /// analysis slices, so a session with no visualization consumer pays no
+    /// per-chunk slice allocation. Unwired defaults to true (legacy behavior).
+    var analysisGate: (() -> Bool)?
     /// Called on the main queue after a load/seek has flushed the old timeline,
     /// primed the new samples, and committed the synchronizer's rate/anchor.
     /// The segment ID lets the owner discard a callback from an older seek.
@@ -550,6 +555,11 @@ nonisolated final class RendererPlaybackPipeline: @unchecked Sendable {
 
     private static let feedInterval: TimeInterval = 0.1
     private static let analysisInterval: TimeInterval = 1.0 / 60.0
+    /// When no visualization consumer is registered the analysis queue is
+    /// empty, so the tick only exists to drive stall detection (2.5s window)
+    /// and pruning — 2Hz is plenty and keeps a hidden-window playback from
+    /// waking the pipeline queue 60 times a second for nothing.
+    private static let analysisIntervalIdle: TimeInterval = 0.5
     private static let statusPollInterval: TimeInterval = 0.5
     private static let recoveryCooldown: TimeInterval = 0.5
     private static let rebuildSuppressionInterval: TimeInterval = 3.0
@@ -558,6 +568,7 @@ nonisolated final class RendererPlaybackPipeline: @unchecked Sendable {
     nonisolated(unsafe) private var feedTimer: DispatchSourceTimer?
     nonisolated(unsafe) private var analysisTimer: DispatchSourceTimer?
     nonisolated(unsafe) private var statusTimer: DispatchSourceTimer?
+    private var isAnalysisAtHighRate = true
     nonisolated(unsafe) private var progressObserver: Any?
 
     init() {
@@ -582,8 +593,9 @@ nonisolated final class RendererPlaybackPipeline: @unchecked Sendable {
         synchronizer.delaysRateChangeUntilHasSufficientMediaData = false
         installRendererObservers(for: renderer, timelineGeneration: timelineGeneration)
         installProgressObserver(for: timelineGeneration)
-        startAnalysisTimer()
-        startStatusPolling()
+        // Analysis/status timers are started per load/play (see
+        // startAnalysisTimerIfNeeded / startStatusPollingIfNeeded); an idle
+        // pipeline with no loaded track must not wake its queue at all.
     }
 
     deinit {
@@ -1632,7 +1644,8 @@ nonisolated final class RendererPlaybackPipeline: @unchecked Sendable {
     ) {
         var offset = 0
         var index = 0
-        while offset < pcm.frames {
+        let shouldCollectAnalysis = analysisGate?() ?? true
+        while shouldCollectAnalysis, offset < pcm.frames {
             let count = min(Self.analysisChunkFrames, pcm.frames - offset)
             analysisQueue.append(AnalysisChunk(
                 presentationTime: presentationTime + Double(offset) / pcm.sampleRate,
@@ -1783,6 +1796,8 @@ nonisolated final class RendererPlaybackPipeline: @unchecked Sendable {
             self.transportCommandGeneration = transportGeneration
             self.resetDSPProcessingLoad()
             self.stopFeedTimer()
+            self.stopAnalysisTimer()
+            self.stopStatusPolling()
             self.outputGainController.reset(playing: false, publish: false)
             self.activeLoadSegmentID = segmentID
             self.rendererFailureRecoveryBudget.beginNewRequest()
@@ -1909,6 +1924,10 @@ nonisolated final class RendererPlaybackPipeline: @unchecked Sendable {
             )
             self.installProgressObserver(for: requestedGeneration)
             self.startFeedTimerIfNeeded()
+            self.startStatusPollingIfNeeded()
+            if self.isPlaybackActive {
+                self.startAnalysisTimerIfNeeded()
+            }
             let committedClock = max(0, clockTimeSeconds)
             DispatchQueue.main.async { [weak self] in
                 guard let self,
@@ -2182,6 +2201,7 @@ nonisolated final class RendererPlaybackPipeline: @unchecked Sendable {
                 time: CMTime(seconds: clock, preferredTimescale: 600)
             )
             self.startFeedTimerIfNeeded()
+            self.startAnalysisTimerIfNeeded()
             self.beginPlaybackFadeIn()
         }
     }
@@ -2210,6 +2230,7 @@ nonisolated final class RendererPlaybackPipeline: @unchecked Sendable {
                 self.isPlaybackActive = false
                 self.resetDSPProcessingLoad()
                 self.invalidateStallRecovery()
+                self.stopAnalysisTimer()
                 self.setSynchronizerRateSynchronously(0, time: self.synchronizer.currentTime())
             }
         }
@@ -2238,6 +2259,8 @@ nonisolated final class RendererPlaybackPipeline: @unchecked Sendable {
             self.pendingAutoFlushResync = false
             self.invalidateStallRecovery()
             self.stopFeedTimer()
+            self.stopAnalysisTimer()
+            self.stopStatusPolling()
             self.removeRendererObservers()
             self.removeProgressObserver()
             self.renderer.flush()
@@ -2843,7 +2866,11 @@ nonisolated final class RendererPlaybackPipeline: @unchecked Sendable {
 
     // MARK: - Analysis timing and stall detection
 
-    private func startAnalysisTimer() {
+    private func startAnalysisTimerIfNeeded() {
+        guard isLoaded, isPlaybackActive, analysisTimer == nil else { return }
+        // New timer schedules at full rate; the first tick syncs down to the
+        // idle cadence when no analysis consumer is registered.
+        isAnalysisAtHighRate = true
         let timer = DispatchSource.makeTimerSource(queue: pipelineQueue)
         timer.schedule(deadline: .now(), repeating: Self.analysisInterval)
         timer.setEventHandler { [weak self] in
@@ -2853,46 +2880,66 @@ nonisolated final class RendererPlaybackPipeline: @unchecked Sendable {
         analysisTimer = timer
     }
 
+    private func stopAnalysisTimer() {
+        analysisTimer?.cancel()
+        analysisTimer = nil
+    }
+
     private func analysisTick() {
         guard isLoaded,
-              timelineGenerationGate.isCurrent(timelineGeneration) else { return }
-        let clock = max(0, synchronizer.currentTime().seconds)
-        if isPlaybackActive {
-            // `analysisLeadSeconds` is already encoded in every sample's PTS
-            // (the renderer deliberately starts the first buffer after the
-            // logical clock by that amount). The delivery lead is the same
-            // application-owned lookahead, not a route-latency estimate. The
-            // active output device clock is selected on the renderer itself.
-            let threshold = clock
-                + analysisLeadSeconds
-                - analysisDeliveryLeadSeconds
-                + 0.005
-            while let first = analysisQueue.first, first.presentationTime <= threshold {
-                analysisQueue.removeFirst()
-                onAnalysisPCM?(first.pcm)
-                DSPMeterBus.shared.publish(first.meters)
-            }
-            if var event = pendingAudibleDSPEvent,
-               let scheduledPTS = event.scheduledPTS,
-               clock >= scheduledPTS {
-                event.state = .audible
-                event.audiblePTS = clock
-                pendingAudibleDSPEvent = nil
-                lastAudibleDSPFormat = event.format
-                lastAudibleDSPDiagnosticIDs = Set(event.warnings.map(\.id))
-                emitDSPEvent(event)
-            }
-            publishAudibleDSPFormatIfNeeded(at: clock)
-            publishAudibleLoudnessGainIfNeeded(at: clock)
-            // The queue ran nearly dry while the source still had audio:
-            // background work should yield to the producer.
-            if decodeIndex != nil, !isProducerHeld, nextPresentationTime - clock < 0.04 {
-                reportSupplyShortfall()
-            }
-            detectStall(clock: clock)
+              timelineGenerationGate.isCurrent(timelineGeneration) else {
+            stopAnalysisTimer()
+            return
         }
+        guard isPlaybackActive else { return }
+        syncAnalysisCadence()
+        let clock = max(0, synchronizer.currentTime().seconds)
+        // `analysisLeadSeconds` is already encoded in every sample's PTS
+        // (the renderer deliberately starts the first buffer after the
+        // logical clock by that amount). The delivery lead is the same
+        // application-owned lookahead, not a route-latency estimate. The
+        // active output device clock is selected on the renderer itself.
+        let threshold = clock
+            + analysisLeadSeconds
+            - analysisDeliveryLeadSeconds
+            + 0.005
+        while let first = analysisQueue.first, first.presentationTime <= threshold {
+            analysisQueue.removeFirst()
+            onAnalysisPCM?(first.pcm)
+            DSPMeterBus.shared.publish(first.meters)
+        }
+        if var event = pendingAudibleDSPEvent,
+           let scheduledPTS = event.scheduledPTS,
+           clock >= scheduledPTS {
+            event.state = .audible
+            event.audiblePTS = clock
+            pendingAudibleDSPEvent = nil
+            lastAudibleDSPFormat = event.format
+            lastAudibleDSPDiagnosticIDs = Set(event.warnings.map(\.id))
+            emitDSPEvent(event)
+        }
+        publishAudibleDSPFormatIfNeeded(at: clock)
+        publishAudibleLoudnessGainIfNeeded(at: clock)
+        // The queue ran nearly dry while the source still had audio:
+        // background work should yield to the producer.
+        if decodeIndex != nil, !isProducerHeld, nextPresentationTime - clock < 0.04 {
+            reportSupplyShortfall()
+        }
+        detectStall(clock: clock)
         prunePlayedSegments(clock: clock)
         pruneDSPHistory()
+    }
+
+    /// 60Hz while a visualization consumer needs PTS-timed delivery; 2Hz when
+    /// only stall detection is left (its window is 2.5s). Evaluated lazily on
+    /// the timer queue, so a consumer registering mid-track revives full-rate
+    /// delivery within one idle tick.
+    private func syncAnalysisCadence() {
+        let needHigh = analysisGate?() ?? true
+        guard needHigh != isAnalysisAtHighRate else { return }
+        isAnalysisAtHighRate = needHigh
+        let interval = needHigh ? Self.analysisInterval : Self.analysisIntervalIdle
+        analysisTimer?.schedule(deadline: .now() + interval, repeating: interval)
     }
 
     private func reportSupplyShortfall() {
@@ -3306,7 +3353,8 @@ nonisolated final class RendererPlaybackPipeline: @unchecked Sendable {
         synchronizer.setRate(rate, time: time)
     }
 
-    private func startStatusPolling() {
+    private func startStatusPollingIfNeeded() {
+        guard isLoaded, statusTimer == nil else { return }
         let timer = DispatchSource.makeTimerSource(queue: pipelineQueue)
         timer.schedule(
             deadline: .now() + Self.statusPollInterval,
@@ -3322,6 +3370,11 @@ nonisolated final class RendererPlaybackPipeline: @unchecked Sendable {
         }
         timer.resume()
         statusTimer = timer
+    }
+
+    private func stopStatusPolling() {
+        statusTimer?.cancel()
+        statusTimer = nil
     }
 
     private func finishWithFailure(
@@ -3346,6 +3399,8 @@ nonisolated final class RendererPlaybackPipeline: @unchecked Sendable {
         timelineMutationInProgress = false
         invalidateStallRecovery()
         stopFeedTimer()
+        stopAnalysisTimer()
+        stopStatusPolling()
         removeRendererObservers()
         removeProgressObserver()
         analysisQueue.removeAll(keepingCapacity: false)
