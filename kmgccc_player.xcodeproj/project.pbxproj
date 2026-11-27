@@ -30,6 +30,7 @@
 		A0100000000000000000000F /* zichao-preview-poster.jpg in Resources */ = {isa = PBXBuildFile; fileRef = B0100000000000000000000F /* zichao-preview-poster.jpg */; };
 		A01000000000000000000010 /* BundledSkins in Resources */ = {isa = PBXBuildFile; fileRef = B01000000000000000000010 /* BundledSkins */; };
 		DA0000000000000000000001 /* kmgccc_playerTests/PromptSystemTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA0000000000000000000011 /* kmgccc_playerTests/PromptSystemTests.swift */; };
+		DA0000000000000000000021 /* kmgccc_playerTests/LibraryAutomationPatchRefreshTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA0000000000000000000022 /* kmgccc_playerTests/LibraryAutomationPatchRefreshTests.swift */; };
 		B437C0F1E10A4C68AAB31001 /* kmgccc_playerTests/SidebarSetBarConfigurationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B437C0F1E10A4C68AAB31002 /* kmgccc_playerTests/SidebarSetBarConfigurationTests.swift */; };
 		C02000000000000000000001 /* kmgccc_playerTests/MetadataMatchScorerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C02000000000000000000011 /* kmgccc_playerTests/MetadataMatchScorerTests.swift */; };
 		C02000000000000000000002 /* kmgccc_playerTests/SkinRoutePolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C02000000000000000000012 /* kmgccc_playerTests/SkinRoutePolicyTests.swift */; };
@@ -236,6 +237,7 @@
 		E01000000000000000000006 /* kmgccc_playerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = kmgccc_playerApp.swift; path = kmgccc_player/kmgccc_playerApp.swift; sourceTree = "<group>"; };
 		AA1100000000000000000011 /* kmgccc_playerTests/AudioProgramSupportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = kmgccc_playerTests/AudioProgramSupportTests.swift; sourceTree = SOURCE_ROOT; };
 		DA0000000000000000000011 /* kmgccc_playerTests/PromptSystemTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = kmgccc_playerTests/PromptSystemTests.swift; sourceTree = SOURCE_ROOT; };
+		DA0000000000000000000022 /* kmgccc_playerTests/LibraryAutomationPatchRefreshTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = kmgccc_playerTests/LibraryAutomationPatchRefreshTests.swift; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -487,6 +489,7 @@
 				C34000000000000000000011 /* kmgccc_playerTests/AlbumTrackOrderResolverTests.swift */,
 				AA1100000000000000000011 /* kmgccc_playerTests/AudioProgramSupportTests.swift */,
 				DA0000000000000000000011 /* kmgccc_playerTests/PromptSystemTests.swift */,
+				DA0000000000000000000022 /* kmgccc_playerTests/LibraryAutomationPatchRefreshTests.swift */,
 				D30000000000000000000011 /* kmgccc_playerTests/NativeLyricsSurfaceManagerTests.swift */,
 				D40000000000000000000011 /* kmgccc_playerTests/DisplayHDRCapabilityTests.swift */,
 				C31000000000000000000002 /* kmgccc_playerTests/SeamlessMarqueeTimingTests.swift */,
@@ -914,6 +917,7 @@
 				C34000000000000000000001 /* kmgccc_playerTests/AlbumTrackOrderResolverTests.swift in Sources */,
 				AA1100000000000000000012 /* kmgccc_playerTests/AudioProgramSupportTests.swift in Sources */,
 				DA0000000000000000000001 /* kmgccc_playerTests/PromptSystemTests.swift in Sources */,
+				DA0000000000000000000021 /* kmgccc_playerTests/LibraryAutomationPatchRefreshTests.swift in Sources */,
 				D30000000000000000000001 /* kmgccc_playerTests/NativeLyricsSurfaceManagerTests.swift in Sources */,
 				D40000000000000000000001 /* kmgccc_playerTests/DisplayHDRCapabilityTests.swift in Sources */,
 				C31000000000000000000001 /* kmgccc_playerTests/SeamlessMarqueeTimingTests.swift in Sources */,
