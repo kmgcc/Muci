@@ -183,6 +183,11 @@ final class AppSessionHost: ObservableObject {
     private var lastForegroundLibraryRescan: (libraryID: UUID, uptime: TimeInterval)?
     private var trashedLibraryReconciliationTask: Task<Void, Never>?
     private var playbackMemoryTimer: Timer?
+    /// Payload of the last playback-memory write (savedAt excluded) and an
+    /// "already cleared" flag, so the 5s autosave skips serialization while
+    /// the observable state is unchanged.
+    private var lastSavedPlaybackMemory: PlaybackMemory?
+    private var isPlaybackMemoryCleared = false
     private var memoryPressureObserverToken: UUID?
     private let mainThreadStallMonitor = MainThreadStallMonitor()
     private var firstUsePrewarmTask: Task<Void, Never>?
@@ -2785,10 +2790,16 @@ final class AppSessionHost: ObservableObject {
     private func savePlaybackMemory() {
         guard let libraryID = activeLibraryBinding.activeSession?.context.id else { return }
         guard playbackCoordinator?.activeSource == .local else {
+            guard !isPlaybackMemoryCleared else { return }
+            isPlaybackMemoryCleared = true
+            lastSavedPlaybackMemory = nil
             PlaybackMemoryStore.clear(libraryID: libraryID)
             return
         }
         guard let playerVM, let currentTrack = playerVM.currentTrack else {
+            guard !isPlaybackMemoryCleared else { return }
+            isPlaybackMemoryCleared = true
+            lastSavedPlaybackMemory = nil
             PlaybackMemoryStore.clear(libraryID: libraryID)
             return
         }
@@ -2800,17 +2811,30 @@ final class AppSessionHost: ObservableObject {
             ? []
             : playerVM.currentQueueTracks.map { $0.id }
 
-        PlaybackMemoryStore.save(
-            PlaybackMemory(
-                savedAt: Date(),
-                trackID: currentTrack.id,
-                currentTime: currentTime,
-                duration: duration,
-                queueTrackIDs: queueTrackIDs.isEmpty ? nil : queueTrackIDs,
-                playbackOrderMode: playbackOrderMode.rawValue
-            ),
-            libraryID: libraryID
+        let memory = PlaybackMemory(
+            savedAt: Date(),
+            trackID: currentTrack.id,
+            currentTime: currentTime,
+            duration: duration,
+            queueTrackIDs: queueTrackIDs.isEmpty ? nil : queueTrackIDs,
+            playbackOrderMode: playbackOrderMode.rawValue
         )
+        // The 5s autosave is a catch-all (explicit saves already run on
+        // library switch and termination). Skip the JSON encode + defaults
+        // write when no observable field changed since the last write —
+        // the steady paused-idle state used to rewrite the whole queue
+        // every 5 seconds for nothing.
+        if let last = lastSavedPlaybackMemory,
+           last.trackID == memory.trackID,
+           last.currentTime == memory.currentTime,
+           last.duration == memory.duration,
+           last.queueTrackIDs == memory.queueTrackIDs,
+           last.playbackOrderMode == memory.playbackOrderMode {
+            return
+        }
+        PlaybackMemoryStore.save(memory, libraryID: libraryID)
+        lastSavedPlaybackMemory = memory
+        isPlaybackMemoryCleared = false
     }
 
     /// Restore the last session at launch **in a paused state**.
