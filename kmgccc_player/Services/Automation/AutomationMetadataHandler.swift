@@ -103,9 +103,8 @@ struct AutomationMetadataHandler {
                         total: tracks.count,
                         offset: 0,
                         limit: tracks.count,
-                        revision: queries.libraryTracksRevision(
-                            tracks: session.libraryViewModel.allTracks,
-                            playlists: session.libraryViewModel.playlists
+                        revision: queries.currentLibraryTracksRevision(
+                            viewModel: session.libraryViewModel
                         )
                     ),
                     for: request
@@ -168,9 +167,8 @@ struct AutomationMetadataHandler {
                     AutomationEmbeddedTagsResult(
                         dryRun: false,
                         applied: false,
-                        libraryRevision: queries.libraryTracksRevision(
-                            tracks: session.libraryViewModel.allTracks,
-                            playlists: session.libraryViewModel.playlists
+                        libraryRevision: queries.currentLibraryTracksRevision(
+                            viewModel: session.libraryViewModel
                         ),
                         tracks: results,
                         message: "Tags were read from the active audio files; App metadata was not changed."
@@ -290,9 +288,8 @@ struct AutomationMetadataHandler {
                         ))
                     }
                 }
-                let libraryRevision = queries.libraryTracksRevision(
-                    tracks: session.libraryViewModel.allTracks,
-                    playlists: session.libraryViewModel.playlists
+                let libraryRevision = queries.currentLibraryTracksRevision(
+                    viewModel: session.libraryViewModel
                 )
                 guard !writeRequests.isEmpty else {
                     return AutomationResponseSupport.encodeResult(
@@ -364,9 +361,8 @@ struct AutomationMetadataHandler {
                     maximumCount: 100
                 )
                 let allTracks = session.libraryViewModel.allTracks
-                let revision = queries.libraryTracksRevision(
-                    tracks: allTracks,
-                    playlists: session.libraryViewModel.playlists
+                let revision = queries.currentLibraryTracksRevision(
+                    viewModel: session.libraryViewModel
                 )
                 let pageTracks: [Track]
                 let offset: Int
@@ -446,9 +442,8 @@ struct AutomationMetadataHandler {
                 let dryRun = try parameters.boolean("dryRun", default: false)
                 let overwriteExistingFields = try parameters.boolean("overwriteExistingFields", default: false)
                 let currentTracks = session.libraryViewModel.allTracks
-                let currentRevision = queries.libraryTracksRevision(
-                    tracks: currentTracks,
-                    playlists: session.libraryViewModel.playlists
+                let currentRevision = queries.currentLibraryTracksRevision(
+                    viewModel: session.libraryViewModel
                 )
                 if let expectedRevision, expectedRevision != currentRevision {
                     return AutomationResponseSupport.revisionConflict(for: request, expected: expectedRevision, actual: currentRevision)
@@ -639,9 +634,8 @@ struct AutomationMetadataHandler {
                         dryRun: false,
                         applied: applied,
                         items: items,
-                        revision: queries.libraryTracksRevision(
-                            tracks: session.libraryViewModel.allTracks,
-                            playlists: session.libraryViewModel.playlists
+                        revision: queries.currentLibraryTracksRevision(
+                            viewModel: session.libraryViewModel
                         ),
                         message: hasFailure
                             ? "Metadata import finished with conflicts or item failures; inspect each item status."

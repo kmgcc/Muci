@@ -388,11 +388,40 @@ nonisolated final class Track: Identifiable, Hashable, Equatable, @unchecked Sen
     // MARK: - Lyrics
 
     /// Directly pasted or imported TTML lyrics text (embedded).
-    var ttmlLyricText: String?
+    /// Any content change drops the memoized automation lyrics status.
+    var ttmlLyricText: String? {
+        didSet { memoizedAutomationLyricsStatus = nil }
+    }
 
     /// Imported lyrics text (legacy format from external file).
     /// Deprecated: Use ttmlLyricText instead.
-    var lyricsText: String?
+    /// Any content change drops the memoized automation lyrics status.
+    var lyricsText: String? {
+        didSet { memoizedAutomationLyricsStatus = nil }
+    }
+
+    /// Memoized automation-facing lyrics status. Deriving the status regexes
+    /// the whole TTML document, so recomputing it for every track summary made
+    /// each automation query O(library × lyrics). Memoized against the lyric
+    /// file names; text-level mutations clear it via the observers above.
+    /// Session-only derivation cache — never persisted.
+    private var memoizedAutomationLyricsStatus: (key: String, status: String)? = nil
+
+    /// Return the memoized automation lyrics status, deriving it with
+    /// `compute` on a miss. The memo key covers the lyric file names; the
+    /// in-memory lyric texts are covered by the property observers that drop
+    /// the memo on write, so the caller must derive the status from exactly
+    /// those inputs (`ttmlLyricText`, `ttmlLyricsFileName`, `lyricsText`,
+    /// `lyricsFileName`) and nothing else.
+    func memoizedLyricsStatus(compute: () -> String) -> String {
+        let key = "\(ttmlLyricsFileName ?? "-")|\(lyricsFileName ?? "-")"
+        if let memoized = memoizedAutomationLyricsStatus, memoized.key == key {
+            return memoized.status
+        }
+        let status = compute()
+        memoizedAutomationLyricsStatus = (key, status)
+        return status
+    }
 
     init(
         id: UUID = UUID(),

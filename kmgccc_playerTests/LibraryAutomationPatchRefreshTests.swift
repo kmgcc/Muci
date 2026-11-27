@@ -69,6 +69,52 @@ final class LibraryAutomationPatchRefreshTests: XCTestCase {
         await session.close()
     }
 
+    func testMetadataPatchBumpsLibraryContentEpoch() async throws {
+        let fixture = try makeFixture(initialFileCount: 1)
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let previousDeferred = AppSettings.shared.deferImportEnrichment
+        AppSettings.shared.deferImportEnrichment = true
+        defer { AppSettings.shared.deferImportEnrichment = previousDeferred }
+
+        let host = try makeHost(registryURL: fixture.registryURL)
+        let entries = LibraryImportSourceEntry.makeEntries(from: [fixture.sourceRoot])
+        _ = try await host.createMusicLibrary(
+            mode: .managed,
+            parentURL: fixture.libraryParent,
+            displayName: "Automation Patch Epoch",
+            initialImportSelection: LibraryInitialImportSelection(
+                urls: [fixture.sourceRoot],
+                playlistSourceEntries: entries
+            )
+        )
+        let session = try XCTUnwrap(host.activeLibraryBinding.activeSession)
+        let vm = session.libraryViewModel
+
+        // Reading library content alone must not bump the epoch: the
+        // Automation revision cache relies on it as a change signal.
+        let epochAfterLoad = vm.libraryContentEpoch
+        _ = vm.allTracks.count
+        _ = vm.playlists.count
+        XCTAssertEqual(vm.libraryContentEpoch, epochAfterLoad)
+
+        let outcome = try await vm.applyMetadataPatchForAutomation(
+            trackIDs: vm.allTracks.map(\.id),
+            patch: makePatch(artist: "Epoch Artist 甲")
+        )
+        XCTAssertEqual(outcome.conflictedTrackIDs.isEmpty, true)
+        XCTAssertFalse(outcome.updatedTrackIDs.isEmpty)
+        XCTAssertGreaterThan(vm.libraryContentEpoch, epochAfterLoad)
+
+        // The in-place auxiliary broadcast (no array reassignment) must bump
+        // the epoch too — in-place Track mutations bypass the didSet signal.
+        let epochBeforeNotify = vm.libraryContentEpoch
+        vm.notifyTrackAuxiliaryDataChanged(trackIDs: [vm.allTracks[0].id])
+        XCTAssertGreaterThan(vm.libraryContentEpoch, epochBeforeNotify)
+
+        await session.quiesce()
+        await session.close()
+    }
+
     func testMetadataPatchReReadsFailedSidecarFromDisk() async throws {
         let fixture = try makeFixture(initialFileCount: 1)
         defer { try? FileManager.default.removeItem(at: fixture.root) }

@@ -258,9 +258,8 @@ final class AutomationArtworkHandler {
                             makeArtworkInfo(.track($0), session: session)
                         }
                     }
-                    revision = queries.libraryTracksRevision(
-                        tracks: session.libraryViewModel.allTracks,
-                        playlists: session.libraryViewModel.playlists
+                    revision = queries.currentLibraryTracksRevision(
+                        viewModel: session.libraryViewModel
                     )
                 } else {
                     let target = try resolveArtworkTarget(

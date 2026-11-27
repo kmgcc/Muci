@@ -492,6 +492,44 @@ struct AutomationLibraryQueries {
         return "v1-" + digest
     }
 
+    /// Whole-library revision for the view model's current content, memoized
+    /// on the App session against the view model's `libraryContentEpoch`.
+    /// Deriving the revision summarizes, JSON-encodes and SHA256-hashes every
+    /// track in the library, which cost a fixed ~0.4s per query on a
+    /// 2,000-track library; the epoch (bumped by allTracks/playlists
+    /// reassignment and by notifyTrackAuxiliaryDataChanged) lets repeated
+    /// queries reuse the value until the library content actually changes.
+    /// Requests carrying preference stats bypass the cache because those
+    /// stats change independently of library content.
+    func currentLibraryTracksRevision(
+        viewModel: LibraryViewModel,
+        preferenceStatsByTrackID: [UUID: TrackPreferenceStats]? = nil
+    ) -> String {
+        guard preferenceStatsByTrackID == nil else {
+            return libraryTracksRevision(
+                tracks: viewModel.allTracks,
+                playlists: viewModel.playlists,
+                preferenceStatsByTrackID: preferenceStatsByTrackID
+            )
+        }
+        if let cached = appSession?.automationLibraryTracksRevisionCache(
+            viewModelID: ObjectIdentifier(viewModel),
+            epoch: viewModel.libraryContentEpoch
+        ) {
+            return cached
+        }
+        let revision = libraryTracksRevision(
+            tracks: viewModel.allTracks,
+            playlists: viewModel.playlists
+        )
+        appSession?.storeAutomationLibraryTracksRevisionCache(
+            viewModelID: ObjectIdentifier(viewModel),
+            epoch: viewModel.libraryContentEpoch,
+            revision: revision
+        )
+        return revision
+    }
+
     func selectionRevision(libraryID: UUID, trackIDs: [UUID]) -> String {
         let material = ([libraryID.uuidString] + trackIDs.map(\.uuidString)).joined(separator: "\n")
         let digest = SHA256.hash(data: Data(material.utf8))
@@ -501,17 +539,22 @@ struct AutomationLibraryQueries {
     }
 
     func trackLyricsStatus(_ track: Track) -> String {
-        if let ttml = resolveTTMLText(for: track), !ttml.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return LyricsFormatSupport.isWordSyncedTTML(ttml) ? "wordSynced" : "lineSynced"
+        // Deriving the status regexes the whole TTML document, so the memo
+        // (dropped by the Track lyric-text observers and keyed by the lyric
+        // file names) keeps repeated automation queries off that path.
+        track.memoizedLyricsStatus {
+            if let ttml = resolveTTMLText(for: track), !ttml.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return LyricsFormatSupport.isWordSyncedTTML(ttml) ? "wordSynced" : "lineSynced"
+            }
+            if track.ttmlLyricsFileName != nil { return "lineSynced" }
+            if let plain = resolvePlainLyricsText(for: track), !plain.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return LyricsFormatSupport.looksLikeLRC(plain) ? "lineSynced" : "plain"
+            }
+            if let lyricsFileName = track.lyricsFileName {
+                return lyricsFileName.lowercased().hasSuffix(".lrc") ? "lineSynced" : "plain"
+            }
+            return "none"
         }
-        if track.ttmlLyricsFileName != nil { return "lineSynced" }
-        if let plain = resolvePlainLyricsText(for: track), !plain.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return LyricsFormatSupport.looksLikeLRC(plain) ? "lineSynced" : "plain"
-        }
-        if let lyricsFileName = track.lyricsFileName {
-            return lyricsFileName.lowercased().hasSuffix(".lrc") ? "lineSynced" : "plain"
-        }
-        return "none"
     }
 
     func makeTrackSummary(

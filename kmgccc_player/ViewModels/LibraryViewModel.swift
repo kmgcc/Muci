@@ -388,7 +388,9 @@ final class LibraryViewModel {
     private(set) var lastLoadingError: String?
 
     /// All playlists in the library.
-    private(set) var playlists: [Playlist] = []
+    private(set) var playlists: [Playlist] = [] {
+        didSet { libraryContentEpoch &+= 1 }
+    }
 
     /// Runtime-only artists derived from disk scan.
     private(set) var runtimeArtists: [ArtistSection] = []
@@ -405,6 +407,7 @@ final class LibraryViewModel {
         didSet {
             albumKeyFirstTrackMap = nil
             tracksRevision &+= 1
+            libraryContentEpoch &+= 1
             onMotionAlignmentTracksChanged?(nil)
         }
     }
@@ -413,6 +416,17 @@ final class LibraryViewModel {
     /// compare it to know when to include added songs. Not observed.
     @ObservationIgnored
     private(set) var tracksRevision = 0
+
+    /// Monotonic counter bumped whenever library content that feeds the
+    /// Automation whole-library revision may have changed: `allTracks` /
+    /// `playlists` reassignment (didSet) or in-place track mutations reported
+    /// through `notifyTrackAuxiliaryDataChanged`. The Automation server caches
+    /// its whole-library revision against this epoch instead of re-deriving it
+    /// from every track on each query. Bumps are conservative — playback or
+    /// selection changes never bump, and redundant bumps only cost one
+    /// revision rebuild.
+    @ObservationIgnored
+    private(set) var libraryContentEpoch: UInt64 = 0
     private(set) var playlistItemAddedAtMap: [UUID: [UUID: Date]] = [:]
 
     /// Rebuildable quality and duplicate projection for the Data settings
@@ -1549,6 +1563,11 @@ final class LibraryViewModel {
     func notifyTrackAuxiliaryDataChanged(trackIDs: [UUID]) {
         let uniqueTrackIDs = Array(Set(trackIDs)).sorted { $0.uuidString < $1.uuidString }
         guard !uniqueTrackIDs.isEmpty else { return }
+
+        // In-place Track mutations bypass the allTracks didSet, so this
+        // broadcast is the invalidation signal for the Automation revision
+        // cache as well (metadata/lyrics/artwork edits funnel through here).
+        libraryContentEpoch &+= 1
 
         onMotionAlignmentTracksChanged?(uniqueTrackIDs)
 
