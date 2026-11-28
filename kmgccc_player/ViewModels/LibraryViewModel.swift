@@ -758,7 +758,8 @@ final class LibraryViewModel {
 
     private var loadTask: Task<Void, Never>?
     private var diagnosticsTask: Task<Void, Never>?
-    private var loadGeneration: UInt64 = 0
+    // Readable from tests so they can assert that no full reload ran.
+    private(set) var loadGeneration: UInt64 = 0
     private var currentTaskID: UUID?
     private struct SortPreference: Codable {
         let key: String
@@ -2431,6 +2432,10 @@ final class LibraryViewModel {
         try await performAutomationLibraryMutation {
             let tracksByID = Dictionary(uniqueKeysWithValues: self.allTracks.map { ($0.id, $0) })
             var changedTracks: [Track] = []
+            var collectionChanges = Set<UUID>()
+            let groupingFields: Set<String> = [
+                "artist", "artistCredits", "album", "albumArtist", "releaseDate", "musicBrainzReleaseID",
+            ]
             for id in uniqueIDs {
                 guard let track = tracksByID[id] else {
                     skippedIDs.append(id)
@@ -2523,6 +2528,10 @@ final class LibraryViewModel {
                 track.markMetadataFieldsAsManual(patch.fields)
                 changed = changed || previousFields != track.userMetadataOverride?.protectedFields
                 if changed {
+                    let fields = LibraryMetadataEditSnapshot(track).changedFields(since: originalMetadata)
+                    if !fields.isDisjoint(with: groupingFields) {
+                        collectionChanges.insert(id)
+                    }
                     changedTracks.append(track)
                     updatedIDs.append(id)
                 } else {
@@ -2538,7 +2547,21 @@ final class LibraryViewModel {
             let failedIDs = Set(persisted.failedTrackIDs)
             updatedIDs = updatedIDs.filter { persistedIDs.contains($0) }
             skippedIDs.append(contentsOf: failedIDs)
-            await self.refresh()
+            if !failedIDs.isEmpty {
+                // A failed sidecar write leaves the in-memory track ahead of
+                // disk; re-read just those tracks so disk stays authoritative
+                // the way a full reload would have restored it.
+                await self.repository.refreshTracks(ids: Array(failedIDs))
+            }
+            if !collectionChanges.isDisjoint(with: persistedIDs) {
+                await self.repository.refreshArtistAndAlbumEntries(reason: "automationMetadataPatch")
+            }
+            // Publish the committed projections after resolving failed writes
+            // and updating the destination artist and album entries.
+            await self.syncVisibleStateFromRepository(
+                reason: "automationMetadataPatch",
+                invalidatedSelectionIdentities: []
+            )
         }
         return LibraryAutomationMetadataMutationOutcome(
             updatedTrackIDs: Array(Set(updatedIDs)).sorted { $0.uuidString < $1.uuidString },
@@ -2612,7 +2635,15 @@ final class LibraryViewModel {
             let failedIDs = Set(persisted.failedTrackIDs)
             updatedIDs = updatedIDs.filter { persistedIDs.contains($0) }
             skippedIDs.append(contentsOf: failedIDs)
-            await self.refresh()
+            if !failedIDs.isEmpty {
+                // Keep disk authoritative for tracks whose sidecar write
+                // failed; see applyMetadataPatchForAutomation.
+                await self.repository.refreshTracks(ids: Array(failedIDs))
+            }
+            await self.syncVisibleStateFromRepository(
+                reason: "automationArtworkApply",
+                invalidatedSelectionIdentities: []
+            )
         }
         return LibraryAutomationArtworkMutationOutcome(
             updatedTrackIDs: Array(Set(updatedIDs)).sorted { $0.uuidString < $1.uuidString },
@@ -2693,7 +2724,10 @@ final class LibraryViewModel {
 
             updated.updatedAt = Date()
             try await self.repository.applyArtistEdits(original: current, updated: updated)
-            await self.refresh()
+            await self.syncVisibleStateFromRepository(
+                reason: "automationArtistPatch",
+                invalidatedSelectionIdentities: []
+            )
             let resultingID = self.artistEntries.first {
                 $0.canonicalName == LibraryNormalization.normalizeArtist(updated.displayName)
             }?.id ?? artistID
@@ -2808,7 +2842,10 @@ final class LibraryViewModel {
             if changed {
                 updated.updatedAt = Date()
                 try await self.repository.applyAlbumEdits(original: current, updated: updated)
-                await self.refresh()
+                await self.syncVisibleStateFromRepository(
+                    reason: "automationAlbumPatch",
+                    invalidatedSelectionIdentities: []
+                )
             }
             if loudnessChanged {
                 self.setAlbumLoudnessOverride(albumKey: changed ? resultingKey : current.canonicalKey,
