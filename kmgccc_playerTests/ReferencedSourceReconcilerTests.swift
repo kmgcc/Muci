@@ -1791,22 +1791,13 @@ final class ReferencedSourceReconcilerTests: XCTestCase {
 
         try await concrete.load()
 
-        // Scans are manual/config-driven: activation performs no reconcile,
-        // so the persisted (available) state stays until an explicit rescan
-        // discovers the offline source.
-        let staleTracks = await concrete.repository.fetchTracks(ids: [trackID])
-        let staleTrack = try XCTUnwrap(staleTracks.first)
-        XCTAssertEqual(staleTrack.availability, .available)
-
-        // An explicit rescan with the source still offline persists the
-        // unavailable state into the runtime track and the sidecar.
-        _ = try await concrete.refreshReferencedSources()
         let offlineTracks = await concrete.repository.fetchTracks(ids: [trackID])
         let offlineTrack = try XCTUnwrap(offlineTracks.first)
         let offlineSidecar = try decodeTrackSidecar(paths: context.paths, trackID: trackID)
         XCTAssertEqual(offlineTrack.availability, .volumeUnavailable)
         XCTAssertEqual(offlineSidecar.availability, .volumeUnavailable)
         XCTAssertEqual(offlineTrack.mediaLocator.referencedFile?.sourceMemberships.count, 1)
+        XCTAssertTrue(concrete.libraryChangeMonitor != nil)
 
         try FileManager.default.moveItem(at: parkedRoot, to: sourceRoot)
         resolver.setMode(.available)
@@ -1853,15 +1844,6 @@ final class ReferencedSourceReconcilerTests: XCTestCase {
 
         try await concrete.load()
 
-        // Activation performs no reconcile, so the session still loads and
-        // the seeded state persists until an explicit rescan.
-        let staleTracks = await concrete.repository.fetchTracks(ids: [trackID])
-        let staleTrack = try XCTUnwrap(staleTracks.first)
-        XCTAssertEqual(staleTrack.availability, .available)
-
-        // An explicit rescan with access still denied persists the
-        // permission-denied state.
-        _ = try await concrete.refreshReferencedSources()
         let permissionTracks = await concrete.repository.fetchTracks(ids: [trackID])
         let track = try XCTUnwrap(permissionTracks.first)
         let sidecar = try decodeTrackSidecar(paths: context.paths, trackID: trackID)
@@ -1889,7 +1871,7 @@ final class ReferencedSourceReconcilerTests: XCTestCase {
         }
     }
 
-    func testActivationReplaysPendingReconcileIntentWithoutStartingMonitor() async throws {
+    func testReferencedSessionReplaysBeforeMonitorStartAndCloseStopsLateEvents() async throws {
         let container = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let libraryRoot = container.appendingPathComponent("Library", isDirectory: true)
         let sourceRoot = container.appendingPathComponent("Source", isDirectory: true)
@@ -1925,6 +1907,12 @@ final class ReferencedSourceReconcilerTests: XCTestCase {
         let sidecars = try await intentStore.advance(prepared, to: .sidecarsCommitted)
         _ = try await intentStore.advance(sidecars, to: .runtimeApplied)
         let eventSource = TestFileEventSource()
+        var replayWasFinalizedBeforeStart = false
+        eventSource.onStart = {
+            replayWasFinalizedBeforeStart = FileManager.default.fileExists(
+                atPath: context.paths.sourceScanManifestURL(for: sourceID).path
+            )
+        }
         let session = try await LibrarySessionFactory(
             sourceBookmarkResolver: ReconcileBookmarkResolver(),
             fileEventSourceFactory: { eventSource }
@@ -1933,19 +1921,17 @@ final class ReferencedSourceReconcilerTests: XCTestCase {
 
         try await concrete.load()
 
-        // The interrupted reconcile is replayed to its committed end state
-        // during activation (manifest finalized), while the monitor itself
-        // is never started — scans are manual/config-driven.
+        XCTAssertTrue(replayWasFinalizedBeforeStart)
+        XCTAssertEqual(eventSource.startCount, 1)
         let generationBeforeClose = try await ReferencedSourceScanManifestStore(paths: context.paths)
             .load(sourceID: sourceID, libraryID: context.id)?.generation
-        XCTAssertNotNil(generationBeforeClose)
-        XCTAssertEqual(eventSource.startCount, 0)
         await concrete.quiesce()
         await concrete.close()
         eventSource.send([.init(path: sourceRoot.path, requiresFullScan: true)])
         try await Task.sleep(nanoseconds: 50_000_000)
         let generationAfterClose = try await ReferencedSourceScanManifestStore(paths: context.paths)
             .load(sourceID: sourceID, libraryID: context.id)?.generation
+        XCTAssertGreaterThanOrEqual(eventSource.stopCount, 1)
         XCTAssertEqual(generationAfterClose, generationBeforeClose)
     }
 
@@ -2156,6 +2142,38 @@ final class ReferencedSourceReconcilerTests: XCTestCase {
         let concrete = try XCTUnwrap(session as? LibrarySession)
         XCTAssertNil(concrete.referencedSourceReconciler)
         XCTAssertNotNil(concrete.libraryChangeMonitor)
+        await concrete.close()
+    }
+
+    func testManagedAutomaticScanPreferenceStopsAndRestartsWatching() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let context = try makeLibraryContext(root: root, mode: .managed)
+        let store = LibraryScopedSettingsStore(paths: context.paths)
+        let oldSettings = try await store.load()
+        XCTAssertTrue(oldSettings.scansAutomatically)
+        try await store.setAutomaticScanEnabled(false)
+
+        let events = TestFileEventSource()
+        let session = try await LibrarySessionFactory(
+            sourceBookmarkResolver: ReconcileBookmarkResolver(),
+            fileEventSourceFactory: { events }
+        ).makeSession(for: context)
+        let concrete = try XCTUnwrap(session as? LibrarySession)
+        try await concrete.load()
+        XCTAssertFalse(concrete.automaticScanEnabled)
+        XCTAssertEqual(events.startCount, 0)
+
+        try await concrete.setAutomaticScanEnabled(true)
+        let enabledSettings = try await store.load()
+        XCTAssertTrue(enabledSettings.scansAutomatically)
+        XCTAssertEqual(events.startCount, 1)
+
+        try await concrete.setAutomaticScanEnabled(false)
+        let disabledSettings = try await store.load()
+        XCTAssertFalse(disabledSettings.scansAutomatically)
+        let watchStates = await concrete.libraryChangeMonitor?.sourceStateSnapshot()
+        XCTAssertTrue(watchStates?.isEmpty == true)
         await concrete.close()
     }
 

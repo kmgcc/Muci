@@ -502,6 +502,13 @@ struct SidebarView: View {
                                 }
                             }
                         }
+                    case .scanLibrary:
+                        SidebarSetBarHoverableButton(kind: item.kind) {
+                            SidebarSetBarButton(kind: item.kind, isSegment: true, showsHelp: false) {
+                                appSession.requestManualLibraryScan()
+                            }
+                            .disabled(appSession.isManualLibraryScanRunning)
+                        }
                     case .separator: EmptyView()
                     }
                 } separator: { _ in

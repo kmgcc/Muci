@@ -15,6 +15,7 @@ struct MusicSettingsView: View {
     @State private var sources: [ReferencedSourceDescriptor] = []
     @State private var settings = LibraryScopedSettings()
     @State private var errorMessage: String?
+    @State private var isUpdatingScanPreference = false
     @State private var pendingLibraryRemoval: MusicLibraryBookmark?
     @State private var pendingSourceRemoval: ReferencedSourceDescriptor?
     @State private var isAddingMusic = false
@@ -80,6 +81,19 @@ struct MusicSettingsView: View {
                 deletePolicySection
                     .settingsSearchAnchor("library.deletion")
             }
+
+            SettingsSection("扫描") {
+                SettingsSwitchRow(
+                    title: "自动扫描资料库",
+                    isOn: Binding(
+                        get: { settings.scansAutomatically },
+                        set: updateAutomaticScanPreference
+                    ),
+                    info: "音乐文件变化或磁盘重新连接时更新资料库。也可手动扫描。"
+                )
+                .disabled(activeContext == nil || isUpdatingScanPreference)
+            }
+            .settingsSearchAnchor("library.scan")
 
             LibraryEnrichmentSettingsSection()
                 .settingsSearchAnchor("library.enrichment")
@@ -930,6 +944,23 @@ struct MusicSettingsView: View {
 
     private var isFullScanRunning: Bool {
         !sources.isEmpty && sources.contains { sourceScanStates[$0.id] == .scanning }
+    }
+
+    private func updateAutomaticScanPreference(_ enabled: Bool) {
+        guard let context = activeContext, !isUpdatingScanPreference else { return }
+        let generation = appSession.activeLibraryBinding.generation
+        isUpdatingScanPreference = true
+        Task { @MainActor in
+            defer { isUpdatingScanPreference = false }
+            do {
+                try await appSession.setAutomaticLibraryScanEnabled(enabled, libraryID: context.id)
+            } catch {
+                guard appSession.activeLibraryBinding.generation == generation else { return }
+                errorMessage = "无法更新自动扫描。"
+            }
+            guard appSession.activeLibraryBinding.generation == generation else { return }
+            await reload()
+        }
     }
 
     private func refreshSources(sourceID: UUID? = nil) {

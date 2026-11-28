@@ -185,6 +185,7 @@ private struct SidebarSetBarHoverStatus: View {
         case .fullscreen: return fullscreenManager.isFullscreenPlayerPresented ? "退出全屏" : "进入全屏"
         case .volumeTarget: return settings.volumeControlTarget.title
         case .separator: return "按钮分组"
+        case .scanLibrary: return appSession.isManualLibraryScanRunning ? "正在扫描资料库" : kind.title
         case .soundEffects: return "音效处理已\(enabledState == true ? "开启" : "关闭")"
         case .externalPlayback: return "从外部播放已\(enabledState == true ? "开启" : "关闭")"
         case .backgroundPreparation: return "空闲时提前准备已\(enabledState == true ? "开启" : "关闭")"
