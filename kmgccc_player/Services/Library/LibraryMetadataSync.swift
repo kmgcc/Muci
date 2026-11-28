@@ -244,6 +244,19 @@ final class LibraryMetadataSync {
 
         var result: [AlbumEntry] = []
 
+        // Index remaining sidecars by normalized display title once. The
+        // migration pass below used to rescan every remaining key per section
+        // (O(sections × sidecars) `normalizeAlbum` string work — seconds on
+        // thousand-album libraries); probing a prebuilt bucket makes it
+        // O(sidecars + sections).
+        var existingKeysByNormalizedTitle: [String: [String]] = [:]
+        for (key, candidate) in existing {
+            existingKeysByNormalizedTitle[
+                LibraryNormalization.normalizeAlbum(candidate.sidecar.displayTitle),
+                default: []
+            ].append(key)
+        }
+
         for section in derived {
             let matchingTracks = tracksByAlbumKey[section.key] ?? []
             let totalDuration = matchingTracks.reduce(0) { $0 + $1.duration }
@@ -253,12 +266,12 @@ final class LibraryMetadataSync {
                 matchedSidecars.append(exact)
             }
 
-            let migratedKeys = existing.keys.filter { key in
-                guard let candidate = existing[key] else { return false }
-                return shouldMigrateAlbumSidecar(candidate.sidecar, into: section)
-            }
-            for key in migratedKeys {
-                if let candidate = existing.removeValue(forKey: key) {
+            let sectionNormalizedTitle = LibraryNormalization.normalizeAlbum(section.name)
+            let migrationCandidateKeys = existingKeysByNormalizedTitle[sectionNormalizedTitle] ?? []
+            for key in migrationCandidateKeys where existing[key] != nil {
+                guard let candidate = existing[key] else { continue }
+                if shouldMigrateAlbumSidecar(candidate.sidecar, into: section) {
+                    existing.removeValue(forKey: key)
                     matchedSidecars.append(candidate)
                 }
             }
