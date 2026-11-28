@@ -493,16 +493,7 @@ final class SwiftDataLibraryRepository: LibraryRepositoryProtocol {
         rebuildRuntimeDerivedState()
         rebuildTrackIndexCache()
         await scheduleSearchIndexRebuild(reason: "refreshTracks")
-        let (artistScan, albumScan) = await Task.detached { @Sendable in
-            let scanner = LibraryDiskScanner(paths: capturedPaths)
-            return (scanner.loadArtistSidecars(), scanner.loadAlbumSidecars())
-        }.value
-        await applyMetadataSync(
-            artistSidecars: artistScan.sidecars,
-            albumSidecars: albumScan.sidecars,
-            listingFailed: artistScan.listingFailed || albumScan.listingFailed,
-            reason: "refreshTracks"
-        )
+        await refreshArtistAndAlbumEntries(reason: "refreshTracks")
 
         let refreshedIDs = refreshedTracks.map(\.id.uuidString)
         Log.info(
@@ -1190,6 +1181,20 @@ final class SwiftDataLibraryRepository: LibraryRepositoryProtocol {
     }
 
     // MARK: - Private Helpers
+
+    func refreshArtistAndAlbumEntries(reason: String) async {
+        let capturedPaths = paths
+        let (artistScan, albumScan) = await Task.detached { @Sendable in
+            let scanner = LibraryDiskScanner(paths: capturedPaths)
+            return (scanner.loadArtistSidecars(), scanner.loadAlbumSidecars())
+        }.value
+        await applyMetadataSync(
+            artistSidecars: artistScan.sidecars,
+            albumSidecars: albumScan.sidecars,
+            listingFailed: artistScan.listingFailed || albumScan.listingFailed,
+            reason: reason
+        )
+    }
 
     private func applyMetadataSync(
         artistSidecars: [(sidecar: ArtistSidecar, folderURL: URL)],

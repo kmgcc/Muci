@@ -97,6 +97,9 @@ protocol LibraryRepositoryProtocol: AnyObject {
     /// Reload just the specified tracks from the on-disk library sidecars into repository caches.
     func refreshTracks(ids: [UUID]) async -> [Track]
 
+    /// Reconcile collection metadata with the current in-memory track grouping.
+    func refreshArtistAndAlbumEntries(reason: String) async
+
     /// Resolve an existing referenced track by physical identity, with fingerprint fallback.
     func track(matching fingerprint: ReferencedFileFingerprint) async -> Track?
 
@@ -197,4 +200,8 @@ protocol LibraryRepositoryProtocol: AnyObject {
     // MARK: - Playlist Description
 
     func updatePlaylistDescription(_ playlist: Playlist, description: String) async throws
+}
+
+extension LibraryRepositoryProtocol {
+    func refreshArtistAndAlbumEntries(reason: String) async {}
 }

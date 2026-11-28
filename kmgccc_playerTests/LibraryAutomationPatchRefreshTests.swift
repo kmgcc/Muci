@@ -39,9 +39,10 @@ final class LibraryAutomationPatchRefreshTests: XCTestCase {
         let triggerBefore = vm.refreshTrigger
 
         let newArtist = "Automation Patch Artist 甲"
+        let newAlbum = "Automation Patch Album 甲"
         let outcome = try await vm.applyMetadataPatchForAutomation(
             trackIDs: tracksBefore.map(\.id),
-            patch: makePatch(artist: newArtist, description: "批量描述")
+            patch: makePatch(artist: newArtist, album: newAlbum, description: "批量描述")
         )
 
         XCTAssertEqual(Set(outcome.updatedTrackIDs), Set(tracksBefore.map(\.id)))
@@ -50,6 +51,7 @@ final class LibraryAutomationPatchRefreshTests: XCTestCase {
         for track in vm.allTracks {
             XCTAssertEqual(track.userDescription, "批量描述")
             XCTAssertEqual(track.artist, newArtist)
+            XCTAssertEqual(track.album, newAlbum)
         }
 
         // Section grouping must have converged to the new artist in memory.
@@ -58,58 +60,16 @@ final class LibraryAutomationPatchRefreshTests: XCTestCase {
             [LibraryNormalization.normalizeArtist(newArtist)]
         )
 
+        let artistKey = LibraryNormalization.normalizeArtist(newArtist)
+        XCTAssertEqual(vm.artistEntries.first(where: { $0.canonicalName == artistKey })?.trackCount, 2)
+        XCTAssertEqual(vm.albumEntries.first(where: { $0.displayTitle == newAlbum })?.trackCount, 2)
+
         XCTAssertEqual(
             vm.loadGeneration,
             generationBefore,
             "metadata patch must converge without a full library reload"
         )
         XCTAssertGreaterThan(vm.refreshTrigger, triggerBefore)
-
-        await session.quiesce()
-        await session.close()
-    }
-
-    func testMetadataPatchBumpsLibraryContentEpoch() async throws {
-        let fixture = try makeFixture(initialFileCount: 1)
-        defer { try? FileManager.default.removeItem(at: fixture.root) }
-        let previousDeferred = AppSettings.shared.deferImportEnrichment
-        AppSettings.shared.deferImportEnrichment = true
-        defer { AppSettings.shared.deferImportEnrichment = previousDeferred }
-
-        let host = try makeHost(registryURL: fixture.registryURL)
-        let entries = LibraryImportSourceEntry.makeEntries(from: [fixture.sourceRoot])
-        _ = try await host.createMusicLibrary(
-            mode: .managed,
-            parentURL: fixture.libraryParent,
-            displayName: "Automation Patch Epoch",
-            initialImportSelection: LibraryInitialImportSelection(
-                urls: [fixture.sourceRoot],
-                playlistSourceEntries: entries
-            )
-        )
-        let session = try XCTUnwrap(host.activeLibraryBinding.activeSession)
-        let vm = session.libraryViewModel
-
-        // Reading library content alone must not bump the epoch: the
-        // Automation revision cache relies on it as a change signal.
-        let epochAfterLoad = vm.libraryContentEpoch
-        _ = vm.allTracks.count
-        _ = vm.playlists.count
-        XCTAssertEqual(vm.libraryContentEpoch, epochAfterLoad)
-
-        let outcome = try await vm.applyMetadataPatchForAutomation(
-            trackIDs: vm.allTracks.map(\.id),
-            patch: makePatch(artist: "Epoch Artist 甲")
-        )
-        XCTAssertEqual(outcome.conflictedTrackIDs.isEmpty, true)
-        XCTAssertFalse(outcome.updatedTrackIDs.isEmpty)
-        XCTAssertGreaterThan(vm.libraryContentEpoch, epochAfterLoad)
-
-        // The in-place auxiliary broadcast (no array reassignment) must bump
-        // the epoch too — in-place Track mutations bypass the didSet signal.
-        let epochBeforeNotify = vm.libraryContentEpoch
-        vm.notifyTrackAuxiliaryDataChanged(trackIDs: [vm.allTracks[0].id])
-        XCTAssertGreaterThan(vm.libraryContentEpoch, epochBeforeNotify)
 
         await session.quiesce()
         await session.close()
@@ -241,16 +201,18 @@ final class LibraryAutomationPatchRefreshTests: XCTestCase {
 
     private func makePatch(
         artist: String? = nil,
+        album: String? = nil,
         description: String? = nil
     ) -> LibraryAutomationMetadataPatch {
         var fields: Set<String> = []
         if artist != nil { fields.insert("artist") }
+        if album != nil { fields.insert("album") }
         if description != nil { fields.insert("description") }
         return LibraryAutomationMetadataPatch(
             fields: fields,
             title: nil,
             artist: artist,
-            album: nil,
+            album: album,
             albumArtist: nil,
             userDescription: description,
             genreTags: nil,

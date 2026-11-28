@@ -388,9 +388,7 @@ final class LibraryViewModel {
     private(set) var lastLoadingError: String?
 
     /// All playlists in the library.
-    private(set) var playlists: [Playlist] = [] {
-        didSet { libraryContentEpoch &+= 1 }
-    }
+    private(set) var playlists: [Playlist] = []
 
     /// Runtime-only artists derived from disk scan.
     private(set) var runtimeArtists: [ArtistSection] = []
@@ -407,7 +405,6 @@ final class LibraryViewModel {
         didSet {
             albumKeyFirstTrackMap = nil
             tracksRevision &+= 1
-            libraryContentEpoch &+= 1
             onMotionAlignmentTracksChanged?(nil)
         }
     }
@@ -416,17 +413,6 @@ final class LibraryViewModel {
     /// compare it to know when to include added songs. Not observed.
     @ObservationIgnored
     private(set) var tracksRevision = 0
-
-    /// Monotonic counter bumped whenever library content that feeds the
-    /// Automation whole-library revision may have changed: `allTracks` /
-    /// `playlists` reassignment (didSet) or in-place track mutations reported
-    /// through `notifyTrackAuxiliaryDataChanged`. The Automation server caches
-    /// its whole-library revision against this epoch instead of re-deriving it
-    /// from every track on each query. Bumps are conservative — playback or
-    /// selection changes never bump, and redundant bumps only cost one
-    /// revision rebuild.
-    @ObservationIgnored
-    private(set) var libraryContentEpoch: UInt64 = 0
     private(set) var playlistItemAddedAtMap: [UUID: [UUID: Date]] = [:]
 
     /// Rebuildable quality and duplicate projection for the Data settings
@@ -1564,11 +1550,6 @@ final class LibraryViewModel {
         let uniqueTrackIDs = Array(Set(trackIDs)).sorted { $0.uuidString < $1.uuidString }
         guard !uniqueTrackIDs.isEmpty else { return }
 
-        // In-place Track mutations bypass the allTracks didSet, so this
-        // broadcast is the invalidation signal for the Automation revision
-        // cache as well (metadata/lyrics/artwork edits funnel through here).
-        libraryContentEpoch &+= 1
-
         onMotionAlignmentTracksChanged?(uniqueTrackIDs)
 
         markRefreshTrigger(affectsHome: false)
@@ -2451,6 +2432,10 @@ final class LibraryViewModel {
         try await performAutomationLibraryMutation {
             let tracksByID = Dictionary(uniqueKeysWithValues: self.allTracks.map { ($0.id, $0) })
             var changedTracks: [Track] = []
+            var collectionChanges = Set<UUID>()
+            let groupingFields: Set<String> = [
+                "artist", "artistCredits", "album", "albumArtist", "releaseDate", "musicBrainzReleaseID",
+            ]
             for id in uniqueIDs {
                 guard let track = tracksByID[id] else {
                     skippedIDs.append(id)
@@ -2543,6 +2528,10 @@ final class LibraryViewModel {
                 track.markMetadataFieldsAsManual(patch.fields)
                 changed = changed || previousFields != track.userMetadataOverride?.protectedFields
                 if changed {
+                    let fields = LibraryMetadataEditSnapshot(track).changedFields(since: originalMetadata)
+                    if !fields.isDisjoint(with: groupingFields) {
+                        collectionChanges.insert(id)
+                    }
                     changedTracks.append(track)
                     updatedIDs.append(id)
                 } else {
@@ -2564,9 +2553,11 @@ final class LibraryViewModel {
                 // the way a full reload would have restored it.
                 await self.repository.refreshTracks(ids: Array(failedIDs))
             }
-            // persistTracks already recomputed derived state, upserted the
-            // index entries and notified; only the visible snapshots need to
-            // converge, so avoid the full disk rescan of refresh() here.
+            if !collectionChanges.isDisjoint(with: persistedIDs) {
+                await self.repository.refreshArtistAndAlbumEntries(reason: "automationMetadataPatch")
+            }
+            // Publish the committed projections after resolving failed writes
+            // and updating the destination artist and album entries.
             await self.syncVisibleStateFromRepository(
                 reason: "automationMetadataPatch",
                 invalidatedSelectionIdentities: []

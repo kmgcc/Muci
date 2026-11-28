@@ -65,46 +65,6 @@ final class AppSessionHost: ObservableObject {
     @Published private(set) var sidebarVisibleTaskIDs: Set<UUID> = []
     private var sidebarRevealTracker = SidebarTaskRevealTracker()
     private var sidebarRevealTask: Task<Void, Never>?
-    // MARK: Automation whole-library revision cache
-
-    /// Memoized whole-library automation revision, keyed by the view model's
-    /// identity and content epoch (see `LibraryViewModel.libraryContentEpoch`).
-    /// Automation handler structs are recreated per request, so the cache
-    /// lives on this long-lived host and is reached through `appSession`.
-    private struct AutomationLibraryTracksRevisionCacheEntry {
-        let viewModelID: ObjectIdentifier
-        let epoch: UInt64
-        let revision: String
-    }
-    private var automationLibraryTracksRevisionCache: AutomationLibraryTracksRevisionCacheEntry?
-
-    /// Memoized whole-library automation revision lookup. Returns the cached
-    /// revision while the view model's content epoch is unchanged and `nil`
-    /// otherwise (the caller then derives and stores a fresh value).
-    func automationLibraryTracksRevisionCache(
-        viewModelID: ObjectIdentifier,
-        epoch: UInt64
-    ) -> String? {
-        guard let cache = automationLibraryTracksRevisionCache,
-              cache.viewModelID == viewModelID,
-              cache.epoch == epoch
-        else { return nil }
-        return cache.revision
-    }
-
-    /// Store a freshly derived whole-library automation revision for the
-    /// given view model content epoch.
-    func storeAutomationLibraryTracksRevisionCache(
-        viewModelID: ObjectIdentifier,
-        epoch: UInt64,
-        revision: String
-    ) {
-        automationLibraryTracksRevisionCache = AutomationLibraryTracksRevisionCacheEntry(
-            viewModelID: viewModelID,
-            epoch: epoch,
-            revision: revision
-        )
-    }
     /// Source scans the listener started (Settings, a folder's page). Scans
     /// that follow file changes, mounts or activation do not count.
     private var userSourceScanCount = 0 {

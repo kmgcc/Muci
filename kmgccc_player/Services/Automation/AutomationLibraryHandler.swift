@@ -750,8 +750,9 @@ struct AutomationLibraryHandler {
                     playlistTrackIDs = nil
                 }
 
-                let revision = queries.currentLibraryTracksRevision(
-                    viewModel: viewModel,
+                let revision = queries.libraryTracksRevision(
+                    tracks: allTracks,
+                    playlists: viewModel.playlists,
                     preferenceStatsByTrackID: usesPreferenceData ? preferenceStatsByTrackID : nil
                 )
                 if let expectedRevision, expectedRevision != revision {
@@ -835,7 +836,7 @@ struct AutomationLibraryHandler {
             }
             let viewModel = session.libraryViewModel
             let tracks = viewModel.allTracks
-            let revision = queries.currentLibraryTracksRevision(viewModel: viewModel)
+            let revision = queries.libraryTracksRevision(tracks: tracks, playlists: viewModel.playlists)
             let linkedSourceIDs = Set(tracks.flatMap { track in
                 track.mediaLocator.referencedFile?.allSourceMemberships.map(\.sourceID) ?? []
             })
@@ -891,8 +892,9 @@ struct AutomationLibraryHandler {
                 let preferenceStatsByTrackID = includePreferenceStats
                     ? viewModel.preferenceStats(for: allTracks.map(\.id))
                     : [:]
-                let revision = queries.currentLibraryTracksRevision(
-                    viewModel: viewModel,
+                let revision = queries.libraryTracksRevision(
+                    tracks: allTracks,
+                    playlists: playlists,
                     preferenceStatsByTrackID: includePreferenceStats
                         ? preferenceStatsByTrackID
                         : nil
@@ -967,7 +969,7 @@ struct AutomationLibraryHandler {
                 let viewModel = session.libraryViewModel
                 let libraryTracks = viewModel.allTracks
                 let libraryPlaylists = viewModel.playlists
-                let revision = queries.currentLibraryTracksRevision(viewModel: viewModel)
+                let revision = queries.libraryTracksRevision(tracks: libraryTracks, playlists: libraryPlaylists)
                 var failures: [String] = []
                 let tracks: [LibraryBundleExportTrackInput] = libraryTracks.map { track in
                     let audioURL: URL?
@@ -1107,8 +1109,9 @@ struct AutomationLibraryHandler {
                 let preferenceStatsByTrackID = usesPreferenceData
                     ? viewModel.preferenceStats(for: viewModel.allTracks.map(\.id))
                     : [:]
-                let currentRevision = queries.currentLibraryTracksRevision(
-                    viewModel: viewModel,
+                let currentRevision = queries.libraryTracksRevision(
+                    tracks: viewModel.allTracks,
+                    playlists: viewModel.playlists,
                     preferenceStatsByTrackID: usesPreferenceData ? preferenceStatsByTrackID : nil
                 )
                 let selections = try snapshots.map {
@@ -1160,8 +1163,9 @@ struct AutomationLibraryHandler {
                 let preferenceStatsByTrackID = usesPreferenceData
                     ? viewModel.preferenceStats(for: viewModel.allTracks.map(\.id))
                     : [:]
-                let currentRevision = queries.currentLibraryTracksRevision(
-                    viewModel: viewModel,
+                let currentRevision = queries.libraryTracksRevision(
+                    tracks: viewModel.allTracks,
+                    playlists: viewModel.playlists,
                     preferenceStatsByTrackID: usesPreferenceData ? preferenceStatsByTrackID : nil
                 )
                 if let expectedRevision, expectedRevision != currentRevision {
