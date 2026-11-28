@@ -179,7 +179,8 @@ final class AppSessionHost: ObservableObject {
     private var workspaceLibraryObservers: [NSObjectProtocol] = []
     private var appActiveLibraryObserver: NSObjectProtocol?
     private var backgroundSettingsObserver: NSObjectProtocol?
-    private var activeLibraryRescanTask: Task<Void, Never>?
+    private var activeLibraryRescan: (task: Task<Void, Never>, fromForeground: Bool)?
+    @Published private(set) var isManualLibraryScanRunning = false
     private var lastForegroundLibraryRescan: (libraryID: UUID, uptime: TimeInterval)?
     private var trashedLibraryReconciliationTask: Task<Void, Never>?
     private var playbackMemoryTimer: Timer?
@@ -1012,7 +1013,8 @@ final class AppSessionHost: ObservableObject {
         if let libraryID, session.context.id != libraryID {
             throw LibraryOperationError.sessionQuiescing
         }
-        let sourceIDs = try await store.loadAll().map(\.id)
+        let sources = try await store.loadAll()
+        let sourceIDs = sources.filter { !automatic || $0.monitorPolicy != .off }.map(\.id)
         guard !sourceIDs.isEmpty else { return }
         beginManualScanOverride(sourceIDs: sourceIDs)
         if !automatic {
@@ -1023,7 +1025,7 @@ final class AppSessionHost: ObservableObject {
         }
         do {
             _ = try await session.runLibraryOperation(as: .sourceScan) {
-                try await session.refreshReferencedSources()
+                try await session.refreshReferencedSources(automatic: automatic)
             }
             endManualScanOverride(sourceIDs: sourceIDs, markFailed: false)
         } catch {
@@ -1172,6 +1174,53 @@ final class AppSessionHost: ObservableObject {
             return []
         }
         return sourceIDs
+    }
+
+    func requestManualLibraryScan() {
+        guard !isManualLibraryScanRunning,
+              let session = activeLibraryBinding.activeSession else { return }
+        isManualLibraryScanRunning = true
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer {
+                if activeLibraryBinding.activeSession === session {
+                    isManualLibraryScanRunning = false
+                }
+            }
+            do {
+                try await session.runLibraryOperation(as: .sourceScan) {
+                    await session.libraryViewModel.reloadLibrary()
+                    try Task.checkCancellation()
+                    if let error = session.libraryViewModel.lastLoadingError {
+                        throw CocoaError(.fileReadUnknown, userInfo: [NSLocalizedDescriptionKey: error])
+                    }
+                    if session.context.mode == .referenced {
+                        try await self.refreshAllReferencedSources(libraryID: session.context.id)
+                    }
+                }
+            } catch is CancellationError {
+                return
+            } catch {
+                guard activeLibraryBinding.activeSession === session else { return }
+                uiState.showSidebarNotice("无法扫描资料库", style: .warning)
+                Log.warning("[LibrarySession] manual scan failed: \(error)", category: .library)
+            }
+        }
+    }
+
+    func setAutomaticLibraryScanEnabled(_ enabled: Bool, libraryID: UUID) async throws {
+        guard let session = activeLibraryBinding.activeSession,
+              session.context.id == libraryID else {
+            throw LibraryOperationError.sessionQuiescing
+        }
+        if !enabled {
+            activeLibraryRescan?.task.cancel()
+            activeLibraryRescan = nil
+        }
+        try await session.setAutomaticScanEnabled(enabled)
+        if activeLibraryBinding.activeSession === session {
+            lastForegroundLibraryRescan = nil
+        }
     }
 
     func libraryScopedSettings() async throws -> LibraryScopedSettings {
@@ -2371,8 +2420,9 @@ final class AppSessionHost: ObservableObject {
         audioDSPController.detachPlayback()
         audioProcessingGlobalsController.detachPlayback()
         await cacheServices?.detachBackgroundSources()
-        activeLibraryRescanTask?.cancel()
-        activeLibraryRescanTask = nil
+        activeLibraryRescan?.task.cancel()
+        activeLibraryRescan = nil
+        isManualLibraryScanRunning = false
         playbackMemoryTimer?.invalidate()
         playbackMemoryTimer = nil
         lastPlaybackMemoryWrite = nil
@@ -2548,17 +2598,29 @@ final class AppSessionHost: ObservableObject {
     }
 
     private func scheduleActiveLibraryRescan(fromForeground: Bool = false) {
-        activeLibraryRescanTask?.cancel()
-        activeLibraryRescanTask = Task { @MainActor [weak self] in
+        // A foreground check must not cancel a pending mount or unmount rescan.
+        if fromForeground, activeLibraryRescan?.fromForeground == false { return }
+        activeLibraryRescan?.task.cancel()
+        let task = Task { @MainActor [weak self] in
+            defer {
+                if !Task.isCancelled {
+                    self?.activeLibraryRescan = nil
+                }
+            }
             if fromForeground {
                 do { try await Task.sleep(for: .milliseconds(500)) }
                 catch { return }
             }
             guard let self else { return }
             await reconcileTrashedMusicLibraries()
-            guard !Task.isCancelled, let session = activeLibraryBinding.activeSession else { return }
+            guard !Task.isCancelled,
+                  let session = activeLibraryBinding.activeSession,
+                  session.automaticScanEnabled else { return }
             let libraryID = session.context.id
             if fromForeground {
+                if await libraryMonitorIsHealthy(session) { return }
+                guard !Task.isCancelled, activeLibraryBinding.activeSession === session,
+                      session.automaticScanEnabled else { return }
                 if let previous = lastForegroundLibraryRescan,
                    previous.libraryID == libraryID,
                    ProcessInfo.processInfo.systemUptime - previous.uptime < 30 {
@@ -2567,14 +2629,6 @@ final class AppSessionHost: ObservableObject {
                 lastForegroundLibraryRescan = (libraryID, ProcessInfo.processInfo.systemUptime)
             }
             if session.context.mode == .referenced {
-                // A healthy file monitor already reconciles every change
-                // through FSEvents, so a foreground rescan would repeat the
-                // same work. Keep it only as the fallback for a stopped
-                // listener or a failed automatic scan; mount and unmount
-                // notifications never take this path.
-                if fromForeground, await referencedMonitorIsHealthy(session) {
-                    return
-                }
                 do {
                     try await refreshAllReferencedSources(automatic: true)
                 } catch {
@@ -2583,10 +2637,11 @@ final class AppSessionHost: ObservableObject {
                         category: .library
                     )
                 }
-            } else if let monitor = session.libraryChangeMonitor {
-                await monitor.markDirty(sourceIDs: [libraryID], fullScan: true)
+            } else {
+                await session.scheduleManagedLibraryRescan()
             }
         }
+        activeLibraryRescan = (task, fromForeground)
     }
 
     /// The change monitor publishes one scan state per watched root, including
@@ -2594,7 +2649,7 @@ final class AppSessionHost: ObservableObject {
     /// An empty snapshot therefore means no listener is running; a failed
     /// state means the last automatic reconcile failed, so activating the App
     /// remains the fallback retry.
-    private func referencedMonitorIsHealthy(_ session: LibrarySession) async -> Bool {
+    private func libraryMonitorIsHealthy(_ session: LibrarySession) async -> Bool {
         guard let monitor = session.libraryChangeMonitor else { return false }
         let states = await monitor.sourceStateSnapshot()
         return !states.isEmpty && !states.values.contains(.failed)
@@ -2622,7 +2677,7 @@ final class AppSessionHost: ObservableObject {
             }
             firstUsePrewarmTask?.cancel()
             launchDiagnosticsTask?.cancel()
-            activeLibraryRescanTask?.cancel()
+            activeLibraryRescan?.task.cancel()
             AppDelegate.applicationWillTerminateHandler = nil
             AppDelegate.shouldCancelTerminationForPendingUpdateHandler = nil
             UpdateCoordinator.shared.terminationPreparationHandler = nil

@@ -225,6 +225,7 @@ final class LibrarySession: LibrarySessionLifecycle {
     private let mutationCoordinator: LibraryMutationCoordinator
     private let mutationJournal: LibraryMutationJournal
     private var isLoaded = false
+    private(set) var automaticScanEnabled = true
     /// First source reconcile and source monitor start, running after
     /// activation. `load()` waits for it; the session controller does not.
     private var initialReconcileTask: Task<Void, Never>?
@@ -316,6 +317,9 @@ final class LibrarySession: LibrarySessionLifecycle {
         precondition(!isClosed)
         guard !isLoaded else { return }
         try context.paths.createRequiredDirectories()
+        let storedSettings = try? await LibraryScopedSettingsStore(paths: context.paths).load()
+        automaticScanEnabled = storedSettings?.scansAutomatically ?? true
+        await libraryChangeMonitor?.setAutomaticScanEnabled(automaticScanEnabled)
         await libraryViewModel.reloadLibrary()
         try Task.checkCancellation()
         if let ncmRecoveryService {
@@ -359,7 +363,8 @@ final class LibrarySession: LibrarySessionLifecycle {
         do {
             initialReconcileOutcome = try await Self.runInitialReconcile(
                 reconciler: reconciler,
-                operationCoordinator: operationCoordinator
+                operationCoordinator: operationCoordinator,
+                scanSources: automaticScanEnabled
             )
         } catch is CancellationError {
             return
@@ -369,7 +374,7 @@ final class LibrarySession: LibrarySessionLifecycle {
                 category: .library
             )
         }
-        guard !Task.isCancelled else { return }
+        guard automaticScanEnabled, !Task.isCancelled else { return }
         do {
             if let libraryChangeMonitor {
                 try await startReferencedSourceMonitor(
@@ -394,7 +399,8 @@ final class LibrarySession: LibrarySessionLifecycle {
     /// cancelled switch aborts without reporting source failures.
     static func runInitialReconcile(
         reconciler: ReferencedSourceReconciler,
-        operationCoordinator: LibraryOperationCoordinator
+        operationCoordinator: LibraryOperationCoordinator,
+        scanSources: Bool = true
     ) async throws -> InitialReconcileOutcome {
         let startedAt = Date()
 
@@ -428,6 +434,16 @@ final class LibrarySession: LibrarySessionLifecycle {
             Log.warning(
                 "[LibrarySession] unused file source cleanup deferred after load failure: \(error)",
                 category: .library
+            )
+        }
+
+        // Replay interrupted commits even when external-source discovery is off.
+        if !scanSources {
+            _ = try await operationCoordinator.run {
+                try await reconciler.replayPending()
+            }
+            return InitialReconcileOutcome(
+                attemptedSourceIDs: [], failedSources: [], startedAt: startedAt, finishedAt: Date()
             )
         }
 
@@ -1934,13 +1950,14 @@ final class LibrarySession: LibrarySessionLifecycle {
     }
 
     @discardableResult
-    func refreshReferencedSources() async throws -> [ReferencedSourceScopeIssue] {
+    func refreshReferencedSources(automatic: Bool = false) async throws -> [ReferencedSourceScopeIssue] {
+        guard !automatic || automaticScanEnabled else { return [] }
         guard !isClosed,
               let referencedSourceReconciler,
               let libraryChangeMonitor else { return [] }
         await libraryChangeMonitor.stopAndWait()
         do {
-            let issues = try await referencedSourceReconciler.refreshSources()
+            let issues = try await referencedSourceReconciler.refreshSources(automaticOnly: automatic)
             try await startReferencedSourceMonitor(
                 libraryChangeMonitor,
                 reconciler: referencedSourceReconciler,
@@ -2151,10 +2168,52 @@ final class LibrarySession: LibrarySessionLifecycle {
         )
     }
 
+    func scheduleManagedLibraryRescan() async {
+        guard automaticScanEnabled, !isClosed, let libraryChangeMonitor else { return }
+        let states = await libraryChangeMonitor.sourceStateSnapshot()
+        guard automaticScanEnabled, !isClosed, !Task.isCancelled else { return }
+        if states.isEmpty {
+            do {
+                try await startManagedLibraryMonitor(libraryChangeMonitor, initiallyDirty: true)
+            } catch {
+                Log.warning("[LibrarySession] managed file monitor restart failed: \(error)", category: .library)
+            }
+        } else {
+            await libraryChangeMonitor.markDirty(sourceIDs: [context.id], fullScan: true)
+        }
+    }
+
+    func setAutomaticScanEnabled(_ enabled: Bool) async throws {
+        guard !isClosed, let libraryChangeMonitor else {
+            throw LibraryOperationError.sessionQuiescing
+        }
+        if !enabled {
+            initialReconcileTask?.cancel()
+        }
+        try await operationCoordinator.run { [self] in
+            let store = LibraryScopedSettingsStore(paths: context.paths)
+            try await store.setAutomaticScanEnabled(enabled)
+            automaticScanEnabled = enabled
+            await libraryChangeMonitor.setAutomaticScanEnabled(enabled)
+            guard enabled else { return }
+            if let reconciler = referencedSourceReconciler {
+                try await startReferencedSourceMonitor(
+                    libraryChangeMonitor,
+                    reconciler: reconciler,
+                    roots: try await reconciler.monitoredSourceRoots(),
+                    initiallyDirty: true
+                )
+            } else {
+                try await startManagedLibraryMonitor(libraryChangeMonitor, initiallyDirty: true)
+            }
+        }
+    }
+
     private func startReferencedSourceMonitor(
         _ monitor: LibraryChangeMonitor,
         reconciler: ReferencedSourceReconciler,
-        roots: [UUID: URL]
+        roots: [UUID: URL],
+        initiallyDirty: Bool = false
     ) async throws {
         let libraryID = context.id
         let libraryFilter = ManagedLibraryFileEventFilter(paths: context.paths)
@@ -2174,7 +2233,7 @@ final class LibrarySession: LibrarySessionLifecycle {
                 }
                 return libraryFilter.shouldProcess(event)
             },
-            initiallyDirty: false
+            initiallyDirty: initiallyDirty
         ) { [weak reconciler, weak libraryViewModel] dirtyIDs, _ in
             if dirtyIDs.contains(libraryID) {
                 await libraryViewModel?.reloadLibrary()
@@ -2203,14 +2262,17 @@ final class LibrarySession: LibrarySessionLifecycle {
         }
     }
 
-    private func startManagedLibraryMonitor(_ monitor: LibraryChangeMonitor) async throws {
+    private func startManagedLibraryMonitor(
+        _ monitor: LibraryChangeMonitor,
+        initiallyDirty: Bool = false
+    ) async throws {
         let libraryID = context.id
         let filter = ManagedLibraryFileEventFilter(paths: context.paths)
         try await monitor.start(
             sourceRoots: [libraryID: context.rootURL],
             watchPathsBySource: [libraryID: libraryMonitorWatchPaths()],
             eventFilter: { filter.shouldProcess($0) },
-            initiallyDirty: false
+            initiallyDirty: initiallyDirty
         ) { [weak libraryViewModel] libraryIDs, _ in
             guard libraryIDs.contains(libraryID), let libraryViewModel else { return }
             await libraryViewModel.reloadLibrary()

@@ -9,6 +9,10 @@ nonisolated struct LibraryScopedSettings: Codable, Sendable, Equatable {
     static let schemaVersion = 1
 
     var schemaVersion = LibraryScopedSettings.schemaVersion
+    /// A missing value keeps automatic scanning enabled for existing libraries.
+    var automaticScanEnabled: Bool?
+
+    var scansAutomatically: Bool { automaticScanEnabled ?? true }
     var referencedTrackDeletePolicy: ReferencedTrackDeletePolicy = .onlyLibrary
     /// A user-selected directory whose security-scoped bookmark is retained
     /// for trusted local automation. The bookmark is intentionally kept out
@@ -80,6 +84,12 @@ actor LibraryScopedSettingsStore {
         } catch {
             throw LibraryScopedSettingsError.invalidPayload
         }
+    }
+
+    func setAutomaticScanEnabled(_ enabled: Bool) throws {
+        var value = try load()
+        value.automaticScanEnabled = enabled
+        try LibraryScopedSettingsFile.save(value, to: fileURL, fileManager: fileManager)
     }
 
     func setReferencedTrackDeletePolicy(_ policy: ReferencedTrackDeletePolicy) throws {

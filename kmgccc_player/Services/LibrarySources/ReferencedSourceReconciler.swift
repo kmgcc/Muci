@@ -335,7 +335,7 @@ final class ReferencedSourceReconciler {
     }
 
     @discardableResult
-    func refreshSources() async throws -> [ReferencedSourceScopeIssue] {
+    func refreshSources(automaticOnly: Bool = false) async throws -> [ReferencedSourceScopeIssue] {
         let descriptors = try await sourceStore.loadAll()
         let issues = await sourceScope.start(
             descriptors: descriptors,
@@ -343,7 +343,8 @@ final class ReferencedSourceReconciler {
             bookmarkResolver: bookmarkResolver,
             requiresSecurityScope: requiresSecurityScope
         )
-        _ = await reconcileBestEffort(sourceIDs: Set(descriptors.map(\.id)))
+        let ids = automaticOnly ? try await automaticSourceIDs() : Set(descriptors.map(\.id))
+        _ = await reconcileBestEffort(sourceIDs: ids)
         return issues
     }
 

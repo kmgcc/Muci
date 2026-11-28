@@ -188,6 +188,7 @@ nonisolated enum SettingsSearchIndex {
         add(.library, nil, nil, "library.libraries", [("资料库", "新建 打开 切换 删除")])
         add(.library, nil, nil, "library.overview", [("资料库概览", "歌曲 专辑 格式")])
         add(.library, nil, nil, "library.sources", [("音乐来源", "文件夹 添加 扫描 同步")])
+        add(.library, nil, nil, "library.scan", [("自动扫描资料库", "文件夹 来源 刷新 同步")])
         add(.library, nil, nil, "library.deletion", [("删除歌曲", "音乐来源 偏好 删除原文件")])
         add(.library, nil, nil, "library.enrichment", [
             ("导入时延后补全歌曲信息", "歌词 封面 后台"),

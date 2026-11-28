@@ -140,6 +140,7 @@ actor LibraryChangeMonitor {
     private var handler: ScanHandler?
     private var eventFilter: EventFilter?
     private var stopped = true
+    private var automaticScanEnabled = true
     private var sourceStates: [UUID: ReferencedSourceScanState] = [:]
     /// Push hook for UI consumers: fired on every scan-state transition so
     /// views can observe a published snapshot instead of polling. The receiver
@@ -164,6 +165,13 @@ actor LibraryChangeMonitor {
         scanStateChangeHandler(sourceStates)
     }
 
+    func setAutomaticScanEnabled(_ enabled: Bool) async {
+        automaticScanEnabled = enabled
+        if !enabled {
+            await stopAndWait()
+        }
+    }
+
     func start(
         sourceRoots: [UUID: URL],
         watchPathsBySource: [UUID: [URL]]? = nil,
@@ -171,7 +179,9 @@ actor LibraryChangeMonitor {
         initiallyDirty: Bool = true,
         handler: @escaping ScanHandler
     ) async throws {
+        guard automaticScanEnabled else { return }
         await stopAndWait()
+        guard automaticScanEnabled, !Task.isCancelled else { return }
         sourcePaths = sourceRoots.mapValues { $0.standardizedFileURL.path }
         sourceWatchPaths = (watchPathsBySource ?? sourceRoots.mapValues { [$0] })
             .mapValues { urls in urls.map { $0.standardizedFileURL.path } }
@@ -221,7 +231,9 @@ actor LibraryChangeMonitor {
         sourcePaths.removeAll()
         sourceWatchPaths.removeAll()
         dirtySourceIDs.removeAll()
+        forceFullScan = false
         sourceStates.removeAll()
+        notifyScanStateChange()
         handler = nil
         eventFilter = nil
     }
@@ -236,7 +248,9 @@ actor LibraryChangeMonitor {
         sourcePaths.removeAll()
         sourceWatchPaths.removeAll()
         dirtySourceIDs.removeAll()
+        forceFullScan = false
         sourceStates.removeAll()
+        notifyScanStateChange()
         handler = nil
         eventFilter = nil
     }

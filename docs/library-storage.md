@@ -82,7 +82,7 @@ meta-only 路径保存用户修正，原音频文件的内嵌标签保持原样�
 
 切换资料库按固定顺序执行：准备候选 session；flush 旧统计；停止旧播放、导入、补全和 FSEvents；关闭索引与 cache owner；释放 root/source scope；再加载并原子发布新 session。旧 generation 的异步结果不得提交到新资料库。
 
-每个 active session 只持有一个 `LibraryChangeMonitor`。托管库监听资料库 root，但只接受 `Tracks`、`Playlists`、`Artists` 和 `Albums` 的权威变化；原位库在同一 stream 中同时监听这些目录和全部 source roots。`Cache`、扫描 manifest、历史/索引 SQLite 及 WAL/SHM 不触发 reload。FSEvent burst 经 debounce 后，托管数据走 `LibraryDiskScanner.scanIncremental()`，source 数据走 diff/reconcile；挂载、卸载和 App 回到前台时执行补扫。
+每个 active session 只持有一个 `LibraryChangeMonitor`。托管库监听资料库 root，但只接受 `Tracks`、`Playlists`、`Artists` 和 `Albums` 的权威变化；原位库在同一 stream 中同时监听这些目录和全部 source roots。`Cache`、扫描 manifest、历史/索引 SQLite 及 WAL/SHM 不触发 reload。FSEvent burst 经 debounce 后，托管数据走 `LibraryDiskScanner.scanIncremental()`，source 数据走 diff/reconcile。挂载和卸载事件触发补扫，文件监听正常时 App 回到前台会跳过补扫。资料库设置中的「自动扫描资料库」默认开启，可按库关闭。关闭后仍可在侧栏自定义按钮中添加「扫描资料库」，手动更新当前资料库。
 
 ## 资料库文件
 

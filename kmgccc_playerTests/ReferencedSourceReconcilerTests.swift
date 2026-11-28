@@ -2145,6 +2145,38 @@ final class ReferencedSourceReconcilerTests: XCTestCase {
         await concrete.close()
     }
 
+    func testManagedAutomaticScanPreferenceStopsAndRestartsWatching() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let context = try makeLibraryContext(root: root, mode: .managed)
+        let store = LibraryScopedSettingsStore(paths: context.paths)
+        let oldSettings = try await store.load()
+        XCTAssertTrue(oldSettings.scansAutomatically)
+        try await store.setAutomaticScanEnabled(false)
+
+        let events = TestFileEventSource()
+        let session = try await LibrarySessionFactory(
+            sourceBookmarkResolver: ReconcileBookmarkResolver(),
+            fileEventSourceFactory: { events }
+        ).makeSession(for: context)
+        let concrete = try XCTUnwrap(session as? LibrarySession)
+        try await concrete.load()
+        XCTAssertFalse(concrete.automaticScanEnabled)
+        XCTAssertEqual(events.startCount, 0)
+
+        try await concrete.setAutomaticScanEnabled(true)
+        let enabledSettings = try await store.load()
+        XCTAssertTrue(enabledSettings.scansAutomatically)
+        XCTAssertEqual(events.startCount, 1)
+
+        try await concrete.setAutomaticScanEnabled(false)
+        let disabledSettings = try await store.load()
+        XCTAssertFalse(disabledSettings.scansAutomatically)
+        let watchStates = await concrete.libraryChangeMonitor?.sourceStateSnapshot()
+        XCTAssertTrue(watchStates?.isEmpty == true)
+        await concrete.close()
+    }
+
     func testManagedLibraryEventFilterOnlyAcceptsAuthorityChanges() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

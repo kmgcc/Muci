@@ -13,6 +13,7 @@ enum SidebarSetBarItemKind: String, Codable, CaseIterable, Identifiable {
     case motionArtwork
     case systemAppearance
     case lyrics
+    case scanLibrary
     case separator
 
     var id: String { rawValue }
@@ -31,6 +32,7 @@ enum SidebarSetBarItemKind: String, Codable, CaseIterable, Identifiable {
         case .motionArtwork: return "动态封面"
         case .systemAppearance: return "跟随系统外观"
         case .lyrics: return "歌词"
+        case .scanLibrary: return "扫描资料库"
         case .separator: return "分割线"
         }
     }
@@ -49,6 +51,7 @@ enum SidebarSetBarItemKind: String, Codable, CaseIterable, Identifiable {
         case .motionArtwork: return "livephoto"
         case .systemAppearance: return "circle.lefthalf.filled"
         case .lyrics: return "quote.bubble"
+        case .scanLibrary: return "arrow.triangle.2.circlepath"
         case .separator: return "minus"
         }
     }
