@@ -362,6 +362,9 @@ final class AVAudioPlaybackService: AudioPlaybackServiceProtocol {
             // renderer; no route-specific delay estimate belongs in this path.
             AudioAnalysisHub.shared.enqueueRendererPCM(pcm)
         }
+        rendererPipeline.needsVisualizationPCM = {
+            AudioAnalysisHub.shared.hasRendererPCMConsumers
+        }
         rendererPipeline.onSegmentExhausted = { [weak self] descriptor in
             // The source is fully queued, so give the existing prefetch owner
             // one more opportunity to prepare the next item. Progress-based

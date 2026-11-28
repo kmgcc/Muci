@@ -189,6 +189,14 @@ nonisolated public final class AudioAnalysisHub: @unchecked Sendable {
         updateTimerState()
     }
 
+    /// Mirrors `enqueueRendererPCM`'s admission check so producers can skip
+    /// work upstream instead of preparing PCM that would be dropped here.
+    nonisolated var hasRendererPCMConsumers: Bool {
+        consumerLock.lock()
+        defer { consumerLock.unlock() }
+        return !consumers.isEmpty
+    }
+
     // MARK: - Internal Processing
 
     /// Feed renderer-timed canonical PCM into the existing FFT/ring-buffer

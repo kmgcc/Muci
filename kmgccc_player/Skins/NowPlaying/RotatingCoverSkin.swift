@@ -163,6 +163,11 @@ private final class RotatingCoverRotation: ObservableObject {
     private var targetVelocity: Double = 0
     private var lastTime: TimeInterval = 0
     private var motionEnabled: Bool = true
+    /// App-level visibility (any window with `.visible` occlusion). While the
+    /// app is fully in the background the 60Hz ticker is pure waste, so it
+    /// hard-stops; resuming restarts the spin from the preserved angle.
+    private var isAppVisible: Bool = true
+    private var isPlaying: Bool = false
     private var timerCancellable: AnyCancellable?
     private var profile: RotationProfile = RotatingCoverDiscMode.vinyl.profile
     private var angle: Double = 0
@@ -170,19 +175,22 @@ private final class RotatingCoverRotation: ObservableObject {
     private let restEpsilon: Double = 0.05
 
     func setPlaying(_ isPlaying: Bool) {
-        targetVelocity = motionEnabled && isPlaying ? profile.maxSpeed : 0
+        self.isPlaying = isPlaying
+        targetVelocity = motionTargetVelocity()
         updateTickerState()
     }
 
     func setMode(_ mode: RotatingCoverDiscMode, isPlaying: Bool) {
         profile = mode.profile
-        targetVelocity = motionEnabled && isPlaying ? profile.maxSpeed : 0
+        self.isPlaying = isPlaying
+        targetVelocity = motionTargetVelocity()
         updateTickerState()
     }
 
     func setMotionEnabled(_ isEnabled: Bool, isPlaying: Bool) {
+        self.isPlaying = isPlaying
         guard motionEnabled != isEnabled else {
-            targetVelocity = isEnabled && isPlaying ? profile.maxSpeed : 0
+            targetVelocity = motionTargetVelocity()
             updateTickerState()
             return
         }
@@ -190,7 +198,7 @@ private final class RotatingCoverRotation: ObservableObject {
         motionEnabled = isEnabled
         if motionEnabled {
             lastTime = 0
-            targetVelocity = isPlaying ? profile.maxSpeed : 0
+            targetVelocity = motionTargetVelocity()
             updateTickerState()
         } else {
             targetVelocity = 0
@@ -199,6 +207,25 @@ private final class RotatingCoverRotation: ObservableObject {
             speedRatioPublisher.send(0)
             stopTicker()
         }
+    }
+
+    func setAppVisible(_ visible: Bool) {
+        guard isAppVisible != visible else { return }
+        isAppVisible = visible
+        if visible {
+            lastTime = 0
+            targetVelocity = motionTargetVelocity()
+        } else {
+            // Hard-stop: an invisible spin-down wastes the full stopTau window.
+            targetVelocity = 0
+            velocity = 0
+            speedRatioPublisher.send(0)
+        }
+        updateTickerState()
+    }
+
+    private func motionTargetVelocity() -> Double {
+        (motionEnabled && isAppVisible && isPlaying) ? profile.maxSpeed : 0
     }
 
     func reset() {
@@ -1548,12 +1575,22 @@ private struct RotatingCoverArtwork: View {
         .offset(x: layout.xOffset, y: layout.yOffset)
         .onAppear {
             lastTrackID = context.track?.id
+            rotation.setAppVisible(NSApp.windows.contains { $0.occlusionState.contains(.visible) })
             rotation.setMode(discMode, isPlaying: context.playback.isPlaying)
             rotation.setMotionEnabled(motionEnabled, isPlaying: context.playback.isPlaying)
             updateCDMotionBlurCache(discSize: layout.discSize)
         }
         .onChange(of: context.playback.isPlaying) { _, isPlaying in
             rotation.setPlaying(isPlaying)
+        }
+        .onReceive(
+            NotificationCenter.default.publisher(for: NSWindow.didChangeOcclusionStateNotification)
+        ) { _ in
+            // Background playback: hard-stop the 60Hz ticker while no window
+            // is actually visible (app hidden / covered / miniaturized).
+            rotation.setAppVisible(
+                NSApp.windows.contains { $0.occlusionState.contains(.visible) }
+            )
         }
         .onChange(of: cdMode) { _, _ in
             rotation.setMode(discMode, isPlaying: context.playback.isPlaying)

@@ -183,6 +183,8 @@ final class AppSessionHost: ObservableObject {
     private var lastForegroundLibraryRescan: (libraryID: UUID, uptime: TimeInterval)?
     private var trashedLibraryReconciliationTask: Task<Void, Never>?
     private var playbackMemoryTimer: Timer?
+    /// The last autosave or clear for the active library.
+    private var lastPlaybackMemoryWrite: (libraryID: UUID, memory: PlaybackMemory?)?
     private var memoryPressureObserverToken: UUID?
     private let mainThreadStallMonitor = MainThreadStallMonitor()
     private var firstUsePrewarmTask: Task<Void, Never>?
@@ -2373,6 +2375,7 @@ final class AppSessionHost: ObservableObject {
         activeLibraryRescanTask = nil
         playbackMemoryTimer?.invalidate()
         playbackMemoryTimer = nil
+        lastPlaybackMemoryWrite = nil
         firstUsePrewarmTask?.cancel()
         firstUsePrewarmTask = nil
         lyricsPlaybackPipeline = nil
@@ -2775,21 +2778,21 @@ final class AppSessionHost: ObservableObject {
         playbackMemoryTimer?.invalidate()
         let timer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
-                self?.savePlaybackMemory()
+                self?.savePlaybackMemory(onlyIfChanged: true)
             }
         }
         RunLoop.main.add(timer, forMode: .common)
         playbackMemoryTimer = timer
     }
 
-    private func savePlaybackMemory() {
+    private func savePlaybackMemory(onlyIfChanged: Bool = false) {
         guard let libraryID = activeLibraryBinding.activeSession?.context.id else { return }
-        guard playbackCoordinator?.activeSource == .local else {
+        let lastWrite = lastPlaybackMemoryWrite?.libraryID == libraryID ? lastPlaybackMemoryWrite : nil
+        guard playbackCoordinator?.activeSource == .local,
+              let playerVM, let currentTrack = playerVM.currentTrack else {
+            if onlyIfChanged, let lastWrite, lastWrite.memory == nil { return }
             PlaybackMemoryStore.clear(libraryID: libraryID)
-            return
-        }
-        guard let playerVM, let currentTrack = playerVM.currentTrack else {
-            PlaybackMemoryStore.clear(libraryID: libraryID)
+            lastPlaybackMemoryWrite = (libraryID, nil)
             return
         }
 
@@ -2800,17 +2803,27 @@ final class AppSessionHost: ObservableObject {
             ? []
             : playerVM.currentQueueTracks.map { $0.id }
 
-        PlaybackMemoryStore.save(
-            PlaybackMemory(
-                savedAt: Date(),
-                trackID: currentTrack.id,
-                currentTime: currentTime,
-                duration: duration,
-                queueTrackIDs: queueTrackIDs.isEmpty ? nil : queueTrackIDs,
-                playbackOrderMode: playbackOrderMode.rawValue
-            ),
-            libraryID: libraryID
+        let memory = PlaybackMemory(
+            savedAt: Date(),
+            trackID: currentTrack.id,
+            currentTime: currentTime,
+            duration: duration,
+            queueTrackIDs: queueTrackIDs.isEmpty ? nil : queueTrackIDs,
+            playbackOrderMode: playbackOrderMode.rawValue
         )
+        // Keep long-paused sessions recoverable after an unexpected exit.
+        // Explicit saves always renew the timestamp.
+        if onlyIfChanged, let last = lastWrite?.memory,
+           memory.savedAt.timeIntervalSince(last.savedAt) < 60 * 60,
+           last.trackID == memory.trackID,
+           last.currentTime == memory.currentTime,
+           last.duration == memory.duration,
+           last.queueTrackIDs == memory.queueTrackIDs,
+           last.playbackOrderMode == memory.playbackOrderMode {
+            return
+        }
+        PlaybackMemoryStore.save(memory, libraryID: libraryID)
+        lastPlaybackMemoryWrite = (libraryID, memory)
     }
 
     /// Restore the last session at launch **in a paused state**.
