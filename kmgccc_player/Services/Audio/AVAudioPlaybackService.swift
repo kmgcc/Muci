@@ -362,9 +362,7 @@ final class AVAudioPlaybackService: AudioPlaybackServiceProtocol {
             // renderer; no route-specific delay estimate belongs in this path.
             AudioAnalysisHub.shared.enqueueRendererPCM(pcm)
         }
-        // Skip analysis slice allocation entirely while no visualization
-        // consumer is registered; the hub would drop the PCM anyway.
-        rendererPipeline.analysisGate = {
+        rendererPipeline.needsVisualizationPCM = {
             AudioAnalysisHub.shared.hasRendererPCMConsumers
         }
         rendererPipeline.onSegmentExhausted = { [weak self] descriptor in

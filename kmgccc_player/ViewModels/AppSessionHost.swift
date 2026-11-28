@@ -183,11 +183,8 @@ final class AppSessionHost: ObservableObject {
     private var lastForegroundLibraryRescan: (libraryID: UUID, uptime: TimeInterval)?
     private var trashedLibraryReconciliationTask: Task<Void, Never>?
     private var playbackMemoryTimer: Timer?
-    /// Payload of the last playback-memory write (savedAt excluded) and an
-    /// "already cleared" flag, so the 5s autosave skips serialization while
-    /// the observable state is unchanged.
-    private var lastSavedPlaybackMemory: PlaybackMemory?
-    private var isPlaybackMemoryCleared = false
+    /// The last autosave or clear for the active library.
+    private var lastPlaybackMemoryWrite: (libraryID: UUID, memory: PlaybackMemory?)?
     private var memoryPressureObserverToken: UUID?
     private let mainThreadStallMonitor = MainThreadStallMonitor()
     private var firstUsePrewarmTask: Task<Void, Never>?
@@ -2378,6 +2375,7 @@ final class AppSessionHost: ObservableObject {
         activeLibraryRescanTask = nil
         playbackMemoryTimer?.invalidate()
         playbackMemoryTimer = nil
+        lastPlaybackMemoryWrite = nil
         firstUsePrewarmTask?.cancel()
         firstUsePrewarmTask = nil
         lyricsPlaybackPipeline = nil
@@ -2780,27 +2778,21 @@ final class AppSessionHost: ObservableObject {
         playbackMemoryTimer?.invalidate()
         let timer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
-                self?.savePlaybackMemory()
+                self?.savePlaybackMemory(onlyIfChanged: true)
             }
         }
         RunLoop.main.add(timer, forMode: .common)
         playbackMemoryTimer = timer
     }
 
-    private func savePlaybackMemory() {
+    private func savePlaybackMemory(onlyIfChanged: Bool = false) {
         guard let libraryID = activeLibraryBinding.activeSession?.context.id else { return }
-        guard playbackCoordinator?.activeSource == .local else {
-            guard !isPlaybackMemoryCleared else { return }
-            isPlaybackMemoryCleared = true
-            lastSavedPlaybackMemory = nil
+        let lastWrite = lastPlaybackMemoryWrite?.libraryID == libraryID ? lastPlaybackMemoryWrite : nil
+        guard playbackCoordinator?.activeSource == .local,
+              let playerVM, let currentTrack = playerVM.currentTrack else {
+            if onlyIfChanged, let lastWrite, lastWrite.memory == nil { return }
             PlaybackMemoryStore.clear(libraryID: libraryID)
-            return
-        }
-        guard let playerVM, let currentTrack = playerVM.currentTrack else {
-            guard !isPlaybackMemoryCleared else { return }
-            isPlaybackMemoryCleared = true
-            lastSavedPlaybackMemory = nil
-            PlaybackMemoryStore.clear(libraryID: libraryID)
+            lastPlaybackMemoryWrite = (libraryID, nil)
             return
         }
 
@@ -2819,12 +2811,10 @@ final class AppSessionHost: ObservableObject {
             queueTrackIDs: queueTrackIDs.isEmpty ? nil : queueTrackIDs,
             playbackOrderMode: playbackOrderMode.rawValue
         )
-        // The 5s autosave is a catch-all (explicit saves already run on
-        // library switch and termination). Skip the JSON encode + defaults
-        // write when no observable field changed since the last write —
-        // the steady paused-idle state used to rewrite the whole queue
-        // every 5 seconds for nothing.
-        if let last = lastSavedPlaybackMemory,
+        // Keep long-paused sessions recoverable after an unexpected exit.
+        // Explicit saves always renew the timestamp.
+        if onlyIfChanged, let last = lastWrite?.memory,
+           memory.savedAt.timeIntervalSince(last.savedAt) < 60 * 60,
            last.trackID == memory.trackID,
            last.currentTime == memory.currentTime,
            last.duration == memory.duration,
@@ -2833,8 +2823,7 @@ final class AppSessionHost: ObservableObject {
             return
         }
         PlaybackMemoryStore.save(memory, libraryID: libraryID)
-        lastSavedPlaybackMemory = memory
-        isPlaybackMemoryCleared = false
+        lastPlaybackMemoryWrite = (libraryID, memory)
     }
 
     /// Restore the last session at launch **in a paused state**.

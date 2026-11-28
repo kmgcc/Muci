@@ -1575,6 +1575,7 @@ private struct RotatingCoverArtwork: View {
         .offset(x: layout.xOffset, y: layout.yOffset)
         .onAppear {
             lastTrackID = context.track?.id
+            rotation.setAppVisible(NSApp.windows.contains { $0.occlusionState.contains(.visible) })
             rotation.setMode(discMode, isPlaying: context.playback.isPlaying)
             rotation.setMotionEnabled(motionEnabled, isPlaying: context.playback.isPlaying)
             updateCDMotionBlurCache(discSize: layout.discSize)

@@ -477,7 +477,16 @@ final class RendererTimelineTests: XCTestCase {
     }
 
     func testDSPReplacementUpdatesQueuedLimiterMetersWithoutChangingAnalysisSource() {
+        assertDSPReplacementUpdatesQueuedLimiterMeters(needsPCM: true)
+    }
+
+    func testDSPReplacementUpdatesQueuedLimiterMetersWithoutVisualization() {
+        assertDSPReplacementUpdatesQueuedLimiterMeters(needsPCM: false)
+    }
+
+    private func assertDSPReplacementUpdatesQueuedLimiterMeters(needsPCM: Bool) {
         let pipeline = RendererPlaybackPipeline()
+        pipeline.needsVisualizationPCM = { needsPCM }
         pipeline.setVolume(0)
         defer { pipeline.stop() }
         let primed = expectation(description: "unprocessed audio is queued")
@@ -516,8 +525,9 @@ final class RendererTimelineTests: XCTestCase {
                 reading.nodeID == DSPLimiterConfiguration.nodeID && (reading.values.first ?? 0) > 0.05
             }
         })
-        XCTAssertTrue(limitedChunks.allSatisfy { $0.pcm.data.allSatisfy { $0 == 0.5 } },
-                      "visualization must retain the decoded source instead of the limited output")
+        XCTAssertTrue(limitedChunks.allSatisfy { chunk in
+            needsPCM ? chunk.pcm?.data.allSatisfy { $0 == 0.5 } == true : chunk.pcm == nil
+        }, "only visualization should retain decoded samples")
         let unchanged = pipeline.dspAnalysisChunksForTesting.filter { $0.revision == "initial" }
         XCTAssertFalse(unchanged.isEmpty, "analysis before the replacement boundary stays on the original chain")
         XCTAssertTrue(unchanged.allSatisfy { $0.meters.isEmpty })
@@ -540,7 +550,9 @@ final class RendererTimelineTests: XCTestCase {
         let flatChunks = pipeline.dspAnalysisChunksForTesting.filter { $0.revision == "flat" }
         XCTAssertGreaterThan(flatChunks.count, 1)
         XCTAssertTrue(flatChunks.allSatisfy { $0.meters.isEmpty })
-        XCTAssertTrue(flatChunks.allSatisfy { $0.pcm.data.allSatisfy { $0 == 0.5 } })
+        XCTAssertTrue(flatChunks.allSatisfy { chunk in
+            needsPCM ? chunk.pcm?.data.allSatisfy { $0 == 0.5 } == true : chunk.pcm == nil
+        })
     }
 
     func testRendererRecoveryUsesLogicalSegmentBoundaryWithOutputLead() {
